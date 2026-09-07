@@ -1,0 +1,2155 @@
+{
+  "info": {
+    "name": "HealthyLife AI — API",
+    "description": "# HealthyLife AI — API\n\nAI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 2 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.\n\n## Getting started\n\n1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).\n2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.\n3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.\n4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition request below it references.\n5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → dashboard reflects the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email or phone number, so a fresh run never collides with \"already taken\". The one exception: **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward. Noted on that request too.\n\n## Authentication model\n\nEvery endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, and `POST /invites/{token}/activate` requires `Authorization: Bearer <access_token>` — set once at the collection level, individual requests inherit it. The four exceptions are marked **No Auth** on the request itself.\n\n**Two layers**, matching the PRD's own security model — permission alone is never treated as security:\n- **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.\n- **Data isolation** — every Clients/Health Profile/Body Composition query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client ID returns `404`, never `403` — the response never confirms the ID belongs to someone else.\n\n## Common response shapes\n\n**User object** (`register` / `login` / `activate` / `GET /auth/me`):\n```json\n{ \"id\": 1, \"name\": \"Demo Nutritionist\", \"email\": \"nutritionist@example.com\", \"phone\": null, \"role\": \"nutritionist\", \"nutritionist_id\": null }\n```\n`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.\n\n**Token pair** (`register` / `login` / `refresh` / `activate`):\n```json\n{ \"access_token\": \"eyJ...\", \"refresh_token\": \"WpoI...\", \"token_type\": \"Bearer\", \"expires_in\": 900 }\n```\n- `access_token` — short-lived JWT (15 min default). Send as `Authorization: Bearer <access_token>`.\n- `refresh_token` — opaque, **single-use, rotates on every `/auth/refresh` call**. Reusing an already-rotated or already-logged-out one revokes *every* session the user holds — deliberate theft detection.\n\n**Validation error** (any endpoint, `422`):\n```json\n{ \"message\": \"The email has already been taken. (and 1 more error)\", \"errors\": { \"email\": [\"...\"] } }\n```\n\n**Rate limiting** (`429`): register/login 10 req/min, refresh 20 req/min, per IP — response includes a `Retry-After` header.\n\n## Folders\n\n| Folder | Covers |\n|---|---|\n| **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |\n| **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |\n| **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |\n| **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |\n| **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |\n| **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |\n\n---\nGenerated for HealthyLife AI · Sprint 1–2 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "healthylife-ai"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api/v1",
+      "type": "string",
+      "description": "Laravel API base URL (no trailing slash)."
+    },
+    {
+      "key": "web_app_url",
+      "value": "http://localhost:3000",
+      "type": "string",
+      "description": "Next.js dashboard origin — used only in request descriptions to show how an invite link is built; not called directly by anything in this collection."
+    },
+    {
+      "key": "nutritionist_email",
+      "value": "jane.nutri@example.com",
+      "type": "string",
+      "description": "Auto-overwritten with a unique value by Register's prerequest script; Login — Nutritionist (email) reuses it."
+    },
+    {
+      "key": "nutritionist_password",
+      "value": "Passw0rd!",
+      "type": "string",
+      "description": "Used by both Register and Login — Nutritionist. Change in one place, applies everywhere."
+    },
+    {
+      "key": "client_phone",
+      "value": "",
+      "type": "string",
+      "description": "Auto-overwritten with a unique value by Add Client's prerequest script; Activate Invite / Login — Client (phone) reuse it."
+    },
+    {
+      "key": "client_password",
+      "value": "ClientPass1!",
+      "type": "string",
+      "description": "Used by both Activate Invite and Login — Client. Change in one place, applies everywhere."
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string",
+      "description": "Nutritionist's current JWT access token. Auto-set by Register/Login/Refresh."
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string",
+      "description": "Nutritionist's current refresh token. Auto-set by Register/Login/Refresh; rotates on every use."
+    },
+    {
+      "key": "client_access_token",
+      "value": "",
+      "type": "string",
+      "description": "Client's JWT access token. Auto-set by Activate Invite / Login — Client (phone)."
+    },
+    {
+      "key": "client_refresh_token",
+      "value": "",
+      "type": "string",
+      "description": "Client's refresh token. Auto-set alongside client_access_token."
+    },
+    {
+      "key": "subscriber_id",
+      "value": "",
+      "type": "string",
+      "description": "Most recently created client's id. Auto-set by Add Client."
+    },
+    {
+      "key": "invite_token",
+      "value": "",
+      "type": "string",
+      "description": "Most recently created client's one-time invite token. Auto-set by Add Client; consumed by Activate Invite."
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Sprint 1 (S1-06). Registration, login, JWT access/refresh token issuance, and the current-user endpoint. See the collection-level description for the shared User object, token pair, and validation-error shapes these all follow.",
+      "item": [
+        {
+          "name": "Register Nutritionist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "description": "FR-01. Nutritionist self-registration only — client accounts are never created here. A nutritionist creates them via **Clients → Add Client**, which issues an invite link (Sprint 2, US-02).\n\n**Validation**\n\n| Field | Rules |\n|---|---|\n| `name` | required, string, max 255 |\n| `email` | required, valid email, max 255, **unique** |\n| `password` | required, matches `password_confirmation`, min 8 chars, mixed case, at least one number |\n\nA `prerequest` script generates a fresh, unique `nutritionist_email` collection variable before every send, so re-running this never 422s with \"already taken\" — and **Login — Nutritionist (email)**, right below it in this folder, reuses that same value, so running this collection top-to-bottom logs in as the account this request just created.\n\nOn success, the `test` script saves `access_token` / `refresh_token` as collection variables so every other authenticated request in this collection runs immediately, with no manual copy-pasting.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Nutri\",\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\",\n  \"password_confirmation\": \"{{nutritionist_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/register",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Jane Nutri\",\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\",\n  \"password_confirmation\": \"{{nutritionist_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": 4,\n    \"name\": \"Jane Nutri\",\n    \"email\": \"jane@example.com\",\n    \"phone\": null,\n    \"role\": \"nutritionist\",\n    \"nutritionist_id\": null\n  },\n  \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0Iiwicm9sZSI6Im51dHJpdGlvbmlzdCJ9.signature\",\n  \"refresh_token\": \"WpoIngUVVz7R9w2oufb2jKrcDVTsKGJnXHt0aC1x9dLLTM2sVn3Q8kR7pYb5eFgH\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 900\n}"
+            },
+            {
+              "name": "422 Validation error",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/register",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "register"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Jane Nutri\",\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\",\n  \"password_confirmation\": \"{{nutritionist_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The email has already been taken. (and 1 more error)\",\n  \"errors\": {\n    \"email\": [\n      \"The email has already been taken.\"\n    ],\n    \"password\": [\n      \"The password field confirmation does not match.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh, unique email every run, so Register never 422s with",
+                  "// 'already taken' — and Login — Nutritionist (email), right below",
+                  "// it in this same folder, reuses exactly this value.",
+                  "pm.collectionVariables.set('nutritionist_email', `jane.nutri.${Date.now()}@example.com`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300) {",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "    pm.test('access_token saved to collection variables', function () {",
+                  "        pm.expect(body.access_token).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — Nutritionist (email)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "FR-01 / FR-04. A **nutritionist** logs in with `email` + `password`. (A **client** has no email — see *Login — Client (phone)* in this same folder.)\n\nReuses `{{nutritionist_email}}` / `{{nutritionist_password}}` — the same values **Register** (just above this request) generated and saved — so running this collection top-to-bottom logs back into the account Register just created, rather than 401ing against a hardcoded stranger's email.\n\nSaves `access_token` / `refresh_token` on success, same as Register.\n\n**Errors**\n- **401** — wrong password *or* unknown email. Deliberately identical either way, so the response never reveals which one was wrong.\n- **423 Locked** — 5 consecutive failed attempts (FR-04). The *correct* password is also rejected with this while locked. `locked_until` is ISO 8601 UTC — show a countdown, not a generic error.\n- **422** — missing `email` or `password`.\n\n**Rate limit**: 10 requests/minute per IP (`429 Too Many Attempts` + a `Retry-After` header).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": 4,\n    \"name\": \"Jane Nutri\",\n    \"email\": \"jane@example.com\",\n    \"phone\": null,\n    \"role\": \"nutritionist\",\n    \"nutritionist_id\": null\n  },\n  \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0Iiwicm9sZSI6Im51dHJpdGlvbmlzdCJ9.signature\",\n  \"refresh_token\": \"WpoIngUVVz7R9w2oufb2jKrcDVTsKGJnXHt0aC1x9dLLTM2sVn3Q8kR7pYb5eFgH\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 900\n}"
+            },
+            {
+              "name": "401 Invalid credentials",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"These credentials do not match our records.\"\n}"
+            },
+            {
+              "name": "423 Account locked",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{nutritionist_email}}\",\n  \"password\": \"{{nutritionist_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Locked",
+              "code": 423,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"Account is locked due to too many failed login attempts.\",\n  \"locked_until\": \"2026-09-06T12:15:00+00:00\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300) {",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "    pm.test('access_token saved to collection variables', function () {",
+                  "        pm.expect(body.access_token).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login — Client (phone)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Same endpoint as *Login — Nutritionist*, different identifier: a **client** was added by name + phone only (no email — PRD F-1), so they authenticate with `phone` + `password` instead of `email` + `password`. Exactly one of `email` / `phone` must be present.\n\nSaves the result into `client_access_token` / `client_refresh_token` (kept separate from the nutritionist's `access_token` / `refresh_token` so running this doesn't clobber the rest of the collection).\n\nUses `{{client_phone}}` / `{{client_password}}`. ⚠️ **Ordering note**: this request sits in the Authentication folder for discoverability, but a client's password only exists once **Clients → Activate Invite (Client)** has run — which sets `{{client_phone}}` (via Add Client) and consumes it. On a fresh top-to-bottom Collection Runner pass this folder runs *before* Clients, so this specific request will correctly `401` the first time through. Run it again by itself after Activate Invite has completed and it will succeed — that's expected sequencing, not a bug in the example.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{client_phone}}\",\n  \"password\": \"{{client_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{client_phone}}\",\n  \"password\": \"{{client_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": 12,\n    \"name\": \"Sara Ahmad\",\n    \"email\": null,\n    \"phone\": \"0501234567\",\n    \"role\": \"client\",\n    \"nutritionist_id\": 4\n  },\n  \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0Iiwicm9sZSI6Im51dHJpdGlvbmlzdCJ9.signature\",\n  \"refresh_token\": \"WpoIngUVVz7R9w2oufb2jKrcDVTsKGJnXHt0aC1x9dLLTM2sVn3Q8kR7pYb5eFgH\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 900\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Kept separate from access_token/refresh_token (the nutritionist's",
+                  "// session) so activating a client mid-collection-run doesn't clobber",
+                  "// the nutritionist requests below it.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300) {",
+                  "    pm.collectionVariables.set('client_access_token', body.access_token);",
+                  "    pm.collectionVariables.set('client_refresh_token', body.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "FR-05. Exchanges the current `refresh_token` for a **new** access + refresh token pair. No `user` object is returned (call **Get Current User** after, if needed).\n\n⚠️ **Single-use, rotating.** Every call consumes the token you send and issues a brand-new one. **Reusing an already-rotated (or already-logged-out) refresh token revokes every session the user holds** — this is deliberate theft detection, not a bug. Never fire this request twice in parallel with the same token.\n\n**Errors** (both `401`, both mean \"send the user back to login\"):\n- `Refresh token is invalid or has expired.`\n- `Refresh token was already used. All sessions have been revoked as a precaution.`\n\n**422** — missing `refresh_token`. **Rate limit**: 20 requests/minute per IP.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/refresh",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "refresh"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0Iiwicm9sZSI6Im51dHJpdGlvbmlzdCJ9.signature\",\n  \"refresh_token\": \"WpoIngUVVz7R9w2oufb2jKrcDVTsKGJnXHt0aC1x9dLLTM2sVn3Q8kR7pYb5eFgH\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 900\n}"
+            },
+            {
+              "name": "401 Reused token",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/refresh",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "refresh"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"Refresh token was already used. All sessions have been revoked as a precaution.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// /auth/refresh does not return a `user` object, only a new token pair.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300) {",
+                  "    pm.collectionVariables.set('access_token', body.access_token);",
+                  "    pm.collectionVariables.set('refresh_token', body.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Current User (Me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Returns the authenticated user — nutritionist, client, or admin — for whichever `access_token` is sent. Uses the collection's default Bearer auth (`{{access_token}}`); switch the Authorization tab to `{{client_access_token}}` to check a client's session instead.\n\n**401** if the token is missing, malformed, expired, or otherwise invalid — in that case call **Refresh Token** and retry once; if refresh also fails, the session is over."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "me"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 4,\n  \"name\": \"Jane Nutri\",\n  \"email\": \"jane@example.com\",\n  \"phone\": null,\n  \"role\": \"nutritionist\",\n  \"nutritionist_id\": null\n}"
+            },
+            {
+              "name": "401 Unauthenticated",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "me"
+                  ]
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"Unauthenticated.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes **this one session's** refresh token. Idempotent — logging out twice, or logging out an already-expired session, is not an error and always returns `200`.\n\nThe already-issued access token keeps working until its own short TTL expires (it's stateless by design, no server-side access-token revocation) — a client should discard it locally immediately regardless.\n\n**422** — missing `refresh_token`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/auth/logout",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "logout"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"Logged out.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "description": "Sprint 2 (S2-09). Adding a client, listing/searching/filtering the roster, reading one client, and the public invite-activation endpoint a client uses once to set their password. Every list/read/write here is scoped to the calling nutritionist's own clients — see the collection description's \"Data isolation\" note.",
+      "item": [
+        {
+          "name": "Add Client",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ]
+            },
+            "description": "FR-02. A nutritionist adds a client by **name + phone only — no email** (PRD F-1). Issues a single-use invite token in the same call (mirrors the refresh-token pattern: only its hash is stored server-side, the plaintext is returned **once**, here, and never retrievable again).\n\n`phone` is unique **per nutritionist**, not globally (BR-1) — two different nutritionists can each have a client with the same phone number.\n\nRequires `Authorization: Bearer {{access_token}}` for a **nutritionist**-role user (`clients.manage` permission) — a client or admin token gets `403`.\n\nBuild the shareable activation link yourself: `{{web_app_url}}/en/activate/<invite_token>` for the web dashboard, or a mobile deep link — the API doesn't hardcode a frontend URL scheme since more than one frontend consumes it. Default validity 7 days.\n\nA `prerequest` script generates a fresh, unique `client_phone` before every send, so re-running this never 422s with \"already taken\" — and **Login — Client (phone)**, back in the Authentication folder, reuses that same value.\n\nOn success, this request's `test` script saves `subscriber_id` and `invite_token` as collection variables — every other request in the **Clients**, **Health Profile**, and **Body Composition Readings** folders is pre-wired to use them.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sara Ahmad\",\n  \"phone\": \"{{client_phone}}\",\n  \"goal\": \"weight_loss\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Sara Ahmad\",\n  \"phone\": \"{{client_phone}}\",\n  \"goal\": \"weight_loss\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"client\": {\n    \"id\": 12,\n    \"code\": \"PT-101\",\n    \"name\": \"Sara Ahmad\",\n    \"phone\": \"0501234567\",\n    \"goal\": \"weight_loss\",\n    \"status\": \"pending\",\n    \"adherence_status\": null,\n    \"last_logged_at\": null,\n    \"created_at\": \"2026-09-06T09:54:30+00:00\"\n  },\n  \"invite_token\": \"GHCnFz3xzIQspdcvJxX8uyYJXUGpS9WYYMh1NQeh\",\n  \"invite_expires_at\": \"2026-09-13T09:54:30+00:00\"\n}"
+            },
+            {
+              "name": "422 Duplicate phone",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Sara Ahmad\",\n  \"phone\": \"{{client_phone}}\",\n  \"goal\": \"weight_loss\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The phone has already been taken.\",\n  \"errors\": {\n    \"phone\": [\n      \"The phone has already been taken.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh, unique phone every run, so Add Client never 422s with",
+                  "// 'already taken' for this nutritionist — Activate Invite and",
+                  "// Login — Client (phone) reuse exactly this value.",
+                  "pm.collectionVariables.set('client_phone', `05${Date.now()}`.slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Chains straight into every other Clients/Health Profile/Body",
+                  "// Composition request below, which all reference {{subscriber_id}}.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201) {",
+                  "    pm.collectionVariables.set('subscriber_id', body.client.id);",
+                  "    pm.collectionVariables.set('invite_token', body.invite_token);",
+                  "    pm.test('client id and invite_token saved to collection variables', function () {",
+                  "        pm.expect(body.client.id).to.be.a('number');",
+                  "        pm.expect(body.invite_token).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Clients",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "pending | active",
+                  "disabled": true
+                },
+                {
+                  "key": "adherence",
+                  "value": "on_track",
+                  "description": "on_track | needs_attention | late",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "sar",
+                  "description": "Prefix match on client name or code",
+                  "disabled": true
+                },
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "description": "1–100, default 20",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "FR-06. Filterable, searchable, paginated client list — scoped to the calling nutritionist's own clients only (`clients.manage`; enforced server-side, not just a UI filter — BR-2/NFR-12). Standard Laravel `data` / `links` / `meta` pagination envelope.\n\nAll query parameters are optional and start **disabled** in this request — enable whichever ones you want to test in Postman's Params tab.\n\n`search` matches the client's name or code as a **prefix**, e.g. `sar` matches \"Sara\", not \"Ansara\" — see the collection description for why (index-friendly prefix scan, not `LIKE '%...%'`)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "active",
+                      "description": "pending | active",
+                      "disabled": true
+                    },
+                    {
+                      "key": "adherence",
+                      "value": "on_track",
+                      "description": "on_track | needs_attention | late",
+                      "disabled": true
+                    },
+                    {
+                      "key": "search",
+                      "value": "sar",
+                      "description": "Prefix match on client name or code",
+                      "disabled": true
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "20",
+                      "description": "1–100, default 20",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 12,\n      \"code\": \"PT-101\",\n      \"name\": \"Sara Ahmad\",\n      \"phone\": \"0501234567\",\n      \"goal\": \"weight_loss\",\n      \"status\": \"pending\",\n      \"adherence_status\": null,\n      \"last_logged_at\": null,\n      \"created_at\": \"2026-09-06T09:54:30+00:00\"\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/clients?page=1\",\n    \"last\": \"{{base_url}}/clients?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/clients\",\n    \"per_page\": 20,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Client",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}"
+              ]
+            },
+            "description": "Single client, same shape as the object embedded in **Add Client**'s response.\n\nRoute-scoped to the calling nutritionist: another nutritionist's client ID returns **404**, never `403` — the response never confirms the ID even belongs to someone else."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 12,\n  \"code\": \"PT-101\",\n  \"name\": \"Sara Ahmad\",\n  \"phone\": \"0501234567\",\n  \"goal\": \"weight_loss\",\n  \"status\": \"pending\",\n  \"adherence_status\": null,\n  \"last_logged_at\": null,\n  \"created_at\": \"2026-09-06T09:54:30+00:00\"\n}"
+            },
+            {
+              "name": "404 Not found / not yours",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"No query results for model [App\\\\\\\\Models\\\\\\\\Subscriber] 999\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Activate Invite (Client)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/invites/{{invite_token}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "invites",
+                "{{invite_token}}",
+                "activate"
+              ]
+            },
+            "description": "FR-03 / BR-3. **Public — no `Authorization` header; the invite token itself is the credential.** The client sets their password and is logged in immediately (same token shape as Register/Login) — Milestones US-02's acceptance criteria: \"the client sets a password ... and gains access.\"\n\nRun **Add Client** first so `{{invite_token}}` is populated. Sets the password to `{{client_password}}` (default `ClientPass1!`, a plain collection variable — change it in one place if you want) — **Login — Client (phone)** back in Authentication expects this exact value. On success, saves `client_access_token` / `client_refresh_token` (not the shared `access_token`, so this doesn't disturb the rest of the collection) and flips the client's `status` to `active` — re-run **Get Client** afterward to see it.\n\n**422** — the token doesn't exist, is expired (default 7-day TTL), or was already used (single-use).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{client_password}}\",\n  \"password_confirmation\": \"{{client_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/invites/{{invite_token}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "invites",
+                    "{{invite_token}}",
+                    "activate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"{{client_password}}\",\n  \"password_confirmation\": \"{{client_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"user\": {\n    \"id\": 12,\n    \"name\": \"Sara Ahmad\",\n    \"email\": null,\n    \"phone\": \"0501234567\",\n    \"role\": \"client\",\n    \"nutritionist_id\": 4\n  },\n  \"access_token\": \"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0Iiwicm9sZSI6Im51dHJpdGlvbmlzdCJ9.signature\",\n  \"refresh_token\": \"WpoIngUVVz7R9w2oufb2jKrcDVTsKGJnXHt0aC1x9dLLTM2sVn3Q8kR7pYb5eFgH\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 900\n}"
+            },
+            {
+              "name": "422 Already used",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/invites/{{invite_token}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "invites",
+                    "{{invite_token}}",
+                    "activate"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"{{client_password}}\",\n  \"password_confirmation\": \"{{client_password}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"This invite link has already been used.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Kept separate from access_token/refresh_token (the nutritionist's",
+                  "// session) so activating a client mid-collection-run doesn't clobber",
+                  "// the nutritionist requests below it.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300) {",
+                  "    pm.collectionVariables.set('client_access_token', body.access_token);",
+                  "    pm.collectionVariables.set('client_refresh_token', body.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health Profile",
+      "description": "Sprint 2 (S2-09). The client's health profile — body data, conditions, medications, allergies, preferences — plus the Mifflin-St Jeor daily-calorie-needs calculation. One profile per client (1:1); PUT is an upsert.",
+      "item": [
+        {
+          "name": "Get Health Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "health-profile"
+              ]
+            },
+            "description": "FR-07/FR-09. One profile per client. Returns **204 No Content** (not an error) if the client doesn't have one on file yet — i.e. the form hasn't been filled in.\n\nRun **Add Client** first so `{{subscriber_id}}` is populated."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "health-profile"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null,\n  \"daily_calorie_needs\": 2168,\n  \"updated_at\": \"2026-09-06T09:56:45+00:00\"\n}"
+            },
+            {
+              "name": "204 No profile yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "health-profile"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "Save Health Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "health-profile"
+              ]
+            },
+            "description": "FR-09/FR-11. **Upsert** — the first call for a client creates the profile (`201`), every later call updates it (`200`); identical request/response shape either way. Every field is required on **every** save, including updates — it's edited as one whole form (PRD F-3), not partially patched.\n\n`daily_calorie_needs` is recalculated on every save from Mifflin-St Jeor × a clinical activity-tier multiplier — never a stale cached number.\n\n| Field | Notes |\n|---|---|\n| `gender` | `male` \\| `female` — Mifflin-St Jeor's binary constant |\n| `activity_level` | `sedentary` \\| `light` \\| `moderate` \\| `active` \\| `very_active` |\n| `health_conditions` / `allergies` / `food_preferences` | arrays of plain strings |\n| `medications` | array of `{ name, dose?, schedule? }` — only `name` required per entry |\n\n**422** — bad `gender`/`activity_level` enum value, `weight_kg`/`height_cm`/`age` out of range, or a malformed `medications` entry.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created (first save)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "health-profile"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null,\n  \"daily_calorie_needs\": 2168,\n  \"updated_at\": \"2026-09-06T09:56:45+00:00\"\n}"
+            },
+            {
+              "name": "200 OK (update)",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "health-profile"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null,\n  \"daily_calorie_needs\": 2168,\n  \"updated_at\": \"2026-09-06T09:56:45+00:00\"\n}"
+            },
+            {
+              "name": "422 Validation error",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/health-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "health-profile"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 82,\n  \"height_cm\": 170,\n  \"age\": 29,\n  \"gender\": \"female\",\n  \"activity_level\": \"light\",\n  \"health_conditions\": [\n    \"مقاومة أنسولين\"\n  ],\n  \"medications\": [\n    {\n      \"name\": \"Levothyroxine\",\n      \"dose\": \"50mcg\",\n      \"schedule\": \"morning, fasting\"\n    }\n  ],\n  \"allergies\": [\n    \"Peanuts\"\n  ],\n  \"food_preferences\": [\n    \"Vegetarian breakfast\"\n  ],\n  \"surgery_history\": null,\n  \"lab_notes\": null,\n  \"nutritionist_notes\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The selected gender is invalid.\",\n  \"errors\": {\n    \"gender\": [\n      \"The selected gender is invalid.\"\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Body Composition Readings",
+      "description": "Sprint 2 (S2-09). FR-10 — structured body-composition measurements (fat %, muscle mass, water %, waist) preserved as a history across visits, plotted as the weight-trend chart on the client profile screen.",
+      "item": [
+        {
+          "name": "List Body Composition Readings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/body-composition-readings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "body-composition-readings"
+              ]
+            },
+            "description": "FR-10: one row per visit — a history, never overwritten (unlike the Health Profile, which is a single current snapshot). Returns a **plain array**, newest first — not paginated, since a client's full history stays small."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/body-composition-readings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "body-composition-readings"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 9,\n    \"recorded_at\": \"2026-09-01\",\n    \"weight_kg\": 80,\n    \"body_fat_percent\": 23.5,\n    \"muscle_mass_kg\": null,\n    \"water_percent\": null,\n    \"waist_cm\": null\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Add Body Composition Reading",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/body-composition-readings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "body-composition-readings"
+              ]
+            },
+            "description": "Logs one dated reading. Only `recorded_at` and `weight_kg` are required — the rest are whatever the device/visit actually captured, so a nutritionist without a body-composition scale can still log weight alone.\n\n`recorded_at` must not be in the future.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/body-composition-readings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "body-composition-readings"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 15,\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"muscle_mass_kg\": null,\n  \"water_percent\": null,\n  \"waist_cm\": 85\n}"
+            },
+            {
+              "name": "422 Future date",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/body-composition-readings",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "body-composition-readings"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The recorded at must be a date before or equal to today.\",\n  \"errors\": {\n    \"recorded_at\": [\n      \"The recorded at must be a date before or equal to today.\"\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Food Search",
+      "description": "Sprint 2 (S2-09). Read-only search over the food database — USDA SR Legacy import (English), the admin-curated Arabic layer, and (once approved) nutritionist submissions.",
+      "item": [
+        {
+          "name": "Search Foods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/foods/search?q=hummus",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "foods",
+                "search"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "hummus",
+                  "description": "Required, 2–255 chars"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "description": "1–50, default 20",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "FR-25. Searches both `name_en` and `name_ar` as a **prefix** match (`chick` matches \"Chicken Breast\", not \"Sandwich with Chicken\"; `حمص` matches \"حمص بطحينة\") — not a substring/`LIKE '%...%'` scan, so it can use a plain index (see the collection description).\n\nOnly `status = \"approved\"` foods are returned — a nutritionist's own pending submission never appears in search results for anyone, themselves included, until an admin approves it (BR-5). There is no submission endpoint in Sprint 2.\n\nRequires only `Authorization: Bearer {{access_token}}` — any authenticated role, no specific permission (it's read-only reference data, not client data).\n\n**422** — `q` missing or shorter than 2 characters."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods/search?q=hummus",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "hummus",
+                      "description": "Required, 2–255 chars"
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "20",
+                      "description": "1–50, default 20",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 7801,\n      \"name_en\": \"Hummus\",\n      \"name_ar\": \"حمص بطحينة\",\n      \"source\": \"admin\",\n      \"calories_per_100g\": 166,\n      \"protein_g_per_100g\": 7.9,\n      \"carbs_g_per_100g\": 14.3,\n      \"fat_g_per_100g\": 9.6,\n      \"fiber_g_per_100g\": 6\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/foods/search?page=1\",\n    \"last\": \"{{base_url}}/foods/search?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/foods/search\",\n    \"per_page\": 20,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            },
+            {
+              "name": "422 Query too short",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods/search?q=hummus",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods",
+                    "search"
+                  ],
+                  "query": [
+                    {
+                      "key": "q",
+                      "value": "hummus",
+                      "description": "Required, 2–255 chars"
+                    },
+                    {
+                      "key": "per_page",
+                      "value": "20",
+                      "description": "1–50, default 20",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The q field must be at least 2 characters.\",\n  \"errors\": {\n    \"q\": [\n      \"The q field must be at least 2 characters.\"\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "description": "Sprint 2 (S2-09). The client-list overview stat cards (F-2) — one aggregate query, not six separate counts.",
+      "item": [
+        {
+          "name": "Get Dashboard Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/dashboard/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "dashboard",
+                "overview"
+              ]
+            },
+            "description": "F-2's stat-card row, for the **calling nutritionist only** (`clients.manage`).\n\n`on_track` / `needs_attention` / `late` / `not_logged_today` read low or zero until a later sprint's logging feature starts populating real adherence data from plan-vs-actual comparisons — that's an accurate reflection of the current data, not a bug or a placeholder to be replaced."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/dashboard/overview",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "dashboard",
+                    "overview"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"total\": 3,\n  \"active\": 2,\n  \"pending\": 1,\n  \"on_track\": 1,\n  \"needs_attention\": 1,\n  \"late\": 0,\n  \"not_logged_today\": 2\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
