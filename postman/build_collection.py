@@ -735,21 +735,39 @@ print("WROTE", OUT_PATH)
 # Companion environment file
 # ---------------------------------------------------------------------------
 
-environment = {
-    "id": "healthylife-ai-local",
-    "name": "HealthyLife AI — Local",
-    "values": [
-        {"key": "base_url", "value": "http://127.0.0.1:8000/api/v1", "type": "default", "enabled": True},
-        {"key": "web_app_url", "value": "http://localhost:3000", "type": "default", "enabled": True},
-    ],
-    "_postman_variable_scope": "environment",
-}
+def make_environment(env_id, name, base_url, web_app_url):
+    return {
+        "id": env_id,
+        "name": name,
+        "values": [
+            {"key": "base_url", "value": base_url, "type": "default", "enabled": True},
+            {"key": "web_app_url", "value": web_app_url, "type": "default", "enabled": True},
+        ],
+        "_postman_variable_scope": "environment",
+    }
 
-ENV_PATH = POSTMAN_DIR / "HealthyLife-AI-Local.postman_environment.json"
-with open(ENV_PATH, "w", encoding="utf-8") as f:
-    json.dump(environment, f, ensure_ascii=False, indent=2)
 
-print("WROTE", ENV_PATH)
+ENVIRONMENTS = [
+    (
+        "HealthyLife-AI-Local.postman_environment.json",
+        make_environment("healthylife-ai-local", "HealthyLife AI — Local",
+                          "http://127.0.0.1:8000/api/v1", "http://localhost:3000"),
+    ),
+    (
+        # Temporary team-share deploy (Taqat — see backend README "Deploying
+        # to Taqat"). `web_app_url` is deliberately empty: only the API is
+        # hosted there, no frontend deploy exists yet to point it at.
+        "HealthyLife-AI-Production.postman_environment.json",
+        make_environment("healthylife-ai-production", "HealthyLife AI — Production (Taqat)",
+                          "https://healthylife.apps.taqat.academy/api/v1", ""),
+    ),
+]
+
+for filename, environment in ENVIRONMENTS:
+    env_path = POSTMAN_DIR / filename
+    with open(env_path, "w", encoding="utf-8") as f:
+        json.dump(environment, f, ensure_ascii=False, indent=2)
+    print("WROTE", env_path)
 
 
 
