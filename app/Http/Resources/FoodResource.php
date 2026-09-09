@@ -21,6 +21,7 @@ class FoodResource extends JsonResource
             'name_en' => $this->name_en,
             'name_ar' => $this->name_ar,
             'source' => $this->source,
+            'status' => $this->status,
             'calories_per_100g' => (float) $this->calories_per_100g,
             'protein_g_per_100g' => (float) $this->protein_g_per_100g,
             'carbs_g_per_100g' => (float) $this->carbs_g_per_100g,

@@ -66,6 +66,11 @@ class Subscriber extends Model
         return $this->hasMany(ClientInvite::class);
     }
 
+    public function mealPlans(): HasMany
+    {
+        return $this->hasMany(MealPlan::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

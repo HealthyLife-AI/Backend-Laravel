@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "HealthyLife AI — API",
-    "description": "# HealthyLife AI — API\n\nAI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 2 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.\n\n## Getting started\n\n1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).\n2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.\n3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.\n4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition request below it references.\n5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → dashboard reflects the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email or phone number, so a fresh run never collides with \"already taken\". The one exception: **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward. Noted on that request too.\n\n## Authentication model\n\nEvery endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, and `POST /invites/{token}/activate` requires `Authorization: Bearer <access_token>` — set once at the collection level, individual requests inherit it. The four exceptions are marked **No Auth** on the request itself.\n\n**Two layers**, matching the PRD's own security model — permission alone is never treated as security:\n- **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.\n- **Data isolation** — every Clients/Health Profile/Body Composition query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client ID returns `404`, never `403` — the response never confirms the ID belongs to someone else.\n\n## Common response shapes\n\n**User object** (`register` / `login` / `activate` / `GET /auth/me`):\n```json\n{ \"id\": 1, \"name\": \"Demo Nutritionist\", \"email\": \"nutritionist@example.com\", \"phone\": null, \"role\": \"nutritionist\", \"nutritionist_id\": null }\n```\n`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.\n\n**Token pair** (`register` / `login` / `refresh` / `activate`):\n```json\n{ \"access_token\": \"eyJ...\", \"refresh_token\": \"WpoI...\", \"token_type\": \"Bearer\", \"expires_in\": 900 }\n```\n- `access_token` — short-lived JWT (15 min default). Send as `Authorization: Bearer <access_token>`.\n- `refresh_token` — opaque, **single-use, rotates on every `/auth/refresh` call**. Reusing an already-rotated or already-logged-out one revokes *every* session the user holds — deliberate theft detection.\n\n**Validation error** (any endpoint, `422`):\n```json\n{ \"message\": \"The email has already been taken. (and 1 more error)\", \"errors\": { \"email\": [\"...\"] } }\n```\n\n**Rate limiting** (`429`): register/login 10 req/min, refresh 20 req/min, per IP — response includes a `Retry-After` header.\n\n## Folders\n\n| Folder | Covers |\n|---|---|\n| **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |\n| **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |\n| **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |\n| **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |\n| **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |\n| **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |\n\n---\nGenerated for HealthyLife AI · Sprint 1–2 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.\n",
+    "description": "# HealthyLife AI — API\n\nAI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 3 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.\n\n## Getting started\n\n1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).\n2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.\n3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.\n4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition / Meal Plans request below it references.\n5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → build a meal plan with an alternative → activate it → generate + approve an AI draft → dashboard and the client's own `/me/meal-plan` both reflect the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email, phone number, or food id, so a fresh run never collides with \"already taken\" or 404s on a food that doesn't exist on this particular database. Two exceptions, both documented on the request itself:\n   - **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward.\n   - **Food Submission & Approval**'s three admin-only requests (`List Pending Foods`, `Approve Food`, `Reject Food`) need `{{admin_access_token}}`, which starts **empty** — there's no self-serve admin registration (PRD §2.1: admin is a system operator). See **List Pending Foods**'s description for the one-time local setup.\n\n## Authentication model\n\nEvery endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, and `POST /invites/{token}/activate` requires `Authorization: Bearer <access_token>` — set once at the collection level, individual requests inherit it. The four exceptions are marked **No Auth** on the request itself.\n\n**Two layers**, matching the PRD's own security model — permission alone is never treated as security:\n- **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.\n- **Data isolation** — every Clients/Health Profile/Body Composition/Meal Plans query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client or plan ID returns `404`, never `403` — the response never confirms the ID belongs to someone else. The one exception is **Client's Own Plan**, which has no ID to isolate at all (see that folder).\n\n## Common response shapes\n\n**User object** (`register` / `login` / `activate` / `GET /auth/me`):\n```json\n{ \"id\": 1, \"name\": \"Demo Nutritionist\", \"email\": \"nutritionist@example.com\", \"phone\": null, \"role\": \"nutritionist\", \"nutritionist_id\": null }\n```\n`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.\n\n**Token pair** (`register` / `login` / `refresh` / `activate`):\n```json\n{ \"access_token\": \"eyJ...\", \"refresh_token\": \"WpoI...\", \"token_type\": \"Bearer\", \"expires_in\": 900 }\n```\n- `access_token` — short-lived JWT (15 min default). Send as `Authorization: Bearer <access_token>`.\n- `refresh_token` — opaque, **single-use, rotates on every `/auth/refresh` call**. Reusing an already-rotated or already-logged-out one revokes *every* session the user holds — deliberate theft detection.\n\n**Validation error** (any endpoint, `422`):\n```json\n{ \"message\": \"The email has already been taken. (and 1 more error)\", \"errors\": { \"email\": [\"...\"] } }\n```\n\n**Rate limiting** (`429`): register/login 10 req/min, refresh 20 req/min, per IP — response includes a `Retry-After` header.\n\n## Folders\n\n| Folder | Covers |\n|---|---|\n| **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |\n| **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |\n| **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |\n| **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |\n| **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |\n| **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |\n| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |\n| **Meal Plan Templates** | Save a plan as a template; apply one to a client — Sprint 3, FR-15 |\n| **Food Submission & Approval** | Nutritionist suggests a food; admin approves/rejects — Sprint 3, FR-24/BR-5 |\n| **Client's Own Plan** | The client role's own active plan, no ID to isolate — Sprint 3, FR-16 |\n\n---\nGenerated for HealthyLife AI · Sprint 1–3 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "healthylife-ai"
   },
@@ -88,6 +88,42 @@
       "value": "",
       "type": "string",
       "description": "Most recently created client's one-time invite token. Auto-set by Add Client; consumed by Activate Invite."
+    },
+    {
+      "key": "food_id",
+      "value": "",
+      "type": "string",
+      "description": "An approved food's id. Auto-set by Food Search → Search Foods (its first result) — used by every Meal Plans item."
+    },
+    {
+      "key": "meal_plan_id",
+      "value": "",
+      "type": "string",
+      "description": "Most recently hand-built plan's id. Auto-set by Meal Plans → Create Meal Plan."
+    },
+    {
+      "key": "ai_draft_plan_id",
+      "value": "",
+      "type": "string",
+      "description": "Most recently generated AI draft's id. Auto-set by Meal Plans → Generate AI Draft — kept separate from meal_plan_id so both plans stay independently addressable."
+    },
+    {
+      "key": "meal_plan_template_id",
+      "value": "",
+      "type": "string",
+      "description": "Most recently saved template's id. Auto-set by Meal Plan Templates → Save As Template."
+    },
+    {
+      "key": "pending_food_id",
+      "value": "",
+      "type": "string",
+      "description": "Most recently submitted food's id. Auto-set by Food Submission & Approval → Submit Food."
+    },
+    {
+      "key": "admin_access_token",
+      "value": "",
+      "type": "string",
+      "description": "An admin-role JWT. Starts empty — there's no self-serve admin registration; see Food Submission & Approval → List Pending Foods for one-time local setup."
     }
   ],
   "item": [
@@ -1972,7 +2008,7 @@
                 }
               ]
             },
-            "description": "FR-25. Searches both `name_en` and `name_ar` as a **prefix** match (`chick` matches \"Chicken Breast\", not \"Sandwich with Chicken\"; `حمص` matches \"حمص بطحينة\") — not a substring/`LIKE '%...%'` scan, so it can use a plain index (see the collection description).\n\nOnly `status = \"approved\"` foods are returned — a nutritionist's own pending submission never appears in search results for anyone, themselves included, until an admin approves it (BR-5). There is no submission endpoint in Sprint 2.\n\nRequires only `Authorization: Bearer {{access_token}}` — any authenticated role, no specific permission (it's read-only reference data, not client data).\n\n**422** — `q` missing or shorter than 2 characters."
+            "description": "FR-25. Searches both `name_en` and `name_ar` as a **prefix** match (`chick` matches \"Chicken Breast\", not \"Sandwich with Chicken\"; `حمص` matches \"حمص بطحينة\") — not a substring/`LIKE '%...%'` scan, so it can use a plain index (see the collection description).\n\nOnly `status = \"approved\"` foods are returned — a nutritionist's own pending submission never appears in search results for anyone, themselves included, until an admin approves it (BR-5). See **Food Submission & Approval** (Sprint 3) for that endpoint.\n\nThis request's `test` script saves the first result's `id` as `{{food_id}}` — every **Meal Plans** request below builds its items around a real, currently-approved food rather than a hardcoded id that may not exist on whatever database this runs against.\n\nRequires only `Authorization: Bearer {{access_token}}` — any authenticated role, no specific permission (it's read-only reference data, not client data).\n\n**422** — `q` missing or shorter than 2 characters."
           },
           "response": [
             {
@@ -2023,7 +2059,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"data\": [\n    {\n      \"id\": 7801,\n      \"name_en\": \"Hummus\",\n      \"name_ar\": \"حمص بطحينة\",\n      \"source\": \"admin\",\n      \"calories_per_100g\": 166,\n      \"protein_g_per_100g\": 7.9,\n      \"carbs_g_per_100g\": 14.3,\n      \"fat_g_per_100g\": 9.6,\n      \"fiber_g_per_100g\": 6\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/foods/search?page=1\",\n    \"last\": \"{{base_url}}/foods/search?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/foods/search\",\n    \"per_page\": 20,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 7801,\n      \"name_en\": \"Hummus\",\n      \"name_ar\": \"حمص بطحينة\",\n      \"source\": \"admin\",\n      \"status\": \"approved\",\n      \"calories_per_100g\": 166,\n      \"protein_g_per_100g\": 7.9,\n      \"carbs_g_per_100g\": 14.3,\n      \"fat_g_per_100g\": 9.6,\n      \"fiber_g_per_100g\": 6\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/foods/search?page=1\",\n    \"last\": \"{{base_url}}/foods/search?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/foods/search\",\n    \"per_page\": 20,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
             },
             {
               "name": "422 Query too short",
@@ -2074,6 +2110,26 @@
               ],
               "cookie": [],
               "body": "{\n  \"message\": \"The q field must be at least 2 characters.\",\n  \"errors\": {\n    \"q\": [\n      \"The q field must be at least 2 characters.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Feeds every Meal Plans request below, which builds its items",
+                  "// around a real, currently-approved food id rather than a hardcoded",
+                  "// number that may not exist on whatever database this runs against.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.data && body.data.length > 0) {",
+                  "    pm.collectionVariables.set('food_id', body.data[0].id);",
+                  "    pm.test('food_id saved to collection variables', function () {",
+                  "        pm.expect(body.data[0].id).to.be.a('number');",
+                  "    });",
+                  "}"
+                ]
+              }
             }
           ]
         }
@@ -2146,6 +2202,1326 @@
               ],
               "cookie": [],
               "body": "{\n  \"total\": 3,\n  \"active\": 2,\n  \"pending\": 1,\n  \"on_track\": 1,\n  \"needs_attention\": 1,\n  \"late\": 0,\n  \"not_logged_today\": 2\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meal Plans",
+      "description": "Sprint 3 (S3-01/S3-02/S3-04/S3-07). Building a client's plan with alternatives (BR-4), live per-item/meal/day macros (FR-14), and the draft -> active -> archived lifecycle that keeps BR-6/BR-10 (\"an AI draft is never auto-sent to a client\") true structurally, not just by convention.",
+      "item": [
+        {
+          "name": "Create Meal Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans"
+              ]
+            },
+            "description": "S3-01/S3-02 / FR-12–FR-14, BR-4. Builds a plan's meals/items in one call — a plan is authored as a whole, not item-by-item. Always created as `status: \"draft\"` (BR-6/BR-10) regardless of what's in the body; only **Activate Meal Plan** below ever moves it to `active`.\n\n**BR-4 alternatives**: nested under the planned item they belong to (`items[].alternatives`), not a flat list with a `parent_item_id` you supply yourself — there's no real item id to point at yet when you're creating one from scratch. Uses `{{food_id}}` (saved by **Food Search → Search Foods**, which must run first) for both the planned item and its alternative — a real, currently-approved food either way, not two arbitrary different ones, so this collection stays runnable regardless of how many foods exist on whatever database it's pointed at.\n\n`food_id` must resolve to an **approved** food — a pending or rejected one is rejected with `422`, same as a nonexistent id.\n\nSaves the created plan's `id` as `{{meal_plan_id}}` — every other request in this folder below uses it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 8,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            },
+            {
+              "name": "422 Food not approved",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The selected meals.0.items.0.food_id is invalid.\",\n  \"errors\": {\n    \"meals.0.items.0.food_id\": [\n      \"The selected meals.0.items.0.food_id is invalid.\"\n    ]\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.id) {",
+                  "    pm.collectionVariables.set('meal_plan_id', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Meal Plans",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans"
+              ]
+            },
+            "description": "Every plan (any status — draft/active/archived) for this client, newest first. **404** if `{{subscriber_id}}` isn't the calling nutritionist's own client — same isolation rule as every other Clients/* endpoint."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 8,\n    \"subscriber_id\": 3,\n    \"is_template\": false,\n    \"is_ai_draft\": false,\n    \"start_date\": \"2026-09-15\",\n    \"status\": \"draft\",\n    \"meals\": [\n      {\n        \"id\": 21,\n        \"name\": \"breakfast\",\n        \"day_index\": null,\n        \"macros\": {\n          \"calories\": 400.0,\n          \"protein_g\": 50.0,\n          \"carbs_g\": 0.0,\n          \"fat_g\": 16.0\n        },\n        \"items\": [\n          {\n            \"id\": 55,\n            \"food\": {\n              \"id\": 12,\n              \"name_en\": \"Grilled Chicken\",\n              \"name_ar\": null,\n              \"source\": \"admin\",\n              \"status\": \"approved\",\n              \"calories_per_100g\": 200,\n              \"protein_g_per_100g\": 25,\n              \"carbs_g_per_100g\": 0,\n              \"fat_g_per_100g\": 8,\n              \"fiber_g_per_100g\": 0\n            },\n            \"quantity_grams\": 200.0,\n            \"macros\": {\n              \"calories\": 400.0,\n              \"protein_g\": 50.0,\n              \"carbs_g\": 0.0,\n              \"fat_g\": 16.0\n            },\n            \"alternatives\": [\n              {\n                \"id\": 56,\n                \"food\": {\n                  \"id\": 45,\n                  \"name_en\": \"Grilled Fish Fillet\",\n                  \"name_ar\": null,\n                  \"source\": \"admin\",\n                  \"status\": \"approved\",\n                  \"calories_per_100g\": 150,\n                  \"protein_g_per_100g\": 22,\n                  \"carbs_g_per_100g\": 0,\n                  \"fat_g_per_100g\": 5,\n                  \"fiber_g_per_100g\": 0\n                },\n                \"quantity_grams\": 150.0,\n                \"macros\": {\n                  \"calories\": 225.0,\n                  \"protein_g\": 33.0,\n                  \"carbs_g\": 0.0,\n                  \"fat_g\": 7.5\n                },\n                \"alternatives\": []\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"summary_by_day\": {\n      \"0\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      }\n    },\n    \"created_at\": \"2026-09-09T10:00:00+00:00\",\n    \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get Meal Plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "{{meal_plan_id}}"
+              ]
+            },
+            "description": "Single plan, full detail — same shape Create/List return. **404** if `{{meal_plan_id}}` doesn't belong to `{{subscriber_id}}`, or `{{subscriber_id}}` isn't the caller's own client."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "{{meal_plan_id}}"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 8,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Meal Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "{{meal_plan_id}}"
+              ]
+            },
+            "description": "Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate \"edit a draft\" endpoint.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "{{meal_plan_id}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 8,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Activate Meal Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "{{meal_plan_id}}",
+                "activate"
+              ]
+            },
+            "description": "BR-6/BR-10: the **only** way a plan (hand-built or AI draft) ever becomes what the client sees. Archives whatever plan was previously `active` for this client — a client has exactly one active plan at a time. No request body."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "{{meal_plan_id}}",
+                    "activate"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 8,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"active\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Generate AI Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/ai-draft",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "ai-draft"
+              ]
+            },
+            "description": "S3-06/S3-07 / F-5 (PRD, P1) — \"Suggest a starting plan.\" No request body; the client's `HealthProfile` (calorie target, allergies — saved earlier by **Health Profile → Save Health Profile**, which must run first) drives it entirely.\n\nRule-based, not a real LLM call — no LLM provider is wired into this backend, and F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note. Splits the daily calorie target across breakfast/snack/lunch/dinner by a standard clinical rule of thumb, picks the best calorie-matching **approved** food per slot plus up to two alternatives, and excludes any food whose name contains one of the client's allergy terms (case-insensitive substring match — a real safety net, explicitly not a certified allergen system).\n\nAlways `is_ai_draft: true`, `status: \"draft\"` — saved separately as `{{ai_draft_plan_id}}`, not overwriting `{{meal_plan_id}}` from **Create Meal Plan** above, so both plans stay independently addressable. **Activate AI Draft** below is how a nutritionist approves it (BR-6/BR-10) — the exact same action as approving any hand-built plan, not a special case.\n\n**422** — the client has no `HealthProfile` yet, or every approved food conflicts with a listed allergy."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/ai-draft",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "ai-draft"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 31,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": true,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            },
+            {
+              "name": "422 No health profile",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/ai-draft",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "ai-draft"
+                  ]
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"This client needs a health profile (calorie needs, allergies) before an AI draft can be generated.\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.id) {",
+                  "    pm.collectionVariables.set('ai_draft_plan_id', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate AI Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{ai_draft_plan_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "{{ai_draft_plan_id}}",
+                "activate"
+              ]
+            },
+            "description": "Same endpoint as **Activate Meal Plan**, called on the AI draft instead — approving it (BR-6/BR-10). Archives the plan activated earlier in this folder; `is_ai_draft` flips to `false` on activation (an activated draft has, by definition, now been reviewed). No request body.\n\nRun **Client's Own Plan → Get My Plan** afterward to see this exact plan from the client's side."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{ai_draft_plan_id}}/activate",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "{{ai_draft_plan_id}}",
+                    "activate"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 31,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"active\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meal Plan Templates",
+      "description": "Sprint 3 (S3-03 / FR-15). Save a plan as a reusable template, and apply one to a (possibly different) client as a new draft.",
+      "item": [
+        {
+          "name": "Save As Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/save-as-template",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "meal-plans",
+                "{{meal_plan_id}}",
+                "save-as-template"
+              ]
+            },
+            "description": "S3-03 / FR-15. Clones `{{meal_plan_id}}`'s meals/items into a new template the nutritionist owns directly (`is_template: true`, no `subscriber_id`) — a **snapshot**: editing the original client's plan afterward never changes the template. No request body.\n\nSaves the new template's `id` as `{{meal_plan_template_id}}`."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/save-as-template",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "meal-plans",
+                    "{{meal_plan_id}}",
+                    "save-as-template"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 30,\n  \"subscriber_id\": null,\n  \"is_template\": true,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.id) {",
+                  "    pm.collectionVariables.set('meal_plan_template_id', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/meal-plan-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "meal-plan-templates"
+              ]
+            },
+            "description": "This nutritionist's own templates only — never another nutritionist's."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/meal-plan-templates",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "meal-plan-templates"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 30,\n    \"subscriber_id\": null,\n    \"is_template\": true,\n    \"is_ai_draft\": false,\n    \"start_date\": \"2026-09-15\",\n    \"status\": \"draft\",\n    \"meals\": [\n      {\n        \"id\": 21,\n        \"name\": \"breakfast\",\n        \"day_index\": null,\n        \"macros\": {\n          \"calories\": 400.0,\n          \"protein_g\": 50.0,\n          \"carbs_g\": 0.0,\n          \"fat_g\": 16.0\n        },\n        \"items\": [\n          {\n            \"id\": 55,\n            \"food\": {\n              \"id\": 12,\n              \"name_en\": \"Grilled Chicken\",\n              \"name_ar\": null,\n              \"source\": \"admin\",\n              \"status\": \"approved\",\n              \"calories_per_100g\": 200,\n              \"protein_g_per_100g\": 25,\n              \"carbs_g_per_100g\": 0,\n              \"fat_g_per_100g\": 8,\n              \"fiber_g_per_100g\": 0\n            },\n            \"quantity_grams\": 200.0,\n            \"macros\": {\n              \"calories\": 400.0,\n              \"protein_g\": 50.0,\n              \"carbs_g\": 0.0,\n              \"fat_g\": 16.0\n            },\n            \"alternatives\": [\n              {\n                \"id\": 56,\n                \"food\": {\n                  \"id\": 45,\n                  \"name_en\": \"Grilled Fish Fillet\",\n                  \"name_ar\": null,\n                  \"source\": \"admin\",\n                  \"status\": \"approved\",\n                  \"calories_per_100g\": 150,\n                  \"protein_g_per_100g\": 22,\n                  \"carbs_g_per_100g\": 0,\n                  \"fat_g_per_100g\": 5,\n                  \"fiber_g_per_100g\": 0\n                },\n                \"quantity_grams\": 150.0,\n                \"macros\": {\n                  \"calories\": 225.0,\n                  \"protein_g\": 33.0,\n                  \"carbs_g\": 0.0,\n                  \"fat_g\": 7.5\n                },\n                \"alternatives\": []\n              }\n            ]\n          }\n        ]\n      }\n    ],\n    \"summary_by_day\": {\n      \"0\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      }\n    },\n    \"created_at\": \"2026-09-09T10:00:00+00:00\",\n    \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Apply Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/meal-plan-templates/{{meal_plan_template_id}}/apply/{{subscriber_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "meal-plan-templates",
+                "{{meal_plan_template_id}}",
+                "apply",
+                "{{subscriber_id}}"
+              ]
+            },
+            "description": "Clones the template's meals/items into a brand-new `draft` plan for `{{subscriber_id}}` — still needs its own **Activate Meal Plan** call, exactly like any other draft (BR-6/BR-10 makes no exception for \"came from a template\"). No request body.\n\n**404** if `{{meal_plan_template_id}}` isn't this nutritionist's own template, or `{{subscriber_id}}` isn't their own client."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/meal-plan-templates/{{meal_plan_template_id}}/apply/{{subscriber_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "meal-plan-templates",
+                    "{{meal_plan_template_id}}",
+                    "apply",
+                    "{{subscriber_id}}"
+                  ]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 32,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Food Submission & Approval",
+      "description": "Sprint 3 (S3-05 / FR-24, BR-5). A nutritionist suggests a local food; an admin reviews, approves, or rejects it. The three admin-only requests here override the collection's default (nutritionist) Bearer auth with {{admin_access_token}} — see List Pending Foods for how to get one, since there's no self-serve admin registration.",
+      "item": [
+        {
+          "name": "Submit Food",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/foods",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "foods"
+              ]
+            },
+            "description": "S3-05 / FR-24, BR-5. `permission:foods.suggest` (nutritionist). Enters `status: \"pending\"` — invisible to **Food Search** (yours included) until an admin approves it below.\n\nAt least one of `name_en` / `name_ar` is required, not both. `source`/`status`/`submitted_by` aren't request fields — the server sets `source: \"nutritionist\"`, `status: \"pending\"`, and attributes the submission to the caller.\n\nSaves the created food's `id` as `{{pending_food_id}}` — **List Pending Foods**, **Approve Food**, and **Reject Food** below all use it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name_en\": \"Kabsa\",\n  \"name_ar\": \"كبسة\",\n  \"calories_per_100g\": 180,\n  \"protein_g_per_100g\": 8,\n  \"carbs_g_per_100g\": 22,\n  \"fat_g_per_100g\": 6,\n  \"fiber_g_per_100g\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name_en\": \"Kabsa\",\n  \"name_ar\": \"كبسة\",\n  \"calories_per_100g\": 180,\n  \"protein_g_per_100g\": 8,\n  \"carbs_g_per_100g\": 22,\n  \"fat_g_per_100g\": 6,\n  \"fiber_g_per_100g\": 1.5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"name_en\": \"Kabsa\",\n  \"name_ar\": \"كبسة\",\n  \"calories_per_100g\": 180,\n  \"protein_g_per_100g\": 8,\n  \"carbs_g_per_100g\": 22,\n  \"fat_g_per_100g\": 6,\n  \"fiber_g_per_100g\": 1.5,\n  \"id\": 9001,\n  \"source\": \"nutritionist\",\n  \"status\": \"pending\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code === 201 && body.id) {",
+                  "    pm.collectionVariables.set('pending_food_id', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Pending Foods",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/foods/pending",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "foods",
+                "pending"
+              ]
+            },
+            "description": "`permission:foods.approve` (**admin** — not the collection's default nutritionist token; see the Authorization tab on this request, set to `{{admin_access_token}}`). The review queue — without this endpoint, nothing else surfaces a pending submission to act on.\n\n⚠️ **No self-serve admin account exists** (admin is a system operator per PRD §2.1, not something anyone registers into) — `{{admin_access_token}}` starts empty and this request (and the two below it) will `401`/`403` until you set it. Create one locally once and set the variable yourself:\n```\nphp artisan tinker --execute=\"$u = App\\Models\\User::factory()->create(['email' => 'admin@example.com', 'password' => 'password']); $u->assignRole('admin');\"\n```\nthen run **Authentication → Login — Nutritionist (email)** with that email/password in the Body tab temporarily (or call `/auth/login` directly) and paste the resulting `access_token` into `{{admin_access_token}}`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods/pending",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods",
+                    "pending"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"name_en\": \"Kabsa\",\n      \"name_ar\": \"كبسة\",\n      \"calories_per_100g\": 180,\n      \"protein_g_per_100g\": 8,\n      \"carbs_g_per_100g\": 22,\n      \"fat_g_per_100g\": 6,\n      \"fiber_g_per_100g\": 1.5,\n      \"id\": 9001,\n      \"source\": \"nutritionist\",\n      \"status\": \"pending\"\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/foods/pending?page=1\",\n    \"last\": \"{{base_url}}/foods/pending?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/foods/pending\",\n    \"per_page\": 20,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Approve Food",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/foods/{{pending_food_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "foods",
+                "{{pending_food_id}}",
+                "approve"
+              ]
+            },
+            "description": "`permission:foods.approve` (**admin** — same `{{admin_access_token}}` note as **List Pending Foods** above). No request body. **403** for a nutritionist, including on their own submission — approval is admin-only, never self-service.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods/{{pending_food_id}}/approve",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods",
+                    "{{pending_food_id}}",
+                    "approve"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"name_en\": \"Kabsa\",\n  \"name_ar\": \"كبسة\",\n  \"calories_per_100g\": 180,\n  \"protein_g_per_100g\": 8,\n  \"carbs_g_per_100g\": 22,\n  \"fat_g_per_100g\": 6,\n  \"fiber_g_per_100g\": 1.5,\n  \"id\": 9001,\n  \"source\": \"nutritionist\",\n  \"status\": \"approved\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reject Food",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/foods/{{pending_food_id}}/reject",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "foods",
+                "{{pending_food_id}}",
+                "reject"
+              ]
+            },
+            "description": "Same role/permission as **Approve Food**. No request body.\n\n⚠️ Runs against the **same** `{{pending_food_id}}` as **Approve Food** just above it in a top-to-bottom pass — so by the time this fires, that food is already `approved`, and this flips it straight to `rejected`. That's harmless (the endpoint doesn't forbid rejecting an already-approved food) and still proves the endpoint works; it's just not two independent submissions. Run **Submit Food** again first if you want to reject a fresh one instead.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/foods/{{pending_food_id}}/reject",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "foods",
+                    "{{pending_food_id}}",
+                    "reject"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"name_en\": \"Kabsa\",\n  \"name_ar\": \"كبسة\",\n  \"calories_per_100g\": 180,\n  \"protein_g_per_100g\": 8,\n  \"carbs_g_per_100g\": 22,\n  \"fat_g_per_100g\": 6,\n  \"fiber_g_per_100g\": 1.5,\n  \"id\": 9001,\n  \"source\": \"nutritionist\",\n  \"status\": \"rejected\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Client's Own Plan",
+      "description": "Sprint 3 (S3-04 / FR-16). What the client (not the nutritionist) sees — their own current active plan, resolved from their own JWT with no id to isolate.",
+      "item": [
+        {
+          "name": "Get My Plan",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/meal-plan",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "meal-plan"
+              ]
+            },
+            "description": "S3-04 / FR-16. `permission:plans.view.own` (**client** role — not the collection's default nutritionist token; this request's Authorization tab is set to `{{client_access_token}}`, saved earlier by **Clients → Activate Invite (Client)**).\n\nNo route parameter — the caller's own `Subscriber` row is resolved from their JWT, not supplied by them, so there's no client-supplied id for one client to point at another client's plan with.\n\nReturns this client's current **active** plan only (never a draft or an unapproved AI draft — BR-6/BR-10), same shape as **Meal Plans**. **204 No Content** if there is no active plan yet. A nutritionist or admin token gets **403** here — `plans.view.own` is a client-role permission only (PRD §2.2).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-plan",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-plan"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 31,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"active\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            },
+            {
+              "name": "204 No active plan yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-plan",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-plan"
+                  ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
             }
           ]
         }

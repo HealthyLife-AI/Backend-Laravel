@@ -37,4 +37,25 @@ class SubscriberFactory extends Factory
     {
         return $this->state(['status' => 'active']);
     }
+
+    /**
+     * Ties `user_id` to a real client of `$nutritionist`, not just
+     * `nutritionist_id` to `$nutritionist->id`. Overriding `nutritionist_id`
+     * alone via a plain `->create(['nutritionist_id' => ...])` leaves
+     * `user_id` pointing at `definition()`'s own internally-created,
+     * unrelated client — harmless for a test that only ever authenticates
+     * as the nutritionist, but silently wrong for one that needs to
+     * authenticate as `$subscriber->user` (a client-facing endpoint,
+     * Sprint 3+): `NutritionistScope` then filters that client's own
+     * subscriber row out from under them, since their real
+     * `nutritionist_id` doesn't match the override.
+     */
+    public function forNutritionist(User $nutritionist): static
+    {
+        return $this->state(function () use ($nutritionist) {
+            $client = User::factory()->client($nutritionist)->create();
+
+            return ['nutritionist_id' => $nutritionist->id, 'user_id' => $client->id];
+        });
+    }
 }

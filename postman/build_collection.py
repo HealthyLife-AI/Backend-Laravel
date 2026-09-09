@@ -157,6 +157,47 @@ GENERATE_CLIENT_PHONE = [
     "pm.collectionVariables.set('client_phone', `05${Date.now()}`.slice(0, 10));",
 ]
 
+SAVE_FOOD_ID_FROM_SEARCH = [
+    "// Feeds every Meal Plans request below, which builds its items",
+    "// around a real, currently-approved food id rather than a hardcoded",
+    "// number that may not exist on whatever database this runs against.",
+    "const body = pm.response.json();",
+    "if (pm.response.code < 300 && body.data && body.data.length > 0) {",
+    "    pm.collectionVariables.set('food_id', body.data[0].id);",
+    "    pm.test('food_id saved to collection variables', function () {",
+    "        pm.expect(body.data[0].id).to.be.a('number');",
+    "    });",
+    "}",
+]
+
+SAVE_MEAL_PLAN_ID = [
+    "const body = pm.response.json();",
+    "if (pm.response.code < 300 && body.id) {",
+    "    pm.collectionVariables.set('meal_plan_id', body.id);",
+    "}",
+]
+
+SAVE_AI_DRAFT_PLAN_ID = [
+    "const body = pm.response.json();",
+    "if (pm.response.code < 300 && body.id) {",
+    "    pm.collectionVariables.set('ai_draft_plan_id', body.id);",
+    "}",
+]
+
+SAVE_TEMPLATE_ID = [
+    "const body = pm.response.json();",
+    "if (pm.response.code < 300 && body.id) {",
+    "    pm.collectionVariables.set('meal_plan_template_id', body.id);",
+    "}",
+]
+
+SAVE_PENDING_FOOD_ID = [
+    "const body = pm.response.json();",
+    "if (pm.response.code === 201 && body.id) {",
+    "    pm.collectionVariables.set('pending_food_id', body.id);",
+    "}",
+]
+
 STATUS_CODE_ASSERTION = lambda code: [
     f"pm.test('Status code is {code}', function () {{",
     f"    pm.response.to.have.status({code});",
@@ -209,10 +250,78 @@ BODY_COMPOSITION_READING = {
 }
 
 FOOD_ITEM = {
-    "id": 7801, "name_en": "Hummus", "name_ar": "حمص بطحينة", "source": "admin",
+    "id": 7801, "name_en": "Hummus", "name_ar": "حمص بطحينة", "source": "admin", "status": "approved",
     "calories_per_100g": 166, "protein_g_per_100g": 7.9, "carbs_g_per_100g": 14.3,
     "fat_g_per_100g": 9.6, "fiber_g_per_100g": 6,
 }
+
+# ---- Sprint 3 (S3-08) ------------------------------------------------------
+
+FOOD_MAIN = {
+    "id": 12, "name_en": "Grilled Chicken", "name_ar": None, "source": "admin", "status": "approved",
+    "calories_per_100g": 200, "protein_g_per_100g": 25, "carbs_g_per_100g": 0,
+    "fat_g_per_100g": 8, "fiber_g_per_100g": 0,
+}
+
+FOOD_ALT = {
+    "id": 45, "name_en": "Grilled Fish Fillet", "name_ar": None, "source": "admin", "status": "approved",
+    "calories_per_100g": 150, "protein_g_per_100g": 22, "carbs_g_per_100g": 0,
+    "fat_g_per_100g": 5, "fiber_g_per_100g": 0,
+}
+
+MEAL_ITEM_ALT_OBJECT = {
+    "id": 56, "food": FOOD_ALT, "quantity_grams": 150.0,
+    "macros": {"calories": 225.0, "protein_g": 33.0, "carbs_g": 0.0, "fat_g": 7.5},
+    "alternatives": [],
+}
+
+MEAL_ITEM_OBJECT = {
+    "id": 55, "food": FOOD_MAIN, "quantity_grams": 200.0,
+    "macros": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0},
+    "alternatives": [MEAL_ITEM_ALT_OBJECT],
+}
+
+MEAL_OBJECT = {
+    "id": 21, "name": "breakfast", "day_index": None,
+    "macros": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0},
+    "items": [MEAL_ITEM_OBJECT],
+}
+
+MEAL_PLAN_OBJECT = {
+    "id": 8, "subscriber_id": 3, "is_template": False, "is_ai_draft": False,
+    "start_date": "2026-09-15", "status": "draft", "meals": [MEAL_OBJECT],
+    "summary_by_day": {"0": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0}},
+    "created_at": "2026-09-09T10:00:00+00:00", "updated_at": "2026-09-09T10:00:00+00:00",
+}
+
+MEAL_PLAN_TEMPLATE_OBJECT = {**MEAL_PLAN_OBJECT, "id": 30, "subscriber_id": None, "is_template": True}
+
+MEAL_PLAN_AI_DRAFT_OBJECT = {**MEAL_PLAN_OBJECT, "id": 31, "is_ai_draft": True}
+
+MEAL_PLAN_REQUEST_BODY = {
+    "start_date": "2026-09-15",
+    "meals": [
+        {
+            "name": "breakfast",
+            "day_index": None,
+            "items": [{
+                "food_id": "{{food_id}}",
+                "quantity_grams": 200,
+                "alternatives": [
+                    {"food_id": "{{food_id}}", "quantity_grams": 150},
+                ],
+            }],
+        },
+    ],
+}
+
+FOOD_SUBMISSION_REQUEST = {
+    "name_en": "Kabsa", "name_ar": "كبسة",
+    "calories_per_100g": 180, "protein_g_per_100g": 8,
+    "carbs_g_per_100g": 22, "fat_g_per_100g": 6, "fiber_g_per_100g": 1.5,
+}
+
+FOOD_SUBMISSION_RESPONSE = {**FOOD_SUBMISSION_REQUEST, "id": 9001, "source": "nutritionist", "status": "pending"}
 
 DASHBOARD_OVERVIEW = {
     "total": 3, "active": 2, "pending": 1,
@@ -564,7 +673,9 @@ search_foods_req = make_request(
     path="foods/search",
     description="""FR-25. Searches both `name_en` and `name_ar` as a **prefix** match (`chick` matches "Chicken Breast", not "Sandwich with Chicken"; `حمص` matches "حمص بطحينة") — not a substring/`LIKE '%...%'` scan, so it can use a plain index (see the collection description).
 
-Only `status = "approved"` foods are returned — a nutritionist's own pending submission never appears in search results for anyone, themselves included, until an admin approves it (BR-5). There is no submission endpoint in Sprint 2.
+Only `status = "approved"` foods are returned — a nutritionist's own pending submission never appears in search results for anyone, themselves included, until an admin approves it (BR-5). See **Food Submission & Approval** (Sprint 3) for that endpoint.
+
+This request's `test` script saves the first result's `id` as `{{food_id}}` — every **Meal Plans** request below builds its items around a real, currently-approved food rather than a hardcoded id that may not exist on whatever database this runs against.
 
 Requires only `Authorization: Bearer {{access_token}}` — any authenticated role, no specific permission (it's read-only reference data, not client data).
 
@@ -573,6 +684,7 @@ Requires only `Authorization: Bearer {{access_token}}` — any authenticated rol
         ("q", "hummus", "Required, 2–255 chars", False),
         ("per_page", "20", "1–50, default 20", True),
     ],
+    tests=SAVE_FOOD_ID_FROM_SEARCH,
     examples=[
         ("200 OK", "OK", 200,
          {"data": [FOOD_ITEM],
@@ -615,6 +727,263 @@ dashboard_folder = {
     "item": [dashboard_overview_req],
 }
 
+# ---------------------------------------------------------------------------
+# Folder: Meal Plans (Sprint 3)
+# ---------------------------------------------------------------------------
+
+create_meal_plan_req = make_request(
+    name="Create Meal Plan",
+    method="POST",
+    path="clients/{{subscriber_id}}/meal-plans",
+    description="""S3-01/S3-02 / FR-12–FR-14, BR-4. Builds a plan's meals/items in one call — a plan is authored as a whole, not item-by-item. Always created as `status: "draft"` (BR-6/BR-10) regardless of what's in the body; only **Activate Meal Plan** below ever moves it to `active`.
+
+**BR-4 alternatives**: nested under the planned item they belong to (`items[].alternatives`), not a flat list with a `parent_item_id` you supply yourself — there's no real item id to point at yet when you're creating one from scratch. Uses `{{food_id}}` (saved by **Food Search → Search Foods**, which must run first) for both the planned item and its alternative — a real, currently-approved food either way, not two arbitrary different ones, so this collection stays runnable regardless of how many foods exist on whatever database it's pointed at.
+
+`food_id` must resolve to an **approved** food — a pending or rejected one is rejected with `422`, same as a nonexistent id.
+
+Saves the created plan's `id` as `{{meal_plan_id}}` — every other request in this folder below uses it.""",
+    body=MEAL_PLAN_REQUEST_BODY,
+    tests=SAVE_MEAL_PLAN_ID,
+    examples=[
+        ("201 Created", "Created", 201, MEAL_PLAN_OBJECT, JSON_RESP_HEADER),
+        ("422 Food not approved", "Unprocessable Content", 422,
+         {"message": "The selected meals.0.items.0.food_id is invalid.",
+          "errors": {"meals.0.items.0.food_id": ["The selected meals.0.items.0.food_id is invalid."]}},
+         JSON_RESP_HEADER),
+    ],
+)
+
+list_meal_plans_req = make_request(
+    name="List Meal Plans",
+    method="GET",
+    path="clients/{{subscriber_id}}/meal-plans",
+    description="""Every plan (any status — draft/active/archived) for this client, newest first. **404** if `{{subscriber_id}}` isn't the calling nutritionist's own client — same isolation rule as every other Clients/* endpoint.""",
+    examples=[
+        ("200 OK", "OK", 200, [MEAL_PLAN_OBJECT], JSON_RESP_HEADER),
+    ],
+)
+
+get_meal_plan_req = make_request(
+    name="Get Meal Plan",
+    method="GET",
+    path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+    description="""Single plan, full detail — same shape Create/List return. **404** if `{{meal_plan_id}}` doesn't belong to `{{subscriber_id}}`, or `{{subscriber_id}}` isn't the caller's own client.""",
+    examples=[
+        ("200 OK", "OK", 200, MEAL_PLAN_OBJECT, JSON_RESP_HEADER),
+    ],
+)
+
+update_meal_plan_req = make_request(
+    name="Update Meal Plan",
+    method="PUT",
+    path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
+    description="""Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate "edit a draft" endpoint.""",
+    body=MEAL_PLAN_REQUEST_BODY,
+    examples=[
+        ("200 OK", "OK", 200, MEAL_PLAN_OBJECT, JSON_RESP_HEADER),
+    ],
+)
+
+activate_meal_plan_req = make_request(
+    name="Activate Meal Plan",
+    method="POST",
+    path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/activate",
+    description="""BR-6/BR-10: the **only** way a plan (hand-built or AI draft) ever becomes what the client sees. Archives whatever plan was previously `active` for this client — a client has exactly one active plan at a time. No request body.""",
+    body=None,
+    examples=[
+        ("200 OK", "OK", 200, {**MEAL_PLAN_OBJECT, "status": "active"}, JSON_RESP_HEADER),
+    ],
+)
+
+ai_draft_req = make_request(
+    name="Generate AI Draft",
+    method="POST",
+    path="clients/{{subscriber_id}}/meal-plans/ai-draft",
+    description="""S3-06/S3-07 / F-5 (PRD, P1) — "Suggest a starting plan." No request body; the client's `HealthProfile` (calorie target, allergies — saved earlier by **Health Profile → Save Health Profile**, which must run first) drives it entirely.
+
+Rule-based, not a real LLM call — no LLM provider is wired into this backend, and F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note. Splits the daily calorie target across breakfast/snack/lunch/dinner by a standard clinical rule of thumb, picks the best calorie-matching **approved** food per slot plus up to two alternatives, and excludes any food whose name contains one of the client's allergy terms (case-insensitive substring match — a real safety net, explicitly not a certified allergen system).
+
+Always `is_ai_draft: true`, `status: "draft"` — saved separately as `{{ai_draft_plan_id}}`, not overwriting `{{meal_plan_id}}` from **Create Meal Plan** above, so both plans stay independently addressable. **Activate AI Draft** below is how a nutritionist approves it (BR-6/BR-10) — the exact same action as approving any hand-built plan, not a special case.
+
+**422** — the client has no `HealthProfile` yet, or every approved food conflicts with a listed allergy.""",
+    body=None,
+    tests=SAVE_AI_DRAFT_PLAN_ID,
+    examples=[
+        ("201 Created", "Created", 201, MEAL_PLAN_AI_DRAFT_OBJECT, JSON_RESP_HEADER),
+        ("422 No health profile", "Unprocessable Content", 422,
+         {"message": "This client needs a health profile (calorie needs, allergies) before an AI draft can be generated."},
+         JSON_RESP_HEADER),
+    ],
+)
+
+activate_ai_draft_req = make_request(
+    name="Activate AI Draft",
+    method="POST",
+    path="clients/{{subscriber_id}}/meal-plans/{{ai_draft_plan_id}}/activate",
+    description="""Same endpoint as **Activate Meal Plan**, called on the AI draft instead — approving it (BR-6/BR-10). Archives the plan activated earlier in this folder; `is_ai_draft` flips to `false` on activation (an activated draft has, by definition, now been reviewed). No request body.
+
+Run **Client's Own Plan → Get My Plan** afterward to see this exact plan from the client's side.""",
+    body=None,
+    examples=[
+        ("200 OK", "OK", 200, {**MEAL_PLAN_AI_DRAFT_OBJECT, "status": "active", "is_ai_draft": False}, JSON_RESP_HEADER),
+    ],
+)
+
+meal_plans_folder = {
+    "name": "Meal Plans",
+    "description": "Sprint 3 (S3-01/S3-02/S3-04/S3-07). Building a client's plan with alternatives (BR-4), live per-item/meal/day macros (FR-14), and the draft -> active -> archived lifecycle that keeps BR-6/BR-10 (\"an AI draft is never auto-sent to a client\") true structurally, not just by convention.",
+    "item": [create_meal_plan_req, list_meal_plans_req, get_meal_plan_req, update_meal_plan_req,
+             activate_meal_plan_req, ai_draft_req, activate_ai_draft_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Meal Plan Templates (Sprint 3)
+# ---------------------------------------------------------------------------
+
+save_as_template_req = make_request(
+    name="Save As Template",
+    method="POST",
+    path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/save-as-template",
+    description="""S3-03 / FR-15. Clones `{{meal_plan_id}}`'s meals/items into a new template the nutritionist owns directly (`is_template: true`, no `subscriber_id`) — a **snapshot**: editing the original client's plan afterward never changes the template. No request body.
+
+Saves the new template's `id` as `{{meal_plan_template_id}}`.""",
+    body=None,
+    tests=SAVE_TEMPLATE_ID,
+    examples=[
+        ("201 Created", "Created", 201, MEAL_PLAN_TEMPLATE_OBJECT, JSON_RESP_HEADER),
+    ],
+)
+
+list_templates_req = make_request(
+    name="List Templates",
+    method="GET",
+    path="meal-plan-templates",
+    description="""This nutritionist's own templates only — never another nutritionist's.""",
+    examples=[
+        ("200 OK", "OK", 200, [MEAL_PLAN_TEMPLATE_OBJECT], JSON_RESP_HEADER),
+    ],
+)
+
+apply_template_req = make_request(
+    name="Apply Template",
+    method="POST",
+    path="meal-plan-templates/{{meal_plan_template_id}}/apply/{{subscriber_id}}",
+    description="""Clones the template's meals/items into a brand-new `draft` plan for `{{subscriber_id}}` — still needs its own **Activate Meal Plan** call, exactly like any other draft (BR-6/BR-10 makes no exception for "came from a template"). No request body.
+
+**404** if `{{meal_plan_template_id}}` isn't this nutritionist's own template, or `{{subscriber_id}}` isn't their own client.""",
+    body=None,
+    examples=[
+        ("201 Created", "Created", 201, {**MEAL_PLAN_OBJECT, "id": 32}, JSON_RESP_HEADER),
+    ],
+)
+
+meal_plan_templates_folder = {
+    "name": "Meal Plan Templates",
+    "description": "Sprint 3 (S3-03 / FR-15). Save a plan as a reusable template, and apply one to a (possibly different) client as a new draft.",
+    "item": [save_as_template_req, list_templates_req, apply_template_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Food Submission & Approval (Sprint 3)
+# ---------------------------------------------------------------------------
+
+submit_food_req = make_request(
+    name="Submit Food",
+    method="POST",
+    path="foods",
+    description="""S3-05 / FR-24, BR-5. `permission:foods.suggest` (nutritionist). Enters `status: "pending"` — invisible to **Food Search** (yours included) until an admin approves it below.
+
+At least one of `name_en` / `name_ar` is required, not both. `source`/`status`/`submitted_by` aren't request fields — the server sets `source: "nutritionist"`, `status: "pending"`, and attributes the submission to the caller.
+
+Saves the created food's `id` as `{{pending_food_id}}` — **List Pending Foods**, **Approve Food**, and **Reject Food** below all use it.""",
+    body=FOOD_SUBMISSION_REQUEST,
+    tests=SAVE_PENDING_FOOD_ID,
+    examples=[
+        ("201 Created", "Created", 201, FOOD_SUBMISSION_RESPONSE, JSON_RESP_HEADER),
+    ],
+)
+
+list_pending_foods_req = make_request(
+    name="List Pending Foods",
+    method="GET",
+    path="foods/pending",
+    description="""`permission:foods.approve` (**admin** — not the collection's default nutritionist token; see the Authorization tab on this request, set to `{{admin_access_token}}`). The review queue — without this endpoint, nothing else surfaces a pending submission to act on.
+
+⚠️ **No self-serve admin account exists** (admin is a system operator per PRD §2.1, not something anyone registers into) — `{{admin_access_token}}` starts empty and this request (and the two below it) will `401`/`403` until you set it. Create one locally once and set the variable yourself:
+```
+php artisan tinker --execute="$u = App\\Models\\User::factory()->create(['email' => 'admin@example.com', 'password' => 'password']); $u->assignRole('admin');"
+```
+then run **Authentication → Login — Nutritionist (email)** with that email/password in the Body tab temporarily (or call `/auth/login` directly) and paste the resulting `access_token` into `{{admin_access_token}}`.""",
+    examples=[
+        ("200 OK", "OK", 200,
+         {"data": [FOOD_SUBMISSION_RESPONSE],
+          "links": {"first": "{{base_url}}/foods/pending?page=1", "last": "{{base_url}}/foods/pending?page=1",
+                     "prev": None, "next": None},
+          "meta": {"current_page": 1, "from": 1, "last_page": 1, "path": "{{base_url}}/foods/pending",
+                    "per_page": 20, "to": 1, "total": 1}},
+         JSON_RESP_HEADER),
+    ],
+)
+list_pending_foods_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]}
+
+approve_food_req = make_request(
+    name="Approve Food",
+    method="POST",
+    path="foods/{{pending_food_id}}/approve",
+    description="""`permission:foods.approve` (**admin** — same `{{admin_access_token}}` note as **List Pending Foods** above). No request body. **403** for a nutritionist, including on their own submission — approval is admin-only, never self-service.""",
+    body=None,
+    examples=[
+        ("200 OK", "OK", 200, {**FOOD_SUBMISSION_RESPONSE, "status": "approved"}, JSON_RESP_HEADER),
+    ],
+)
+approve_food_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]}
+
+reject_food_req = make_request(
+    name="Reject Food",
+    method="POST",
+    path="foods/{{pending_food_id}}/reject",
+    description="""Same role/permission as **Approve Food**. No request body.
+
+⚠️ Runs against the **same** `{{pending_food_id}}` as **Approve Food** just above it in a top-to-bottom pass — so by the time this fires, that food is already `approved`, and this flips it straight to `rejected`. That's harmless (the endpoint doesn't forbid rejecting an already-approved food) and still proves the endpoint works; it's just not two independent submissions. Run **Submit Food** again first if you want to reject a fresh one instead.""",
+    body=None,
+    examples=[
+        ("200 OK", "OK", 200, {**FOOD_SUBMISSION_RESPONSE, "status": "rejected"}, JSON_RESP_HEADER),
+    ],
+)
+reject_food_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{admin_access_token}}", "type": "string"}]}
+
+food_submission_folder = {
+    "name": "Food Submission & Approval",
+    "description": "Sprint 3 (S3-05 / FR-24, BR-5). A nutritionist suggests a local food; an admin reviews, approves, or rejects it. The three admin-only requests here override the collection's default (nutritionist) Bearer auth with {{admin_access_token}} — see List Pending Foods for how to get one, since there's no self-serve admin registration.",
+    "item": [submit_food_req, list_pending_foods_req, approve_food_req, reject_food_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Client's Own Plan (Sprint 3)
+# ---------------------------------------------------------------------------
+
+get_my_plan_req = make_request(
+    name="Get My Plan",
+    method="GET",
+    path="me/meal-plan",
+    description="""S3-04 / FR-16. `permission:plans.view.own` (**client** role — not the collection's default nutritionist token; this request's Authorization tab is set to `{{client_access_token}}`, saved earlier by **Clients → Activate Invite (Client)**).
+
+No route parameter — the caller's own `Subscriber` row is resolved from their JWT, not supplied by them, so there's no client-supplied id for one client to point at another client's plan with.
+
+Returns this client's current **active** plan only (never a draft or an unapproved AI draft — BR-6/BR-10), same shape as **Meal Plans**. **204 No Content** if there is no active plan yet. A nutritionist or admin token gets **403** here — `plans.view.own` is a client-role permission only (PRD §2.2).""",
+    examples=[
+        ("200 OK", "OK", 200, {**MEAL_PLAN_AI_DRAFT_OBJECT, "status": "active", "is_ai_draft": False}, JSON_RESP_HEADER),
+        ("204 No active plan yet", "No Content", 204, None, []),
+    ],
+)
+get_my_plan_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+client_own_plan_folder = {
+    "name": "Client's Own Plan",
+    "description": "Sprint 3 (S3-04 / FR-16). What the client (not the nutritionist) sees — their own current active plan, resolved from their own JWT with no id to isolate.",
+    "item": [get_my_plan_req],
+}
+
 
 # ---------------------------------------------------------------------------
 # Collection assembly
@@ -622,15 +991,17 @@ dashboard_folder = {
 
 COLLECTION_DESCRIPTION = """# HealthyLife AI — API
 
-AI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 2 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.
+AI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 3 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.
 
 ## Getting started
 
 1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).
 2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.
 3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.
-4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition request below it references.
-5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → dashboard reflects the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email or phone number, so a fresh run never collides with "already taken". The one exception: **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward. Noted on that request too.
+4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition / Meal Plans request below it references.
+5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → build a meal plan with an alternative → activate it → generate + approve an AI draft → dashboard and the client's own `/me/meal-plan` both reflect the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email, phone number, or food id, so a fresh run never collides with "already taken" or 404s on a food that doesn't exist on this particular database. Two exceptions, both documented on the request itself:
+   - **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward.
+   - **Food Submission & Approval**'s three admin-only requests (`List Pending Foods`, `Approve Food`, `Reject Food`) need `{{admin_access_token}}`, which starts **empty** — there's no self-serve admin registration (PRD §2.1: admin is a system operator). See **List Pending Foods**'s description for the one-time local setup.
 
 ## Authentication model
 
@@ -638,7 +1009,7 @@ Every endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/ref
 
 **Two layers**, matching the PRD's own security model — permission alone is never treated as security:
 - **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.
-- **Data isolation** — every Clients/Health Profile/Body Composition query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client ID returns `404`, never `403` — the response never confirms the ID belongs to someone else.
+- **Data isolation** — every Clients/Health Profile/Body Composition/Meal Plans query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client or plan ID returns `404`, never `403` — the response never confirms the ID belongs to someone else. The one exception is **Client's Own Plan**, which has no ID to isolate at all (see that folder).
 
 ## Common response shapes
 
@@ -672,9 +1043,13 @@ Every endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/ref
 | **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |
 | **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |
 | **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |
+| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |
+| **Meal Plan Templates** | Save a plan as a template; apply one to a client — Sprint 3, FR-15 |
+| **Food Submission & Approval** | Nutritionist suggests a food; admin approves/rejects — Sprint 3, FR-24/BR-5 |
+| **Client's Own Plan** | The client role's own active plan, no ID to isolate — Sprint 3, FR-16 |
 
 ---
-Generated for HealthyLife AI · Sprint 1–2 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.
+Generated for HealthyLife AI · Sprint 1–3 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.
 """
 
 collection = {
@@ -714,6 +1089,18 @@ collection = {
          "description": "Most recently created client's id. Auto-set by Add Client."},
         {"key": "invite_token", "value": "", "type": "string",
          "description": "Most recently created client's one-time invite token. Auto-set by Add Client; consumed by Activate Invite."},
+        {"key": "food_id", "value": "", "type": "string",
+         "description": "An approved food's id. Auto-set by Food Search → Search Foods (its first result) — used by every Meal Plans item."},
+        {"key": "meal_plan_id", "value": "", "type": "string",
+         "description": "Most recently hand-built plan's id. Auto-set by Meal Plans → Create Meal Plan."},
+        {"key": "ai_draft_plan_id", "value": "", "type": "string",
+         "description": "Most recently generated AI draft's id. Auto-set by Meal Plans → Generate AI Draft — kept separate from meal_plan_id so both plans stay independently addressable."},
+        {"key": "meal_plan_template_id", "value": "", "type": "string",
+         "description": "Most recently saved template's id. Auto-set by Meal Plan Templates → Save As Template."},
+        {"key": "pending_food_id", "value": "", "type": "string",
+         "description": "Most recently submitted food's id. Auto-set by Food Submission & Approval → Submit Food."},
+        {"key": "admin_access_token", "value": "", "type": "string",
+         "description": "An admin-role JWT. Starts empty — there's no self-serve admin registration; see Food Submission & Approval → List Pending Foods for one-time local setup."},
     ],
     "item": [
         auth_folder,
@@ -722,6 +1109,10 @@ collection = {
         body_composition_folder,
         food_search_folder,
         dashboard_folder,
+        meal_plans_folder,
+        meal_plan_templates_folder,
+        food_submission_folder,
+        client_own_plan_folder,
     ],
 }
 

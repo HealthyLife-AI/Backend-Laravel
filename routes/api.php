@@ -7,6 +7,9 @@ use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\MealPlans\ClientPlanController;
+use App\Http\Controllers\Api\MealPlans\MealPlanController;
+use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function () {
@@ -61,5 +64,34 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::get('foods/search', [FoodController::class, 'search'])
         ->middleware('jwt')
         ->name('foods.search');
+
+    Route::middleware(['jwt', 'permission:plans.manage'])->group(function () {
+        Route::get('clients/{subscriber}/meal-plans', [MealPlanController::class, 'index'])->name('meal-plans.index');
+        Route::post('clients/{subscriber}/meal-plans', [MealPlanController::class, 'store'])->name('meal-plans.store');
+        Route::get('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'show'])->name('meal-plans.show');
+        Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->name('meal-plans.update');
+        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->name('meal-plans.activate');
+        Route::post('clients/{subscriber}/meal-plans/ai-draft', [MealPlanController::class, 'generateAiDraft'])->name('meal-plans.ai-draft');
+
+        Route::get('meal-plan-templates', [MealPlanTemplateController::class, 'index'])->name('meal-plan-templates.index');
+        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/save-as-template', [MealPlanTemplateController::class, 'store'])->name('meal-plan-templates.store');
+        Route::post('meal-plan-templates/{mealPlan}/apply/{subscriber}', [MealPlanTemplateController::class, 'apply'])->name('meal-plan-templates.apply');
+    });
+
+    // FR-16 / plans.view.own: the CLIENT role's own current plan — no
+    // route-bound subscriber id (see ClientPlanController docblock).
+    Route::middleware(['jwt', 'permission:plans.view.own'])->group(function () {
+        Route::get('me/meal-plan', [ClientPlanController::class, 'show'])->name('me.meal-plan.show');
+    });
+
+    Route::middleware(['jwt', 'permission:foods.suggest'])->group(function () {
+        Route::post('foods', [FoodController::class, 'store'])->name('foods.store');
+    });
+
+    Route::middleware(['jwt', 'permission:foods.approve'])->group(function () {
+        Route::get('foods/pending', [FoodController::class, 'pending'])->name('foods.pending');
+        Route::post('foods/{food}/approve', [FoodController::class, 'approve'])->name('foods.approve');
+        Route::post('foods/{food}/reject', [FoodController::class, 'reject'])->name('foods.reject');
+    });
 
 });

@@ -9,7 +9,10 @@ code ever disagree, the code wins; report the drift so this gets fixed.
 [Clients](#clients-sprint-2) · [Health Profile](#health-profile-sprint-2) ·
 [Body Composition](#body-composition-readings-sprint-2) ·
 [Food Search](#food-search-sprint-2) · [Dashboard](#dashboard-overview-sprint-2)
-(Sprint 2)
+(Sprint 2) · [Meal Plans](#meal-plans-sprint-3) ·
+[Meal Plan Templates](#meal-plan-templates-sprint-3) ·
+[Food Submission & Approval](#food-submission--approval-sprint-3) ·
+[Client's Own Plan](#clients-own-plan-sprint-3) (Sprint 3)
 
 Base URL: `{APP_URL}/api/v1` (local dev default: `http://127.0.0.1:8000/api/v1`).
 All requests/responses are JSON (`Content-Type: application/json`, `Accept: application/json`).
@@ -457,7 +460,8 @@ included, until an admin approves it.
 
 `source` is `usda` (SR Legacy import, English only), `admin` (curated Arabic
 layer, both languages), or `nutritionist` (a submission — never appears here
-until approved; there's no submission endpoint in Sprint 2).
+until approved; see [Food Submission & Approval](#food-submission--approval-sprint-3)
+for how one gets there, added in Sprint 3).
 
 **422** — `q` missing or shorter than 2 characters.
 
@@ -482,3 +486,237 @@ F-2 stat cards, for the calling nutritionist only. `permission:clients.manage`.
 `on_track`/`needs_attention`/`late`/`not_logged_today` will read low or zero
 until a later sprint's logging feature starts populating real adherence data
 — that's accurate given the current data, not a bug.
+
+---
+
+## Meal Plans (Sprint 3)
+
+S3-01/S3-02/S3-04/S3-07 / FR-12–FR-16, BR-4, BR-6, BR-10. `permission:plans.manage`
+on every endpoint below except the client's own view (separate section).
+
+**Alternatives (BR-4)**: an alternative is a meal item that references its
+planned item via `parent_item_id`; a planned item has none. The request/response
+shape nests alternatives under the item they belong to (`items[].alternatives`)
+— you're never asked for a raw `parent_item_id` yourself, there's nothing to
+point one at yet when you're creating a plan from scratch.
+
+**Status (BR-6/BR-10)**: `draft` → `active` → `archived`. Only `POST
+.../activate` ever moves a plan to `active` — creating one (by hand or via
+`ai-draft`) always produces a `draft`. Activating a plan archives whatever plan
+was previously `active` for that same client; a client has exactly one active
+plan.
+
+**Request body** (`POST`/`PUT`):
+
+```json
+{
+  "start_date": "2026-09-15",
+  "meals": [
+    {
+      "name": "breakfast",
+      "day_index": null,
+      "items": [
+        {
+          "food_id": 12,
+          "quantity_grams": 200,
+          "alternatives": [
+            { "food_id": 45, "quantity_grams": 150 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `name`: one of `breakfast` / `snack` / `lunch` / `dinner`.
+- `day_index`: `null` for a meal that repeats every day (the common case), or
+  `0`–`6` (Monday–Sunday) for one specific day of a weekly plan.
+- `food_id` (planned item and every alternative): must be an **approved** food
+  — a pending or rejected food is rejected with a `422` the same way a
+  nonexistent one is.
+- `PUT` fully replaces the plan's meals/items (PRD F-4: edited as one whole
+  form) — it is not a patch. Omitting a meal that existed before deletes it.
+
+### `GET /clients/{id}/meal-plans`
+
+**200 OK** — every plan (any status) for this client, newest first, as an
+array of the response shape below.
+
+### `POST /clients/{id}/meal-plans`
+
+**201 Created** — the shape every meal-plan endpoint returns:
+
+```json
+{
+  "id": 8,
+  "subscriber_id": 3,
+  "is_template": false,
+  "is_ai_draft": false,
+  "start_date": "2026-09-15",
+  "status": "draft",
+  "meals": [
+    {
+      "id": 21,
+      "name": "breakfast",
+      "day_index": null,
+      "macros": { "calories": 400, "protein_g": 20, "carbs_g": 40, "fat_g": 10 },
+      "items": [
+        {
+          "id": 55,
+          "food": { "id": 12, "name_en": "Grilled Chicken", "...": "..." },
+          "quantity_grams": 200,
+          "macros": { "calories": 400, "protein_g": 20, "carbs_g": 40, "fat_g": 10 },
+          "alternatives": [
+            {
+              "id": 56,
+              "food": { "id": 45, "...": "..." },
+              "quantity_grams": 150,
+              "macros": { "...": "..." },
+              "alternatives": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "summary_by_day": { "0": { "calories": 400, "protein_g": 20, "carbs_g": 40, "fat_g": 10 } },
+  "created_at": "2026-09-09T10:00:00+00:00",
+  "updated_at": "2026-09-09T10:00:00+00:00"
+}
+```
+
+FR-14: `macros` on an item is that item's own calories/macros at its quantity.
+`macros` on a meal, and every value under `summary_by_day`, sums **planned
+items only** — an alternative is a substitute, never added on top of the
+plan's total (it's still fully reported on its own `macros` key, so the UI can
+show "if they had this instead"). `summary_by_day` is keyed by `day_index`
+(as a string, since it's a JSON object key) — a plan with no day-specific
+meals reports everything under key `"0"`.
+
+### `GET /clients/{id}/meal-plans/{planId}`
+
+**200 OK** — same shape as above. **404** if `planId` doesn't belong to `id`.
+
+### `PUT /clients/{id}/meal-plans/{planId}`
+
+Same request/response shape as `POST`. This is also how an AI draft
+(`is_ai_draft: true`) gets edited before it's approved — there's no separate
+"edit a draft" endpoint (S3-07).
+
+### `POST /clients/{id}/meal-plans/{planId}/activate`
+
+No request body. **200 OK**, same shape, `status: "active"`, `is_ai_draft:
+false` (activating a draft is how it gets approved — BR-6/BR-10).
+
+### `POST /clients/{id}/meal-plans/ai-draft`
+
+F-5 (PRD, P1) — "Suggest a starting plan." No request body; the client's
+`HealthProfile` (calorie target, allergies) drives it.
+
+Rule-based, not a real LLM call — see `AiDraftPlanService`'s docblock for why.
+Splits the client's daily calorie target across the four meal slots by a
+standard clinical rule of thumb (breakfast 25% / snack 10% / lunch 35% /
+dinner 30%), picks the best calorie-matching **approved** food per slot plus
+up to two alternatives, and excludes any food whose name contains one of the
+client's allergy terms (case-insensitive substring match — a real safety net,
+explicitly not a certified allergen system: it can't catch an allergen an
+ingredient name doesn't mention).
+
+**201 Created** — same shape, `is_ai_draft: true`, `status: "draft"`. Always a
+draft; the nutritionist reviews (`PUT`, if anything needs changing) and
+approves (`activate`) it exactly like any hand-built plan.
+
+**422** — the client has no `HealthProfile` yet (nothing to target), or every
+approved food conflicts with a listed allergy.
+
+---
+
+## Meal Plan Templates (Sprint 3)
+
+S3-03 / FR-15. `permission:plans.manage`. A template is a plan with no
+`subscriber_id` (`is_template: true`) that the nutritionist owns directly —
+saving one is a snapshot (editing the original client's plan afterward never
+changes the template), and applying one clones its meals/items into a brand
+new `draft` for the target client, which still needs its own `activate` call.
+
+### `GET /meal-plan-templates`
+
+**200 OK** — this nutritionist's own templates (never another nutritionist's),
+same response shape as a meal plan.
+
+### `POST /clients/{id}/meal-plans/{planId}/save-as-template`
+
+No request body. **201 Created** — a new template cloned from `planId`.
+
+### `POST /meal-plan-templates/{templateId}/apply/{subscriberId}`
+
+No request body. **201 Created** — a new `draft` plan for `subscriberId`,
+cloned from the template. **404** if `templateId` isn't this nutritionist's
+own template, or `subscriberId` isn't their own client.
+
+---
+
+## Food Submission & Approval (Sprint 3)
+
+S3-05 / FR-24, BR-5.
+
+### `POST /foods`
+
+`permission:foods.suggest` (nutritionist). Enters `status: "pending"` —
+invisible to [Food Search](#food-search-sprint-2) (yours included) until an
+admin approves it.
+
+**Request**:
+
+```json
+{
+  "name_en": "Kabsa",
+  "name_ar": "كبسة",
+  "calories_per_100g": 180,
+  "protein_g_per_100g": 8,
+  "carbs_g_per_100g": 22,
+  "fat_g_per_100g": 6,
+  "fiber_g_per_100g": 1.5
+}
+```
+
+At least one of `name_en` / `name_ar` is required, not both. `source` and
+`status` aren't request fields — the server sets `source: "nutritionist"`,
+`status: "pending"`, and attributes `submitted_by` to the caller; a submission
+can't arrive pre-approved or attributed to someone else.
+
+**201 Created** — the same shape as a [Food Search](#food-search-sprint-2)
+result, plus `status`.
+
+### `GET /foods/pending`
+
+`permission:foods.approve` (admin). The review queue — without this, nothing
+else surfaces a pending submission to act on. **200 OK**, paginated, same
+shape as search results.
+
+### `POST /foods/{id}/approve` · `POST /foods/{id}/reject`
+
+`permission:foods.approve` (admin). No request body. **200 OK** with the
+updated food (`status: "approved"` or `"rejected"`). **403** for a
+nutritionist, including on their own submission — approval is an admin-only
+action, not a self-service one.
+
+---
+
+## Client's Own Plan (Sprint 3)
+
+S3-04 / FR-16. `permission:plans.view.own` (client role).
+
+### `GET /me/meal-plan`
+
+No route parameter — the caller's own `Subscriber` row is resolved from their
+JWT, not supplied by them, so there is no client-supplied ID for one client to
+point at another client's plan with. `permission:plans.view.own` is held by
+the `client` role only (PRD §2.2's permission matrix) — a nutritionist or
+admin calling this gets **403**, not a 204; the endpoint only exists for a
+client viewing their own plan.
+
+**200 OK** — this client's current **active** plan (never a `draft` or an
+unapproved AI draft — BR-6/BR-10), same shape as [Meal
+Plans](#meal-plans-sprint-3). **204 No Content** — no active plan yet.
