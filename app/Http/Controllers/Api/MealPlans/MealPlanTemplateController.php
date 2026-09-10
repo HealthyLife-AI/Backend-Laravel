@@ -29,7 +29,8 @@ class MealPlanTemplateController extends Controller
             ->where('is_template', true)
             ->where('created_by', request()->user()->id)
             ->latest()
-            ->get();
+            ->get()
+            ->load(self::EAGER_LOAD);
 
         return MealPlanResource::collection($templates);
     }

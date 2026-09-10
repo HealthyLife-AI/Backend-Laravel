@@ -65,6 +65,32 @@ class MealPlanTest extends TestCase
         $this->assertEquals(400, $response->json('summary_by_day.0.calories'));
     }
 
+    /**
+     * Regression test: `index()` originally returned each plan without
+     * eager-loading its meals — `whenLoaded('meals')` silently omitted
+     * the key rather than erroring, so this only surfaced once a client
+     * (the Plan Designer's initial fetch, which lists plans before
+     * picking one to display) tried to read `meals` off a list result
+     * and got nothing.
+     */
+    public function test_listing_meal_plans_includes_full_meal_detail(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        $main = Food::factory()->create();
+        $alt = Food::factory()->create();
+        $auth = $this->bearerFor($nutritionist);
+
+        $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans", $this->payload($main->id, $alt->id), $auth);
+
+        $response = $this->getJson("/api/v1/clients/{$subscriber->id}/meal-plans", $auth);
+
+        $response->assertOk();
+        $this->assertCount(1, $response->json('0.meals.0.items'));
+        $this->assertCount(1, $response->json('0.meals.0.items.0.alternatives'));
+        $this->assertSame($main->id, $response->json('0.meals.0.items.0.food.id'));
+    }
+
     public function test_activating_a_plan_archives_the_previously_active_one(): void
     {
         $nutritionist = User::factory()->nutritionist()->create();
@@ -177,5 +203,12 @@ class MealPlanTest extends TestCase
         $this->assertSame($subscriberB->id, $applied->json('subscriber_id'));
         $this->assertSame('draft', $applied->json('status'));
         $this->assertCount(1, $applied->json('meals.0.items'));
+
+        // Same regression as the meal-plans list: templates/index() must
+        // eager-load meals too, or every template in the list silently
+        // comes back without one.
+        $list = $this->getJson('/api/v1/meal-plan-templates', $auth);
+        $list->assertOk();
+        $this->assertCount(1, $list->json('0.meals.0.items'));
     }
 }

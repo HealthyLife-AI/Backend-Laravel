@@ -55,6 +55,47 @@ class AiDraftPlanTest extends TestCase
         $this->assertNotContains($peanutDish->id, $usedFoodIds);
     }
 
+    /**
+     * Regression test: the quantity a food is scaled to (50g-500g) is
+     * elastic enough that almost any food can be made to "fit" almost
+     * any calorie target — ranking candidates by fit alone, with no
+     * diversity rule, converged on the same one or two foods as the
+     * PLANNED item for every meal in a real generated draft (caught by
+     * actually reading one, not a unit test). Several same-shaped foods
+     * here reproduce that degenerate case if the fix regresses.
+     */
+    public function test_a_draft_does_not_repeat_the_same_planned_food_across_meals(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        HealthProfile::create([
+            'subscriber_id' => $subscriber->id,
+            'weight_kg' => 70, 'height_cm' => 170, 'age' => 30, 'gender' => 'male',
+            'activity_level' => 'sedentary',
+            'daily_calorie_needs' => 2000,
+        ]);
+
+        // All the same macro shape and calorie density as each other —
+        // exactly the condition that made every meal's best "fit" match
+        // identically before the diversity rule existed.
+        for ($i = 0; $i < 6; $i++) {
+            Food::factory()->create(['name_en' => "Rice variant {$i}", 'calories_per_100g' => 130]);
+        }
+
+        $response = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        );
+
+        $response->assertCreated();
+
+        $plannedFoodIds = collect($response->json('meals'))
+            ->map(fn ($meal) => $meal['items'][0]['food']['id']);
+
+        $this->assertSame($plannedFoodIds->unique()->count(), $plannedFoodIds->count(), 'every meal should plan a different headline food');
+    }
+
     public function test_a_draft_requires_a_health_profile_first(): void
     {
         $nutritionist = User::factory()->nutritionist()->create();

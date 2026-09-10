@@ -27,6 +27,14 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
+        <!-- Force the AI-draft LLM path off by default (see config/ai.php)
+             regardless of what .env has locally — there's no .env.testing,
+             so without this override every test run would pick up a real
+             OPENAI_API_KEY from .env and try to call Groq for real. A test
+             that specifically exercises the LLM path opts back in with
+             config(['ai.api_key' => ...]) at runtime. -->
+        <env name="OPENAI_BASE_URL" value=""/>
+        <env name="OPENAI_API_KEY" value=""/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

@@ -33,7 +33,7 @@ class MealPlanController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        $plans = $subscriber->mealPlans()->latest()->get();
+        $plans = $subscriber->mealPlans()->latest()->get()->load(self::EAGER_LOAD);
 
         return MealPlanResource::collection($plans);
     }
