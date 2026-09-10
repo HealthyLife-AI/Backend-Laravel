@@ -2,8 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Food;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 /**
  * S2-08 / FR-23, FR-25: the admin-curated Arabic food layer (PRD F-8) —
@@ -21,24 +21,27 @@ class ArabicFoodSeeder extends Seeder
 {
     public function run(): void
     {
-        $now = now();
-
-        $rows = array_map(
-            fn (array $f) => array_merge($f, [
-                'source' => 'admin',
-                'status' => 'approved',
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]),
-            self::DISHES,
-        );
-
-        // name_en doubles as a natural dedupe key across seeder re-runs.
-        DB::table('foods')->upsert(
-            $rows,
-            uniqueBy: ['name_en'],
-            update: ['name_ar', 'calories_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g', 'fiber_g_per_100g', 'updated_at'],
-        );
+        foreach (self::DISHES as $dish) {
+            // Matched on the admin-owned row for this name, not on a
+            // database constraint. The original `upsert(uniqueBy:
+            // ['name_en'])` needed a real UNIQUE index behind it and the
+            // migration only indexes `name_en` (non-unique), so MySQL
+            // silently dropped the conflict clause and re-inserted all 58
+            // dishes on every `db:seed --force` — production ended up
+            // with two of every dish, which also let an AI draft pick the
+            // "same" food twice under two different ids.
+            //
+            // Adding that UNIQUE index is the wrong repair: BR-5 lets a
+            // nutritionist submit their own local "Hummus" with different
+            // macros, and a globally unique name would reject it at the
+            // database level rather than as a validation message. Scoping
+            // the match to `source = 'admin'` keeps this seeder idempotent
+            // without constraining what nutritionists may submit.
+            Food::updateOrCreate(
+                ['source' => 'admin', 'name_en' => $dish['name_en']],
+                $dish + ['status' => 'approved'],
+            );
+        }
     }
 
     /**

@@ -614,14 +614,32 @@ false` (activating a draft is how it gets approved — BR-6/BR-10).
 F-5 (PRD, P1) — "Suggest a starting plan." No request body; the client's
 `HealthProfile` (calorie target, allergies) drives it.
 
-Rule-based, not a real LLM call — see `AiDraftPlanService`'s docblock for why.
-Splits the client's daily calorie target across the four meal slots by a
+Two generation paths, both producing the identical response shape (see
+`AiDraftPlanService`'s docblock):
+
+1. **LLM** — an OpenAI-compatible chat completion (`config/ai.php`; Groq's free
+   tier by default), attempted only when `OPENAI_BASE_URL` **and**
+   `OPENAI_API_KEY` are both set in the serving environment. The model may only
+   choose from the allergy-filtered approved foods it is handed, and every
+   response is re-validated against that exact list before it is trusted — an
+   invented `food_id`, an out-of-range quantity, or the same headline food
+   repeated across meals discards the **whole** response, not just the bad part.
+2. **Rule-based** — the original generator, used whenever no provider is
+   configured, the call fails (network, HTTP error including a `429` rate
+   limit, unparseable JSON), or the response fails that validation. Picks the
+   best calorie-matching **approved** food per slot plus up to two alternatives.
+
+Both split the client's daily calorie target across the four meal slots by a
 standard clinical rule of thumb (breakfast 25% / snack 10% / lunch 35% /
-dinner 30%), picks the best calorie-matching **approved** food per slot plus
-up to two alternatives, and excludes any food whose name contains one of the
-client's allergy terms (case-insensitive substring match — a real safety net,
+dinner 30%) and exclude any food whose name contains one of the client's
+allergy terms (case-insensitive substring match — a real safety net,
 explicitly not a certified allergen system: it can't catch an allergen an
 ingredient name doesn't mention).
+
+The fallback is silent by design: a caller always gets a usable draft and
+never an AI error. That also means the response alone doesn't say which path
+ran — use [`GET /system/ai-status`](#get-systemai-status) to check whether an
+environment is even configured to attempt the LLM path.
 
 **201 Created** — same shape, `is_ai_draft: true`, `status: "draft"`. Always a
 draft; the nutritionist reviews (`PUT`, if anything needs changing) and
@@ -720,3 +738,36 @@ client viewing their own plan.
 **200 OK** — this client's current **active** plan (never a `draft` or an
 unapproved AI draft — BR-6/BR-10), same shape as [Meal
 Plans](#meal-plans-sprint-3). **204 No Content** — no active plan yet.
+
+---
+
+## System (Operational)
+
+Read-only operational checks. Authenticated, but no permission gate — they
+report no client data.
+
+### `GET /system/ai-status`
+
+Whether **this deployed environment** has an AI provider configured for
+[`ai-draft`](#post-clientsidmeal-plansai-draft). Setting an environment
+variable in a hosting dashboard doesn't prove the running process received it,
+and the AI draft's fallback is deliberately silent, so without this the only
+way to tell an unconfigured environment from a failing one was to inspect the
+arithmetic of a returned plan.
+
+**200 OK**
+
+```json
+{
+  "configured": true,
+  "provider_host": "api.groq.com",
+  "model": "openai/gpt-oss-120b",
+  "timeout_seconds": 12
+}
+```
+
+Never returns the API key, in whole or in part, and makes no call to the
+provider (so it can't be polled to burn quota). `configured: false` means this
+environment never attempts an LLM call at all. `configured: true` while drafts
+still come back rule-based means the call itself or its validation is failing
+— check the application log for `AI draft:`.

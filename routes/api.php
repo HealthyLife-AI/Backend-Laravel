@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
+use App\Http\Controllers\Api\System\AiStatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function () {
@@ -64,6 +65,13 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::get('foods/search', [FoodController::class, 'search'])
         ->middleware('jwt')
         ->name('foods.search');
+
+    // Operational read-only check: whether this environment has an AI
+    // provider configured at all (see AiStatusController). Authenticated
+    // but ungated — it reports no client data and no credential.
+    Route::get('system/ai-status', AiStatusController::class)
+        ->middleware('jwt')
+        ->name('system.ai-status');
 
     Route::middleware(['jwt', 'permission:plans.manage'])->group(function () {
         Route::get('clients/{subscriber}/meal-plans', [MealPlanController::class, 'index'])->name('meal-plans.index');

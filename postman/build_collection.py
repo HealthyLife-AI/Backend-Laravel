@@ -728,6 +728,40 @@ dashboard_folder = {
 }
 
 # ---------------------------------------------------------------------------
+# Folder: System (Operational)
+# ---------------------------------------------------------------------------
+
+AI_STATUS = {
+    "configured": True,
+    "provider_host": "api.groq.com",
+    "model": "openai/gpt-oss-120b",
+    "timeout_seconds": 12,
+}
+
+ai_status_req = make_request(
+    name="AI Provider Status",
+    method="GET",
+    path="system/ai-status",
+    description="""Whether **the environment you are pointed at** has an AI provider configured for Meal Plans -> Generate AI Draft.
+
+Run this first when a draft looks rule-based. The AI draft falls back to its rule-based generator silently and by design, so the draft itself never tells you which path ran:
+
+- `configured: false` -> this environment never even attempts an LLM call. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL`, then **rebuild** (not just restart) so the running process actually receives them.
+- `configured: true` but drafts still come back rule-based -> the call or its validation is failing. A `429` (free-tier rate limit) is the most common cause; check the app log for `AI draft:`.
+
+Never returns the API key, and makes no call to the provider.""",
+    examples=[
+        ("200 OK", "OK", 200, AI_STATUS, JSON_RESP_HEADER),
+    ],
+)
+
+system_folder = {
+    "name": "System",
+    "description": "Read-only operational checks. Authenticated, no permission gate - they report no client data.",
+    "item": [ai_status_req],
+}
+
+# ---------------------------------------------------------------------------
 # Folder: Meal Plans (Sprint 3)
 # ---------------------------------------------------------------------------
 
@@ -1109,6 +1143,7 @@ collection = {
         body_composition_folder,
         food_search_folder,
         dashboard_folder,
+        system_folder,
         meal_plans_folder,
         meal_plan_templates_folder,
         food_submission_folder,
