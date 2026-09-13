@@ -161,6 +161,105 @@ class AiDraftLlmTest extends TestCase
         )->assertCreated();
     }
 
+    /**
+     * BR-6 / FR-26: "clinical safety checks (allergy exclusion, valid
+     * food references) are enforced in code on the result, never left to
+     * prompt instructions." The allergen never reaches the prompt at all
+     * — `generateDraft` filters it out before building the candidate
+     * list — but that is exactly what makes this worth pinning: the
+     * post-response check validates against that same filtered list, so
+     * allergy safety on the LLM path holds *transitively*. A refactor
+     * that kept sending `$safeFoods` while validating against
+     * `$approvedFoods` would surface an allergen in a client's plan with
+     * every other test in this file still green.
+     */
+    public function test_an_allergen_food_id_from_the_llm_is_rejected_in_code(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        HealthProfile::create([
+            'subscriber_id' => $subscriber->id,
+            'weight_kg' => 70, 'height_cm' => 170, 'age' => 30, 'gender' => 'male',
+            'activity_level' => 'sedentary',
+            'allergies' => ['peanut'],
+            'daily_calorie_needs' => 2000,
+        ]);
+        // A real, approved row — so this is not the hallucinated-id case
+        // already covered above. It exists in `foods`; it is unsafe for
+        // *this* client, and only the allergy filter keeps it out.
+        $peanutDish = Food::factory()->create(['name_en' => 'Peanut Butter Toast', 'calories_per_100g' => 300]);
+        $safeDish = Food::factory()->create(['name_en' => 'Grilled Chicken', 'calories_per_100g' => 200]);
+
+        Http::fake(['*' => Http::response($this->chatCompletion([
+            'meals' => [
+                ['name' => 'breakfast', 'items' => [['food_id' => $peanutDish->id, 'quantity_grams' => 200, 'alternatives' => []]]],
+            ],
+        ]))]);
+
+        $response = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        );
+
+        $response->assertCreated();
+
+        $usedFoodIds = collect($response->json('meals'))
+            ->flatMap(fn ($meal) => $meal['items'])
+            ->flatMap(fn ($item) => [$item['food']['id'], ...collect($item['alternatives'])->pluck('food.id')])
+            ->unique();
+
+        $this->assertNotContains($peanutDish->id, $usedFoodIds);
+        $this->assertContains($safeDish->id, $usedFoodIds);
+    }
+
+    /**
+     * The same rule one level down: an allergen offered as an
+     * *alternative* rather than the planned item. `validateLlmItem` runs
+     * on alternatives too, so this must discard the whole response as
+     * well — a client swapping to a "permitted substitute" that contains
+     * their allergen is the same clinical failure as planning it.
+     */
+    public function test_an_allergen_offered_as_an_alternative_is_also_rejected(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        HealthProfile::create([
+            'subscriber_id' => $subscriber->id,
+            'weight_kg' => 70, 'height_cm' => 170, 'age' => 30, 'gender' => 'male',
+            'activity_level' => 'sedentary',
+            'allergies' => ['peanut'],
+            'daily_calorie_needs' => 2000,
+        ]);
+        $peanutDish = Food::factory()->create(['name_en' => 'Peanut Butter Toast', 'calories_per_100g' => 300]);
+        $safeDish = Food::factory()->create(['name_en' => 'Grilled Chicken', 'calories_per_100g' => 200]);
+
+        Http::fake(['*' => Http::response($this->chatCompletion([
+            'meals' => [
+                ['name' => 'breakfast', 'items' => [[
+                    'food_id' => $safeDish->id,
+                    'quantity_grams' => 200,
+                    'alternatives' => [['food_id' => $peanutDish->id, 'quantity_grams' => 150]],
+                ]]],
+            ],
+        ]))]);
+
+        $response = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        );
+
+        $response->assertCreated();
+
+        $usedFoodIds = collect($response->json('meals'))
+            ->flatMap(fn ($meal) => $meal['items'])
+            ->flatMap(fn ($item) => [$item['food']['id'], ...collect($item['alternatives'])->pluck('food.id')])
+            ->unique();
+
+        $this->assertNotContains($peanutDish->id, $usedFoodIds);
+    }
+
     public function test_uses_rule_based_generation_when_no_provider_is_configured(): void
     {
         config(['ai.base_url' => null, 'ai.api_key' => null]);
