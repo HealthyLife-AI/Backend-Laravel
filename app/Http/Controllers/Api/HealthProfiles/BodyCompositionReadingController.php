@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\HealthProfiles;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\HealthProfiles\StoreBodyCompositionReadingRequest;
 use App\Http\Resources\BodyCompositionReadingResource;
+use App\Models\BodyCompositionReading;
 use App\Models\Subscriber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -27,7 +28,13 @@ class BodyCompositionReadingController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        $reading = $subscriber->bodyCompositionReadings()->create($request->validated());
+        // BR-13: this endpoint is the clinic visit, so every row it
+        // writes is analyser-grade. Stamped here rather than relying on
+        // the column default, so the two write paths each state their own
+        // source instead of one of them inheriting it by omission.
+        $reading = $subscriber->bodyCompositionReadings()->create(
+            $request->validated() + ['source' => BodyCompositionReading::SOURCE_CLINIC],
+        );
 
         return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
     }

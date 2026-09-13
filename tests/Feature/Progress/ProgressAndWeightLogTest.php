@@ -43,7 +43,7 @@ class ProgressAndWeightLogTest extends TestCase
     {
         [$client, $subscriber] = $this->makeClient();
 
-        $response = $this->postJson('/api/v1/me/weight-logs', [
+        $response = $this->postJson('/api/v1/me/measurements', [
             'weight_kg' => 82.5,
         ], $this->bearerFor($client));
 
@@ -65,38 +65,130 @@ class ProgressAndWeightLogTest extends TestCase
         [$client, $subscriber] = $this->makeClient();
         $header = $this->bearerFor($client);
 
-        $this->postJson('/api/v1/me/weight-logs', ['weight_kg' => 82.5], $header)->assertCreated();
-        $this->postJson('/api/v1/me/weight-logs', ['weight_kg' => 82.1], $header)->assertOk();
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 82.5], $header)->assertCreated();
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 82.1], $header)->assertOk();
 
         $this->assertSame(1, $subscriber->bodyCompositionReadings()->count());
         $this->assertSame('82.10', $subscriber->bodyCompositionReadings()->first()->weight_kg);
     }
 
     /**
-     * A client weighs themselves on a bathroom scale; body fat and muscle
-     * mass come from a clinic analyser (FR-10). Accepting them here would
-     * let a self-reported guess sit in the same column as a measurement.
+     * BR-11, first half: a tape measure is all a remote client needs for
+     * waist, hip, thigh and arm, so those ARE accepted from the client.
      */
-    public function test_a_client_cannot_submit_clinic_only_measurements(): void
+    public function test_a_client_can_submit_their_own_circumferences(): void
     {
         [$client, $subscriber] = $this->makeClient();
 
-        $this->postJson('/api/v1/me/weight-logs', [
+        $response = $this->postJson('/api/v1/me/measurements', [
+            'weight_kg' => 80,
+            'waist_cm' => 92.5,
+            'hip_cm' => 101,
+            'thigh_cm' => 58,
+            'arm_cm' => 31.5,
+        ], $this->bearerFor($client));
+
+        $response->assertCreated();
+        $reading = $subscriber->bodyCompositionReadings()->first();
+        $this->assertEquals(92.5, $reading->waist_cm);
+        $this->assertEquals(101, $reading->hip_cm);
+        $this->assertEquals(58, $reading->thigh_cm);
+        $this->assertEquals(31.5, $reading->arm_cm);
+    }
+
+    /**
+     * BR-11, second half — the regression guard. Body fat, muscle mass and
+     * water percentage come off a bio-impedance analyser, so a client's
+     * guess must never reach those columns even if the request carries it.
+     */
+    public function test_a_client_still_cannot_submit_analyser_only_figures(): void
+    {
+        [$client, $subscriber] = $this->makeClient();
+
+        $this->postJson('/api/v1/me/measurements', [
             'weight_kg' => 80,
             'body_fat_percent' => 12,
             'muscle_mass_kg' => 40,
+            'water_percent' => 55,
         ], $this->bearerFor($client))->assertCreated();
 
         $reading = $subscriber->bodyCompositionReadings()->first();
         $this->assertNull($reading->body_fat_percent);
         $this->assertNull($reading->muscle_mass_kg);
+        $this->assertNull($reading->water_percent);
+    }
+
+    /** BR-13: a client's own entry is stamped self-reported, not analyser-grade. */
+    public function test_a_client_entry_is_stamped_self_reported(): void
+    {
+        [$client, $subscriber] = $this->makeClient();
+
+        $response = $this->postJson('/api/v1/me/measurements', [
+            'weight_kg' => 80,
+        ], $this->bearerFor($client));
+
+        $response->assertCreated();
+        $this->assertSame('self-reported', $response->json('source'));
+        $this->assertSame('self-reported', $subscriber->bodyCompositionReadings()->first()->source);
+    }
+
+    /** The nutritionist's own endpoint is the clinic visit — analyser-grade. */
+    public function test_a_nutritionist_entry_is_stamped_clinic_analyser(): void
+    {
+        [, $subscriber, $nutritionist] = $this->makeClient();
+
+        $response = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/body-composition-readings",
+            ['recorded_at' => now()->toDateString(), 'weight_kg' => 80, 'body_fat_percent' => 22],
+            $this->bearerFor($nutritionist)
+        );
+
+        $response->assertCreated();
+        $this->assertSame('clinic-analyser', $response->json('source'));
+    }
+
+    /**
+     * A client correcting a day the nutritionist already measured in
+     * clinic must not downgrade that row to self-reported — the analyser
+     * figures on it are still analyser figures.
+     */
+    public function test_a_client_edit_does_not_downgrade_a_clinic_reading(): void
+    {
+        [$client, $subscriber, $nutritionist] = $this->makeClient();
+        $today = now()->toDateString();
+
+        $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/body-composition-readings",
+            ['recorded_at' => $today, 'weight_kg' => 80, 'body_fat_percent' => 22],
+            $this->bearerFor($nutritionist)
+        )->assertCreated();
+
+        $this->postJson('/api/v1/me/measurements', [
+            'weight_kg' => 79.4,
+            'recorded_at' => $today,
+        ], $this->bearerFor($client))->assertOk();
+
+        $reading = $subscriber->bodyCompositionReadings()->first();
+        $this->assertSame('clinic-analyser', $reading->source);
+        $this->assertEquals(79.4, $reading->weight_kg);
+        $this->assertEquals(22, $reading->body_fat_percent);
+    }
+
+    /** An empty body would otherwise create a reading holding nothing. */
+    public function test_a_measurement_with_no_values_is_rejected(): void
+    {
+        [$client] = $this->makeClient();
+
+        $this->postJson('/api/v1/me/measurements', [], $this->bearerFor($client))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('weight_kg');
     }
 
     public function test_a_future_weight_date_is_rejected(): void
     {
         [$client] = $this->makeClient();
 
-        $this->postJson('/api/v1/me/weight-logs', [
+        $this->postJson('/api/v1/me/measurements', [
             'weight_kg' => 80,
             'recorded_at' => now()->addDay()->toDateString(),
         ], $this->bearerFor($client))
@@ -149,7 +241,7 @@ class ProgressAndWeightLogTest extends TestCase
         $header = $this->bearerFor($client);
 
         foreach ([[3, 84.0], [2, 83.0], [1, 82.0]] as [$daysAgo, $weight]) {
-            $this->postJson('/api/v1/me/weight-logs', [
+            $this->postJson('/api/v1/me/measurements', [
                 'weight_kg' => $weight,
                 'recorded_at' => now()->subDays($daysAgo)->toDateString(),
             ], $header)->assertCreated();
@@ -170,7 +262,7 @@ class ProgressAndWeightLogTest extends TestCase
     {
         [$client, $subscriber, $nutritionist] = $this->makeClient();
 
-        $this->postJson('/api/v1/me/weight-logs', ['weight_kg' => 80], $this->bearerFor($client))
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 80], $this->bearerFor($client))
             ->assertCreated();
 
         $response = $this->getJson(

@@ -849,25 +849,55 @@ Paginated, newest first. `from`/`to` are optional but must be sent
 **together** — a half-open range returns `422`, rather than silently
 falling back to the full history.
 
-### `POST /me/weight-logs`
+### `POST /me/measurements`
+
+> Renamed from `POST /me/weight-logs` in **S4-16**. It stopped being
+> weight-only once the four circumference fields were added. No consumer
+> had been built, so the rename was free then and would have cost a client
+> migration after S4-11/S4-17.
 
 ```json
-{ "weight_kg": 82.5, "recorded_at": "2026-09-13" }
+{
+  "weight_kg": 82.5,
+  "waist_cm": 92.5,
+  "hip_cm": 101,
+  "thigh_cm": 58,
+  "arm_cm": 31.5,
+  "recorded_at": "2026-09-14"
+}
 ```
 
-Writes to the existing `body_composition_readings` table (SRS §2.4), so the
-nutritionist's progress chart reads one series whether a number came from a
-clinic analyser or the client's own scale.
+Writes to `body_composition_readings` (SRS §2.4), the same table the
+nutritionist writes to, so the progress chart reads one series.
 
-Only `weight_kg` is accepted. Body fat, muscle mass, water and waist come
-from a clinic-grade analyser during a visit (FR-10) and are **silently
-ignored** if sent here — a client cannot measure them, and a self-reported
-guess must not land in the same column as a measurement.
+**BR-11 — what a client may send.** The split is by *instrument*, not by
+trust: a scale and a tape measure are all a remote client needs, so
+`weight_kg`, `waist_cm`, `hip_cm`, `thigh_cm`, `arm_cm` are accepted.
+`body_fat_percent`, `muscle_mass_kg` and `water_percent` come off a
+bio-impedance analyser and are **silently dropped** if sent here — they are
+entered only through the nutritionist's own endpoint.
 
-Idempotent by date: the table holds one reading per day, so re-sending the
-same day's weight updates that row. **201** on first write for a date,
-**200** when it updated an existing one. No `idempotency_key` needed — the
-date is the key.
+At least one measurement is required; an empty body returns `422`.
+
+**BR-13 — `source`.** A client's entry is stamped `self-reported`; the
+nutritionist's endpoint stamps `clinic-analyser`. Every reading carries the
+flag so the two are never silently mixed in one clinical series, and so
+charts (S4-18) can mark which figures are analyser-grade.
+
+Idempotent by date: one reading per day, so re-sending the same day updates
+that row. **201** on first write for a date, **200** when it updated an
+existing one. No `idempotency_key` — the date is the key.
+
+> A client editing a day the nutritionist already measured in clinic does
+> **not** downgrade that row to `self-reported`. The analyser figures on it
+> remain analyser figures, so `source` is left as-is on update.
+
+### `GET /me/meal-logs` and nutritionist readings
+
+`GET /clients/{id}/body-composition-readings` and
+`POST /clients/{id}/body-composition-readings` are unchanged except that
+they now also accept `hip_cm`, `thigh_cm`, `arm_cm`, and every response
+carries `source`.
 
 ---
 
@@ -909,12 +939,12 @@ three round-trips to paint one screen is what NFR-01 is trying to avoid.
 ```json
 {
   "weight_trend": [
-    { "recorded_at": "2026-09-10", "weight_kg": 84 },
-    { "recorded_at": "2026-09-12", "weight_kg": 82 }
+    { "recorded_at": "2026-09-10", "weight_kg": 84, "source": "clinic-analyser" },
+    { "recorded_at": "2026-09-12", "weight_kg": 82, "source": "self-reported" }
   ],
   "body_composition": {
-    "latest":   { "recorded_at": "2026-09-12", "weight_kg": 82, "body_fat_percent": null },
-    "previous": { "recorded_at": "2026-09-10", "weight_kg": 84, "body_fat_percent": null },
+    "latest":   { "recorded_at": "2026-09-12", "source": "self-reported",  "weight_kg": 82, "waist_cm": 92.5, "hip_cm": 101, "thigh_cm": 58, "arm_cm": 31.5, "body_fat_percent": null },
+    "previous": { "recorded_at": "2026-09-10", "source": "clinic-analyser", "weight_kg": 84, "body_fat_percent": 24 },
     "change":   { "weight_kg": -2 }
   },
   "adherence": { "...": "same shape as the adherence endpoint" }

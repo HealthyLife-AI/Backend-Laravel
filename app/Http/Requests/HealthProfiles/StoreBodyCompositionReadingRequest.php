@@ -24,6 +24,11 @@ class StoreBodyCompositionReadingRequest extends FormRequest
             'muscle_mass_kg' => ['nullable', 'numeric', 'between:0,500'],
             'water_percent' => ['nullable', 'numeric', 'between:0,100'],
             'waist_cm' => ['nullable', 'numeric', 'between:0,300'],
+            // S4-16: the nutritionist measures everything the client can,
+            // plus the analyser-only figures above.
+            'hip_cm' => ['nullable', 'numeric', 'between:0,300'],
+            'thigh_cm' => ['nullable', 'numeric', 'between:0,200'],
+            'arm_cm' => ['nullable', 'numeric', 'between:0,150'],
         ];
     }
 }

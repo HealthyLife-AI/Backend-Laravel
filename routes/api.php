@@ -9,7 +9,7 @@ use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
 use App\Http\Controllers\Api\Logs\MealLogController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
-use App\Http\Controllers\Api\Logs\WeightLogController;
+use App\Http\Controllers\Api\Logs\MeasurementController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
@@ -103,9 +103,11 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/meal-logs', [MealLogController::class, 'index'])->name('me.meal-logs.index');
         Route::post('me/meal-logs', [MealLogController::class, 'store'])->name('me.meal-logs.store');
 
-        // S4-02 / FR-17: the client's own periodic weight. Writes to the
-        // existing body_composition_readings table (SRS Section 2.4).
-        Route::post('me/weight-logs', [WeightLogController::class, 'store'])->name('me.weight-logs.store');
+        // S4-02/S4-16 / FR-17, FR-29, BR-11: the client's own weight and
+        // circumferences. Named `measurements`, not `weight-logs` — it
+        // stopped being weight-only when S4-16 added the four tape-measure
+        // fields. Writes to body_composition_readings (SRS Section 2.4).
+        Route::post('me/measurements', [MeasurementController::class, 'store'])->name('me.measurements.store');
     });
 
     // S4-00 / PRD Section 5.2: the nutritionist's own professional

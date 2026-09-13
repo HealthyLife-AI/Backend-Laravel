@@ -46,6 +46,7 @@ class ProgressController extends Controller
             'weight_trend' => $readings->map(fn (BodyCompositionReading $reading) => [
                 'recorded_at' => $reading->recorded_at->toDateString(),
                 'weight_kg' => (float) $reading->weight_kg,
+                'source' => $reading->source,
             ])->values(),
             'body_composition' => [
                 'latest' => $this->snapshot($readings->last()),
@@ -65,11 +66,17 @@ class ProgressController extends Controller
 
         return [
             'recorded_at' => $reading->recorded_at->toDateString(),
+            // BR-13: carried so the charts (S4-18) can mark which figures
+            // are analyser-grade and which are the client's own estimate.
+            'source' => $reading->source,
             'weight_kg' => (float) $reading->weight_kg,
             'body_fat_percent' => $reading->body_fat_percent !== null ? (float) $reading->body_fat_percent : null,
             'muscle_mass_kg' => $reading->muscle_mass_kg !== null ? (float) $reading->muscle_mass_kg : null,
             'water_percent' => $reading->water_percent !== null ? (float) $reading->water_percent : null,
             'waist_cm' => $reading->waist_cm !== null ? (float) $reading->waist_cm : null,
+            'hip_cm' => $reading->hip_cm !== null ? (float) $reading->hip_cm : null,
+            'thigh_cm' => $reading->thigh_cm !== null ? (float) $reading->thigh_cm : null,
+            'arm_cm' => $reading->arm_cm !== null ? (float) $reading->arm_cm : null,
         ];
     }
 
@@ -92,7 +99,7 @@ class ProgressController extends Controller
         $last = $readings->last();
         $change = [];
 
-        foreach (['weight_kg', 'body_fat_percent', 'muscle_mass_kg', 'water_percent', 'waist_cm'] as $metric) {
+        foreach (['weight_kg', 'body_fat_percent', 'muscle_mass_kg', 'water_percent', 'waist_cm', 'hip_cm', 'thigh_cm', 'arm_cm'] as $metric) {
             if ($first->{$metric} !== null && $last->{$metric} !== null) {
                 $change[$metric] = round((float) $last->{$metric} - (float) $first->{$metric}, 1);
             }
