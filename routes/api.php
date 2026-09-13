@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
 use App\Http\Controllers\Api\Logs\MealLogController;
+use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Logs\WeightLogController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\ProgressController;
@@ -105,6 +106,16 @@ Route::prefix('v1')->name('api.')->group(function () {
         // S4-02 / FR-17: the client's own periodic weight. Writes to the
         // existing body_composition_readings table (SRS Section 2.4).
         Route::post('me/weight-logs', [WeightLogController::class, 'store'])->name('me.weight-logs.store');
+    });
+
+    // S4-00 / PRD Section 5.2: the nutritionist's own professional
+    // profile. Gated on the role rather than a permission — the PRD
+    // permission matrix has no entry for "edit my own profile", and
+    // inventing one would put a permission in the seeder that no
+    // document describes.
+    Route::middleware(['jwt', 'role:nutritionist'])->group(function () {
+        Route::get('me/nutritionist-profile', [NutritionistProfileController::class, 'show'])->name('me.nutritionist-profile.show');
+        Route::put('me/nutritionist-profile', [NutritionistProfileController::class, 'update'])->name('me.nutritionist-profile.update');
     });
 
     // S4-03/S4-04 / FR-18, FR-19 / progress.view: plan-vs-actual and the

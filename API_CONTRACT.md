@@ -956,3 +956,49 @@ nutritionist most needs to see.
 > three states only by colour. It is an implementation placeholder pending
 > nutritionist input, which is why it is `config/adherence.php` +
 > env-overridable rather than a literal in the code.
+
+---
+
+## Nutritionist Profile (Sprint 4 · S4-00)
+
+The nutritionist's own professional details. Resolved from the JWT with no
+route-bound id, so there is nothing here to point at another
+nutritionist's profile with.
+
+Gate: `role:nutritionist`. Deliberately a **role**, not a permission — the
+PRD permission matrix has no "edit my own profile" entry, and inventing
+one would put a permission in the seeder that no document describes.
+
+### `GET /me/nutritionist-profile`
+
+```json
+{
+  "id": 1,
+  "specialty": "Clinical nutrition",
+  "clinic_name": "Gaza Nutrition Center",
+  "bio": "Ten years of practice.",
+  "plan_tier": "basic",
+  "updated_at": "2026-09-13T11:40:00+00:00"
+}
+```
+
+The row is created on first access rather than at registration, so an
+account that never opens the profile screen carries no empty row, and every
+nutritionist who registered before this table existed gets one without a
+backfill migration. The endpoint still answers **200**, not 201 — creating
+the row is an implementation detail of reading it.
+
+### `PUT /me/nutritionist-profile`
+
+Accepts `specialty`, `clinic_name`, `bio` only.
+
+> ⚠️ **`plan_tier` is read-only.** It is billing state, not profile
+> content. It is returned so the dashboard can display the current tier,
+> but sending it is ignored — otherwise a nutritionist could move
+> themselves onto a paid tier for free by adding one field to the request
+> body. It will be written by the billing flow (Post-MVP).
+
+`plan_tier` is stored as a plain string, not a database enum: the tier
+names live in PRD §8 "Open Decisions" and the PRD itself says they are
+worth re-examining. Allowed values are enforced at
+`NutritionistProfile::TIERS`, where changing them costs no migration.

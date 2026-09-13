@@ -53,6 +53,17 @@ class User extends Authenticatable
     }
 
     /**
+     * S4-00: professional details for a nutritionist-role user. Null
+     * until they fill it in — the row is created on demand rather than
+     * at registration, so an account that never opens the profile screen
+     * carries no empty row.
+     */
+    public function nutritionistProfile(): HasOne
+    {
+        return $this->hasOne(NutritionistProfile::class);
+    }
+
+    /**
      * The clients belonging to this user (only meaningful when this user
      * holds the `nutritionist` role).
      */
