@@ -771,3 +771,188 @@ provider (so it can't be polled to burn quota). `configured: false` means this
 environment never attempts an LLM call at all. `configured: true` while drafts
 still come back rule-based means the call itself or its validation is failing
 — check the application log for `AI draft:`.
+
+---
+
+## Meal & Weight Logging (Sprint 4)
+
+What the client actually ate and weighed, as opposed to what was planned
+for them. All endpoints below are the **client's own** — the subscriber is
+resolved from the JWT and never supplied by the caller, so there is no id
+here to point at another client's records with (same shape as
+`GET /me/meal-plan`).
+
+Permission: `logs.manage.own` (client role).
+
+**BR-9 — what "on-plan" means.** A log carrying a `meal_item_id` is
+on-plan; a log without one was eaten outside the plan. Both the planned
+item and any of its permitted alternatives are rows in `meal_items`, so
+choosing a listed alternative counts as on-plan, not as a deviation.
+
+### `POST /me/meal-logs`
+
+```json
+{
+  "food_id": 42,
+  "meal_item_id": 17,
+  "quantity_grams": 300,
+  "logged_at": "2026-09-13T12:30:00+00:00",
+  "idempotency_key": "9f1c2b64-8a2e-4f3a-9a1b-2c3d4e5f6a7b"
+}
+```
+
+| field | required | notes |
+|---|---|---|
+| `food_id` | yes | must be an **approved** food |
+| `meal_item_id` | no | omit when the food was outside the plan |
+| `quantity_grams` | yes | 1–5000 |
+| `logged_at` | no | defaults to now; must not be in the future. Send the real time an offline entry was made, not the sync time |
+| `idempotency_key` | no | UUID; see retry semantics below |
+
+`meal_item_id` is validated by **ownership**, not existence: it must belong
+to a plan assigned to the authenticated client. Referencing another
+client's meal item returns `422`, not `404` — it is a validation failure on
+the field, and confirming the row exists would itself leak information.
+
+`food_id` must match the referenced item's own food. "I ate the planned
+item, but the food was something else" is rejected (`422` on `food_id`),
+because letting it through would count a meal as on-plan that never
+matched the plan.
+
+**201** with the created log:
+
+```json
+{
+  "id": 5,
+  "food": { "id": 42, "name_en": "Chicken Kabsa", "calories_per_100g": 165 },
+  "quantity_grams": 300,
+  "macros": { "calories": 495, "protein_g": 30, "carbs_g": 54, "fat_g": 18 },
+  "meal_item_id": 17,
+  "is_on_plan": true,
+  "logged_at": "2026-09-13T12:30:00+00:00"
+}
+```
+
+`is_on_plan` is returned so the web and mobile clients do not each
+re-derive BR-9 from `meal_item_id` being null.
+
+**Retry semantics (S4-05).** Send an `idempotency_key` when replaying a
+queued offline entry. If a log with that key already exists for this
+client, the endpoint returns **200** with the *existing* log instead of
+creating a second one. 200-not-error is deliberate: it lets the mobile
+queue treat the retry as success and stop retrying. A genuine second
+helping is a different entry — give it a different key.
+
+### `GET /me/meal-logs?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Paginated, newest first. `from`/`to` are optional but must be sent
+**together** — a half-open range returns `422`, rather than silently
+falling back to the full history.
+
+### `POST /me/weight-logs`
+
+```json
+{ "weight_kg": 82.5, "recorded_at": "2026-09-13" }
+```
+
+Writes to the existing `body_composition_readings` table (SRS §2.4), so the
+nutritionist's progress chart reads one series whether a number came from a
+clinic analyser or the client's own scale.
+
+Only `weight_kg` is accepted. Body fat, muscle mass, water and waist come
+from a clinic-grade analyser during a visit (FR-10) and are **silently
+ignored** if sent here — a client cannot measure them, and a self-reported
+guess must not land in the same column as a measurement.
+
+Idempotent by date: the table holds one reading per day, so re-sending the
+same day's weight updates that row. **201** on first write for a date,
+**200** when it updated an existing one. No `idempotency_key` needed — the
+date is the key.
+
+---
+
+## Adherence & Progress (Sprint 4)
+
+Permission: `progress.view` (nutritionist **and** client roles). The bound
+subscriber is re-checked with `belongsToCaller()`, so reading another
+nutritionist's client returns **404**, not 403 — the id is not confirmed.
+
+### `GET /clients/{id}/adherence?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+```json
+{
+  "from": "2026-09-07",
+  "to": "2026-09-13",
+  "total_logs": 4,
+  "on_plan_logs": 3,
+  "off_plan_logs": 1,
+  "adherence_percent": 75
+}
+```
+
+Per FR-18 the denominator is what the client **logged**, not what they were
+planned to eat. Measuring against planned items would merge two different
+failures — eating the wrong thing, and not logging at all — into one
+number. Not logging is surfaced separately as `adherence_status: "late"`.
+
+`adherence_percent` is **`null`, not `0`**, when nothing was logged in the
+window: "0% adherent" and "no data yet" are different clinical statements
+and the profile screen renders a distinct empty state for the second.
+
+The window defaults to the last 7 days. `from`/`to` must be sent together.
+
+### `GET /clients/{id}/progress?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Everything the Client Profile & Progress screen needs in one response —
+three round-trips to paint one screen is what NFR-01 is trying to avoid.
+
+```json
+{
+  "weight_trend": [
+    { "recorded_at": "2026-09-10", "weight_kg": 84 },
+    { "recorded_at": "2026-09-12", "weight_kg": 82 }
+  ],
+  "body_composition": {
+    "latest":   { "recorded_at": "2026-09-12", "weight_kg": 82, "body_fat_percent": null },
+    "previous": { "recorded_at": "2026-09-10", "weight_kg": 84, "body_fat_percent": null },
+    "change":   { "weight_kg": -2 }
+  },
+  "adherence": { "...": "same shape as the adherence endpoint" }
+}
+```
+
+`weight_trend` is ordered oldest → newest, ready to plot.
+
+`change` compares the **first and last reading in the window**, answering
+"what changed this month" rather than against an all-time baseline. It is
+`null` when the window holds fewer than two readings — one reading is a
+position, not a trend, and reporting `0` would imply the client held steady
+when nothing was actually measured.
+
+`change` also omits any metric not present at **both** ends: a client
+analysed once at the clinic and self-weighing since has weight at both ends
+but body fat at only one, and subtracting from null would report a
+fabricated loss.
+
+### Client status fields
+
+`POST /me/meal-logs` updates two fields on the subscriber that the
+dashboard and client list have read since Sprint 2 with nothing writing
+them (SRS §2.4.2):
+
+- `last_logged_at` — stamped on every meal log.
+- `adherence_status` — recomputed on every meal log: `late` when the client
+  has not logged for `ADHERENCE_LATE_AFTER_DAYS` days (default **3**,
+  matching FR-20's alert rule), otherwise `on_track` at or above
+  `ADHERENCE_ON_TRACK_PERCENT` (default **70**) and `needs_attention`
+  below it.
+
+Staleness is checked **before** the percentage: a client who logged one
+perfect meal a fortnight ago is 100% adherent over any window containing
+it, and calling that on-track would hide exactly the client the
+nutritionist most needs to see.
+
+> ⚠️ The 70% boundary has **no source in the PRD or SRS** — both define the
+> three states only by colour. It is an implementation placeholder pending
+> nutritionist input, which is why it is `config/adherence.php` +
+> env-overridable rather than a literal in the code.

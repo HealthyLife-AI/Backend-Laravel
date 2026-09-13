@@ -7,6 +7,10 @@ use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\Logs\MealLogController;
+use App\Http\Controllers\Api\Logs\WeightLogController;
+use App\Http\Controllers\Api\Progress\AdherenceController;
+use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
@@ -90,6 +94,25 @@ Route::prefix('v1')->name('api.')->group(function () {
     // route-bound subscriber id (see ClientPlanController docblock).
     Route::middleware(['jwt', 'permission:plans.view.own'])->group(function () {
         Route::get('me/meal-plan', [ClientPlanController::class, 'show'])->name('me.meal-plan.show');
+    });
+
+    // S4-01 / FR-17, BR-9 / logs.manage.own: the CLIENT logging what they
+    // actually ate. Same no-route-bound-id shape as me/meal-plan above.
+    Route::middleware(['jwt', 'permission:logs.manage.own'])->group(function () {
+        Route::get('me/meal-logs', [MealLogController::class, 'index'])->name('me.meal-logs.index');
+        Route::post('me/meal-logs', [MealLogController::class, 'store'])->name('me.meal-logs.store');
+
+        // S4-02 / FR-17: the client's own periodic weight. Writes to the
+        // existing body_composition_readings table (SRS Section 2.4).
+        Route::post('me/weight-logs', [WeightLogController::class, 'store'])->name('me.weight-logs.store');
+    });
+
+    // S4-03/S4-04 / FR-18, FR-19 / progress.view: plan-vs-actual and the
+    // progress charts. Held by nutritionist AND client roles, so each
+    // controller re-checks belongsToCaller() on the bound subscriber.
+    Route::middleware(['jwt', 'permission:progress.view'])->group(function () {
+        Route::get('clients/{subscriber}/adherence', [AdherenceController::class, 'show'])->name('clients.adherence.show');
+        Route::get('clients/{subscriber}/progress', [ProgressController::class, 'show'])->name('clients.progress.show');
     });
 
     Route::middleware(['jwt', 'permission:foods.suggest'])->group(function () {

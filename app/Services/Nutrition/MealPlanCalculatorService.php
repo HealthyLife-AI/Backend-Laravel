@@ -2,6 +2,7 @@
 
 namespace App\Services\Nutrition;
 
+use App\Models\Food;
 use App\Models\Meal;
 use App\Models\MealItem;
 use App\Models\MealPlan;
@@ -25,8 +26,24 @@ class MealPlanCalculatorService
     /** @return array{calories: float, protein_g: float, carbs_g: float, fat_g: float} */
     public function itemMacros(MealItem $item): array
     {
-        $food = $item->food;
-        $factor = (float) $item->quantity_grams / 100;
+        return $this->macrosFor($item->food, (float) $item->quantity_grams);
+    }
+
+    /**
+     * The per-100g arithmetic itself, for any food at any quantity.
+     *
+     * Split out of `itemMacros` in S4-01 so a meal LOG — which has a food
+     * and a gram quantity but is not a `MealItem` — is measured by the
+     * same code that produced the plan it's being compared against.
+     * Two implementations of this would mean plan-vs-actual (S4-03) could
+     * report a gap that only exists because the two sides rounded
+     * differently.
+     *
+     * @return array{calories: float, protein_g: float, carbs_g: float, fat_g: float}
+     */
+    public function macrosFor(Food $food, float $quantityGrams): array
+    {
+        $factor = $quantityGrams / 100;
 
         return [
             'calories' => round((float) $food->calories_per_100g * $factor, 1),
