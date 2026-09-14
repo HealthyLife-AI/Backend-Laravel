@@ -4,6 +4,7 @@ namespace App\Services\MealPlans;
 
 use App\Exceptions\Ai\AiGenerationException;
 use App\Models\Food;
+use App\Models\HealthProfile;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
@@ -92,7 +93,7 @@ class AiDraftPlanService
         $meals = null;
 
         if ($this->llm->isConfigured()) {
-            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories);
+            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->goal);
         }
 
         if ($meals === null) {
@@ -109,14 +110,14 @@ class AiDraftPlanService
      *
      * @return array<int, array<string, mixed>>|null
      */
-    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories): ?array
+    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): ?array
     {
         $candidates = $safeFoods->take(self::MAX_CANDIDATE_FOODS);
 
         try {
             $response = $this->llm->chatJson([
                 ['role' => 'system', 'content' => $this->systemPrompt()],
-                ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories)],
+                ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal)],
             ]);
         } catch (AiGenerationException $e) {
             Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['error' => $e->getMessage()]);
@@ -140,10 +141,53 @@ class AiDraftPlanService
     private function systemPrompt(): string
     {
         return <<<'PROMPT'
-        You are a clinical nutrition assistant drafting a starting meal plan
-        for a nutritionist to review and edit — never a final plan. Choose
-        foods ONLY from the numbered list of "id" values the user message
-        gives you; never invent a food or an id that isn't in that list.
+        You are a licensed clinical nutrition assistant. You produce a
+        starting meal-plan draft for a nutritionist to review and edit —
+        never a final plan. Choose foods ONLY from the numbered list of
+        "id" values the user message gives you; never invent a food or an
+        id that isn't in that list.
+
+        Use every piece of the "client_profile" in the user message to
+        make intelligent, clinically sound food choices:
+
+        1. GOAL — adapt food choices:
+           - Weight loss → favour high-protein, high-fibre,
+             lower-calorie-density foods; prefer grilled/baked over fried.
+           - Weight gain / muscle building → include calorie-dense
+             nutritious foods, larger portions of complex carbs & protein.
+           - Maintenance → balanced variety across macronutrients.
+
+        2. HEALTH CONDITIONS — critical dietary adjustments:
+           - Diabetes / insulin resistance → low glycaemic-index carbs,
+             avoid simple sugars, pair carbs with protein or fat.
+           - Hypertension → avoid high-sodium foods (pickles, processed
+             meats); favour potassium-rich foods.
+           - High cholesterol → limit saturated fat, favour fish & omega-3.
+           - Kidney disease → watch protein load and potassium.
+           - Gastric / IBS / reflux → avoid spicy, fried, or acidic foods.
+           - Celiac disease → strictly gluten-free.
+           If a condition is present, do NOT pick a food that would
+           aggravate it even if it fits calorically.
+
+        3. MEDICATIONS — common interactions to respect:
+           - Blood thinners (warfarin) → moderate vitamin-K-rich greens.
+           - Metformin → avoid excessive sugar.
+           - Statins → avoid large amounts of grapefruit.
+
+        4. FOOD PREFERENCES — always respect them (vegetarian, no seafood,
+           lactose-free, etc.). Never pick a food that violates a stated
+           preference.
+
+        5. AGE & GENDER:
+           - Older adults (>55) → more protein & calcium-rich foods.
+           - Females → include iron-rich foods when appropriate.
+           - Young adults → balanced macros supporting activity.
+
+        6. ACTIVITY LEVEL — higher activity → more complex carbs for
+           energy and protein for recovery; sedentary → lighter portions.
+
+        7. NUTRITIONIST NOTES / LAB NOTES — if the nutritionist left
+           specific instructions, follow them; they override generic rules.
 
         Context: this is for Arab / Middle-Eastern clients. Pick foods that
         are culturally appropriate for each meal TIME:
@@ -174,10 +218,11 @@ class AiDraftPlanService
         - Use a DIFFERENT food_id as the planned item in every meal — do not repeat the same headline food across meals (alternatives may repeat).
         - Try to make each meal's planned item's calories land close to that meal's target calories given in the user message.
         - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
+        - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
         PROMPT;
     }
 
-    private function userPrompt(Collection $candidateFoods, int $dailyCalories): string
+    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): string
     {
         $foods = $candidateFoods->map(fn (Food $food) => [
             'id' => $food->id,
@@ -193,11 +238,35 @@ class AiDraftPlanService
             $mealTargets[$mealName] = round($dailyCalories * $share);
         }
 
-        return json_encode([
+        // Build a rich client context so the LLM can reason like a
+        // professional nutritionist — not just calorie-fit.
+        $clientProfile = array_filter([
+            'goal' => $goal,
+            'gender' => $profile->gender,
+            'age' => $profile->age,
+            'weight_kg' => $profile->weight_kg !== null ? (float) $profile->weight_kg : null,
+            'height_cm' => $profile->height_cm !== null ? (float) $profile->height_cm : null,
+            'activity_level' => $profile->activity_level,
+            'health_conditions' => $profile->health_conditions,
+            'medications' => $profile->medications,
+            'allergies' => $profile->allergies,
+            'food_preferences' => $profile->food_preferences,
+            'surgery_history' => $profile->surgery_history,
+            'lab_notes' => $profile->lab_notes,
+            'nutritionist_notes' => $profile->nutritionist_notes,
+        ], fn ($v) => $v !== null && $v !== '' && $v !== []);
+
+        $payload = [
             'daily_calorie_target' => $dailyCalories,
             'meal_calorie_targets' => $mealTargets,
             'available_foods' => $foods,
-        ], JSON_UNESCAPED_UNICODE);
+        ];
+
+        if ($clientProfile !== []) {
+            $payload = ['client_profile' => $clientProfile] + $payload;
+        }
+
+        return json_encode($payload, JSON_UNESCAPED_UNICODE);
     }
 
     /**
