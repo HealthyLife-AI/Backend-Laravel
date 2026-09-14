@@ -26,12 +26,12 @@ class DashboardOverviewTest extends TestCase
         $nutritionist = User::factory()->nutritionist()->create();
         $otherNutritionist = User::factory()->nutritionist()->create();
 
-        Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id, 'adherence_status' => 'on_track']);
-        Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id, 'adherence_status' => 'needs_attention']);
+        Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id, 'adherence_status' => 'stable']);
+        Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id, 'adherence_status' => 'declining']);
         Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]); // pending, no adherence yet
 
         // Belongs to someone else — must not affect the counts above.
-        Subscriber::factory()->active()->create(['nutritionist_id' => $otherNutritionist->id, 'adherence_status' => 'on_track']);
+        Subscriber::factory()->active()->create(['nutritionist_id' => $otherNutritionist->id, 'adherence_status' => 'stable']);
 
         $response = $this->getJson('/api/v1/dashboard/overview', $this->bearerFor($nutritionist));
 
@@ -39,9 +39,9 @@ class DashboardOverviewTest extends TestCase
             'total' => 3,
             'active' => 2,
             'pending' => 1,
-            'on_track' => 1,
-            'needs_attention' => 1,
-            'late' => 0,
+            'stable' => 1,
+            'declining' => 1,
+            'stopped_logging' => 0,
         ]);
 
         // No logging feature yet (later sprint) — every active client is
@@ -57,7 +57,7 @@ class DashboardOverviewTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'total' => 0, 'active' => 0, 'pending' => 0,
-                'on_track' => 0, 'needs_attention' => 0, 'late' => 0, 'not_logged_today' => 0,
+                'stable' => 0, 'declining' => 0, 'stopped_logging' => 0, 'not_logged_today' => 0,
             ]);
     }
 }

@@ -20,7 +20,8 @@ class ListClientsRequest extends FormRequest
     {
         return [
             'status' => ['sometimes', Rule::in(['pending', 'active'])],
-            'adherence' => ['sometimes', Rule::in(['on_track', 'needs_attention', 'late'])],
+            // BR-14: direction, not level. See AdherenceService.
+            'adherence' => ['sometimes', Rule::in(['stable', 'declining', 'stopped_logging'])],
             'search' => ['sometimes', 'string', 'max:255'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];

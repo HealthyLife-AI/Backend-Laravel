@@ -273,9 +273,11 @@ internal model name, the API and UI both say "client"):
 - `goal`: one of `weight_loss` / `weight_gain` / `weight_maintenance` / `health_monitoring`.
 - `status`: `pending` (invited, not yet activated) or `active`. This is invite
   lifecycle only — there's no "deactivate a client" action in this sprint.
-- `adherence_status`: `on_track` / `needs_attention` / `late` / `null`. Always
-  `null` for now — it's computed from plan-vs-actual logging, which lands in a
-  later sprint. Never fabricated to look populated.
+- `adherence_status`: `stable` / `declining` / `stopped_logging` / `null`.
+  Written since Sprint 4 by the adherence calculation. `null` means it has
+  not been computed yet for that client (no logs since the S4-03 rework) —
+  never fabricated to look populated. It describes DIRECTION, not level
+  (BR-14); see "Status is direction, not level".
 
 ### `POST /clients`
 
@@ -317,7 +319,7 @@ envelope).
 | Query param | Values |
 |---|---|
 | `status` | `pending` \| `active` |
-| `adherence` | `on_track` \| `needs_attention` \| `late` |
+| `adherence` | `stable` \| `declining` \| `stopped_logging` |
 | `search` | matches client name or code, **prefix only** (`"sar"` matches "Sara", not "Ansara") |
 | `per_page` | 1–100, default 20 |
 
@@ -478,14 +480,15 @@ F-2 stat cards, for the calling nutritionist only. `permission:clients.manage`.
 ```json
 {
   "total": 3, "active": 2, "pending": 1,
-  "on_track": 1, "needs_attention": 1, "late": 0,
+  "stable": 1, "declining": 1, "stopped_logging": 0,
   "not_logged_today": 2
 }
 ```
 
-`on_track`/`needs_attention`/`late`/`not_logged_today` will read low or zero
-until a later sprint's logging feature starts populating real adherence data
-— that's accurate given the current data, not a bug.
+`stable`/`declining`/`stopped_logging` count clients by the DIRECTION of
+their adherence (BR-14), not by where they sit against a threshold. A client
+whose status has not been recomputed since the S4-03 rework counts toward
+none of the three rather than being defaulted into one.
 
 ---
 
@@ -911,25 +914,75 @@ nutritionist's client returns **404**, not 403 — the id is not confirmed.
 
 ```json
 {
-  "from": "2026-09-07",
-  "to": "2026-09-13",
-  "total_logs": 4,
-  "on_plan_logs": 3,
-  "off_plan_logs": 1,
-  "adherence_percent": 75
+  "from": "2026-09-08",
+  "to": "2026-09-14",
+  "total_logs": 25,
+  "on_plan_logs": 18,
+  "off_plan_logs": 7,
+  "adherence_percent": 72,
+  "previous": { "from": "2026-09-01", "to": "2026-09-07", "adherence_percent": 85 },
+  "change_pp": -13,
+  "status": "declining",
+  "reference_percent": 70
 }
 ```
 
 Per FR-18 the denominator is what the client **logged**, not what they were
 planned to eat. Measuring against planned items would merge two different
-failures — eating the wrong thing, and not logging at all — into one
-number. Not logging is surfaced separately as `adherence_status: "late"`.
+failures — eating the wrong thing, and not logging at all — into one number.
 
 `adherence_percent` is **`null`, not `0`**, when nothing was logged in the
-window: "0% adherent" and "no data yet" are different clinical statements
-and the profile screen renders a distinct empty state for the second.
+window: "0% adherent" and "no data yet" are different clinical statements.
+
+`previous` is the equally long window immediately before this one, so the
+two rates are comparable — a 7-day period against the 7 days before it.
 
 The window defaults to the last 7 days. `from`/`to` must be sent together.
+
+### Status is direction, not level (BR-14, FR-18)
+
+> ⚠️ **Do not classify on `adherence_percent`.** Both interviewed
+> nutritionists rejected a level as the trigger: Kholod named "a repeated
+> lapse or a decline" as what actually prompts intervention, and Rama
+> cautioned that a percentage alone guarantees no outcome because the plan
+> works as a whole.
+
+`status` is one of:
+
+| value | meaning |
+|---|---|
+| `stable` | steady or improving — no alert, **even below 70%** |
+| `declining` | fell by at least the material-decline threshold since the previous period — surfaced **even while above 70%** |
+| `stopped_logging` | no log for `ADHERENCE_LATE_AFTER_DAYS` days (default 3, from FR-20's alert rule), or no logs in the window at all |
+
+Staleness is evaluated **before** the rate: a client who logged one perfect
+meal a fortnight ago scores 100% over any window containing it, and calling
+that stable would hide exactly the client the nutritionist most needs.
+
+A client with no preceding period reads as `stable`. Absence of a prior
+rate is not evidence of a fall.
+
+`reference_percent` (70 by default) ships with the payload for **display
+only** — FR-30 is explicit that it is context, not a verdict. Show it beside
+the rate; never branch on it.
+
+Labels shown to a nutritionist must describe observed behaviour and must
+not imply a clinical prediction (BR-14) — see S4-19.
+
+**Config** (`config/adherence.php`, all env-overridable):
+
+| key | default | source |
+|---|---|---|
+| `reference_percent` | 70 | FR-30 — confirmed by Kholod as a practical reference |
+| `material_decline_pp` | 10 | ⚠️ **placeholder, no clinical source** — see below |
+| `late_after_days` | 3 | FR-20's existing "no log for 3 days" alert rule |
+| `default_window_days` | 7 | dashboard comparison + weekly summary cadence |
+
+> ⚠️ `material_decline_pp` defines how far a rate must fall to count as
+> "materially" declining. BR-14 says only "fallen materially" and neither
+> nutritionist was asked to quantify it. 10pp is engineering's default and
+> carries no clinical authority — it should be put to Kholod and Rama the
+> same way the 70% was.
 
 ### `GET /clients/{id}/progress?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
@@ -971,21 +1024,11 @@ dashboard and client list have read since Sprint 2 with nothing writing
 them (SRS §2.4.2):
 
 - `last_logged_at` — stamped on every meal log.
-- `adherence_status` — recomputed on every meal log: `late` when the client
-  has not logged for `ADHERENCE_LATE_AFTER_DAYS` days (default **3**,
-  matching FR-20's alert rule), otherwise `on_track` at or above
-  `ADHERENCE_ON_TRACK_PERCENT` (default **70**) and `needs_attention`
-  below it.
+- `adherence_status` — recomputed on every meal log as `stable`,
+  `declining` or `stopped_logging`. See "Status is direction, not level"
+  above for the rule; the short version is that it compares this period's
+  rate against the preceding one rather than against a threshold.
 
-Staleness is checked **before** the percentage: a client who logged one
-perfect meal a fortnight ago is 100% adherent over any window containing
-it, and calling that on-track would hide exactly the client the
-nutritionist most needs to see.
-
-> ⚠️ The 70% boundary has **no source in the PRD or SRS** — both define the
-> three states only by colour. It is an implementation placeholder pending
-> nutritionist input, which is why it is `config/adherence.php` +
-> env-overridable rather than a literal in the code.
 
 ---
 

@@ -56,6 +56,17 @@ class AdherenceTest extends TestCase
         return [$nutritionist, $subscriber, $planned];
     }
 
+    /** Builds one period's worth of logs at a known on-plan ratio. */
+    private function logRatio(Subscriber $subscriber, MealItem $item, int $onPlan, int $offPlan, int $daysAgo): void
+    {
+        for ($i = 0; $i < $onPlan; $i++) {
+            $this->log($subscriber, $item, $daysAgo);
+        }
+        for ($i = 0; $i < $offPlan; $i++) {
+            $this->log($subscriber, null, $daysAgo);
+        }
+    }
+
     private function log(Subscriber $subscriber, ?MealItem $item, int $daysAgo = 0): MealLog
     {
         return MealLog::create([
@@ -134,7 +145,112 @@ class AdherenceTest extends TestCase
         )->assertNotFound();
     }
 
-    public function test_logging_sets_adherence_status_on_the_subscriber(): void
+    public function test_a_steady_client_is_stable_even_below_the_reference(): void
+    {
+        [, $subscriber, $planned] = $this->makeClientWithPlan();
+
+        // ~65% both periods: under the 70% reference, but going nowhere.
+        // Kholod's answer is the point of this test — a level alone is not
+        // what prompts intervention, so this client raises nothing.
+        $this->logRatio($subscriber, $planned, onPlan: 13, offPlan: 7, daysAgo: 2);
+        $this->logRatio($subscriber, $planned, onPlan: 13, offPlan: 7, daysAgo: 9);
+        $subscriber->forceFill(['last_logged_at' => now()])->save();
+
+        $this->assertSame('stable', app(AdherenceService::class)->refreshStatus($subscriber));
+    }
+
+    /**
+     * The case the old level-based rule got wrong: 85% -> 72% is a 13pp
+     * fall and must be surfaced even though 72% is still above the 70%
+     * reference (BR-14, FR-30).
+     */
+    public function test_a_material_decline_is_surfaced_even_above_the_reference(): void
+    {
+        [$nutritionist, $subscriber, $planned] = $this->makeClientWithPlan();
+
+        $this->logRatio($subscriber, $planned, onPlan: 18, offPlan: 7, daysAgo: 2);   // 72%
+        $this->logRatio($subscriber, $planned, onPlan: 17, offPlan: 3, daysAgo: 9);   // 85%
+        $subscriber->forceFill(['last_logged_at' => now()])->save();
+
+        $this->assertSame('declining', app(AdherenceService::class)->refreshStatus($subscriber));
+
+        $response = $this->getJson(
+            "/api/v1/clients/{$subscriber->id}/adherence",
+            $this->bearerFor($nutritionist)
+        );
+
+        $response->assertOk();
+        $this->assertSame('declining', $response->json('status'));
+        $this->assertEquals(72, $response->json('adherence_percent'));
+        $this->assertEquals(85, $response->json('previous.adherence_percent'));
+        $this->assertEquals(-13, $response->json('change_pp'));
+        // FR-30: the threshold ships as context, never as the classifier.
+        $this->assertSame(70, $response->json('reference_percent'));
+    }
+
+    /** A drop smaller than the configured material decline is not an alert. */
+    public function test_a_slight_dip_is_still_stable(): void
+    {
+        [, $subscriber, $planned] = $this->makeClientWithPlan();
+
+        $this->logRatio($subscriber, $planned, onPlan: 16, offPlan: 4, daysAgo: 2);   // 80%
+        $this->logRatio($subscriber, $planned, onPlan: 17, offPlan: 3, daysAgo: 9);   // 85%
+        $subscriber->forceFill(['last_logged_at' => now()])->save();
+
+        $this->assertSame('stable', app(AdherenceService::class)->refreshStatus($subscriber));
+    }
+
+    /** A client who improved is obviously not declining. */
+    public function test_an_improving_client_is_stable(): void
+    {
+        [, $subscriber, $planned] = $this->makeClientWithPlan();
+
+        $this->logRatio($subscriber, $planned, onPlan: 18, offPlan: 2, daysAgo: 2);   // 90%
+        $this->logRatio($subscriber, $planned, onPlan: 12, offPlan: 8, daysAgo: 9);   // 60%
+        $subscriber->forceFill(['last_logged_at' => now()])->save();
+
+        $this->assertSame('stable', app(AdherenceService::class)->refreshStatus($subscriber));
+    }
+
+    /**
+     * Absence of a prior rate is not evidence of a fall — guessing a
+     * direction from a single level is the inference the interviews ruled
+     * out, so a first period reads as stable.
+     */
+    public function test_a_first_period_with_no_history_is_stable(): void
+    {
+        [, $subscriber, $planned] = $this->makeClientWithPlan();
+
+        $this->logRatio($subscriber, $planned, onPlan: 1, offPlan: 9, daysAgo: 1);
+        $subscriber->forceFill(['last_logged_at' => now()])->save();
+
+        $this->assertSame('stable', app(AdherenceService::class)->refreshStatus($subscriber));
+        $this->assertNull(app(AdherenceService::class)->summary($subscriber)['change_pp']);
+    }
+
+    /**
+     * Staleness is checked before anything about the rate: a client who
+     * logged one perfect meal a fortnight ago scores 100% over any window
+     * containing it, and calling that stable would hide exactly the
+     * client the nutritionist most needs to see.
+     */
+    public function test_a_client_who_stopped_logging_is_flagged_despite_perfect_history(): void
+    {
+        [, $subscriber, $planned] = $this->makeClientWithPlan();
+        $this->log($subscriber, $planned, daysAgo: 14);
+        $subscriber->forceFill(['last_logged_at' => now()->subDays(14)])->save();
+
+        $this->assertSame('stopped_logging', app(AdherenceService::class)->refreshStatus($subscriber));
+    }
+
+    public function test_a_client_who_never_logged_is_stopped_logging(): void
+    {
+        [, $subscriber] = $this->makeClientWithPlan();
+
+        $this->assertSame('stopped_logging', app(AdherenceService::class)->refreshStatus($subscriber));
+    }
+
+    public function test_logging_writes_the_status_onto_the_subscriber(): void
     {
         [, $subscriber, $planned] = $this->makeClientWithPlan();
         $this->assertNull($subscriber->adherence_status);
@@ -143,39 +259,22 @@ class AdherenceTest extends TestCase
         $subscriber->forceFill(['last_logged_at' => now()])->save();
         app(AdherenceService::class)->refreshStatus($subscriber);
 
-        $this->assertSame('on_track', $subscriber->fresh()->adherence_status);
+        $this->assertSame('stable', $subscriber->fresh()->adherence_status);
     }
 
-    public function test_mostly_off_plan_logging_is_flagged_as_needs_attention(): void
+    /** The preceding window is the same length, immediately before. */
+    public function test_the_previous_window_is_the_equally_long_period_before(): void
     {
-        [, $subscriber, $planned] = $this->makeClientWithPlan();
-        $this->log($subscriber, $planned);
-        $this->log($subscriber, null);
-        $this->log($subscriber, null);
-        $subscriber->forceFill(['last_logged_at' => now()])->save();
+        [$nutritionist, $subscriber] = $this->makeClientWithPlan();
 
-        $this->assertSame('needs_attention', app(AdherenceService::class)->refreshStatus($subscriber));
-    }
+        $response = $this->getJson(
+            "/api/v1/clients/{$subscriber->id}/adherence?from=".now()->subDays(6)->toDateString()
+            .'&to='.now()->toDateString(),
+            $this->bearerFor($nutritionist)
+        );
 
-    /**
-     * A client who logged one perfect meal a fortnight ago is 100%
-     * "adherent" over any window containing it. Calling that on-track
-     * would hide exactly the client the nutritionist most needs to see,
-     * so staleness is checked before the percentage.
-     */
-    public function test_a_client_who_stopped_logging_is_late_despite_perfect_history(): void
-    {
-        [, $subscriber, $planned] = $this->makeClientWithPlan();
-        $this->log($subscriber, $planned, daysAgo: 14);
-        $subscriber->forceFill(['last_logged_at' => now()->subDays(14)])->save();
-
-        $this->assertSame('late', app(AdherenceService::class)->refreshStatus($subscriber));
-    }
-
-    public function test_a_client_who_never_logged_is_late(): void
-    {
-        [, $subscriber] = $this->makeClientWithPlan();
-
-        $this->assertSame('late', app(AdherenceService::class)->refreshStatus($subscriber));
+        $response->assertOk();
+        $this->assertSame(now()->subDays(13)->toDateString(), $response->json('previous.from'));
+        $this->assertSame(now()->subDays(7)->toDateString(), $response->json('previous.to'));
     }
 }
