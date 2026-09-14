@@ -145,6 +145,23 @@ class AiDraftPlanService
         foods ONLY from the numbered list of "id" values the user message
         gives you; never invent a food or an id that isn't in that list.
 
+        Context: this is for Arab / Middle-Eastern clients. Pick foods that
+        are culturally appropriate for each meal TIME:
+
+        Meal-time guidance (important):
+        - BREAKFAST: light-to-moderate items typical of an Arab breakfast —
+          eggs, labneh, hummus, foul medames, cheese, bread, za'atar
+          manakish, oats, fruits, juice. NEVER pick heavy rice-based or
+          meat-heavy main dishes (kabsa, mandi, biryani, shawarma, grilled
+          meats, stews, etc.) for breakfast.
+        - SNACK: very light — fruits, nuts, yogurt, dates, a small salad,
+          or a light dairy item. Keep it under 200 g.
+        - LUNCH: the heaviest meal — rice dishes, grilled meats, shawarma,
+          kabsa, stews, stuffed vegetables, etc. are all appropriate here.
+        - DINNER: moderate — lighter than lunch but can include cooked
+          dishes. Soups, grilled items, salads with protein, sandwiches,
+          or a smaller portion of a main dish.
+
         Respond with a single JSON object, no prose, no markdown, matching
         exactly:
         {"meals": [{"name": "breakfast", "items": [{"food_id": 1, "quantity_grams": 150, "alternatives": [{"food_id": 2, "quantity_grams": 120}]}]}]}
@@ -156,6 +173,7 @@ class AiDraftPlanService
         - "quantity_grams" must be a number between 50 and 500.
         - Use a DIFFERENT food_id as the planned item in every meal — do not repeat the same headline food across meals (alternatives may repeat).
         - Try to make each meal's planned item's calories land close to that meal's target calories given in the user message.
+        - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
         PROMPT;
     }
 
