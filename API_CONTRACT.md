@@ -1075,3 +1075,70 @@ Accepts `specialty`, `clinic_name`, `bio` only.
 names live in PRD §8 "Open Decisions" and the PRD itself says they are
 worth re-examining. Allowed values are enforced at
 `NutritionistProfile::TIERS`, where changing them costs no migration.
+
+---
+
+## Alerts (Sprint 5 · S5-01/S5-02)
+
+Rule-based proactive alerts (FR-20), evaluated once daily by the scheduled
+`alerts:evaluate` command (06:00). Taqat needs a cron entry running
+`php artisan schedule:run` every minute — Laravel's scheduler does nothing
+without one.
+
+### Three rules
+
+| type | condition | resolves when |
+|---|---|---|
+| `no_log` | no meal log in `ADHERENCE_LATE_AFTER_DAYS` days (default 3, shared with adherence — FR-20) | a new log lands |
+| `calories_exceeded` | daily intake over `daily_calorie_needs` for 3 **consecutive, fully-logged** calendar days ending yesterday | a day falls back under target |
+| `milestone` | weight moved ≥ 2kg in the goal's direction over the last 14 days | never — one-shot, debounced |
+
+`no_log` and `calories_exceeded` describe an ongoing condition: one alert
+opens, stays open (no daily spam) while the condition holds, and is marked
+`resolved_at` the moment it stops. `milestone` is a one-time event with
+nothing to resolve — see `is_resolved` below.
+
+> ⚠️ **`milestone` is a placeholder.** Neither FR-20 nor the PRD defines
+> what counts as a milestone, and the schema has no target-weight field.
+> Fires only for `weight_loss`/`weight_gain` goals, comparing the earliest
+> and latest body-composition reading in the window — **not** for
+> `weight_maintenance` or `health_monitoring`, which have no stored target
+> or band to measure against. `ALERTS_MILESTONE_WEIGHT_CHANGE_KG` (2.0) has
+> no clinical source; `ALERTS_MILESTONE_WINDOW_DAYS` (14) reuses the
+> bi-weekly measurement cadence one nutritionist described in interviews.
+
+> ⚠️ **`calories_exceeded` excludes today.** The streak is measured over
+> full calendar days ending yesterday — today's still-accumulating total is
+> never counted, so the alert can't fire (or fail to fire) based on what
+> time of day the job happens to run. A day with no logs at all breaks the
+> streak; nothing was actually measured that day.
+
+### `GET /alerts?is_read=&subscriber_id=`
+
+Nutritionist-only (`alerts.view`). Isolation is via `whereHas('subscriber')`
+— `Alert` has no `nutritionist_id` of its own, so it inherits `Subscriber`'s
+own scope through the relation.
+
+```json
+{
+  "id": 12,
+  "subscriber_id": 4,
+  "type": "calories_exceeded",
+  "message": "Daily calorie target exceeded for 3 consecutive days.",
+  "is_read": false,
+  "is_resolved": false,
+  "created_at": "2026-09-15T06:00:00+00:00"
+}
+```
+
+Both filters are optional and independent; omitting `is_read` returns both
+read and unread — it is never defaulted to unread-only.
+
+### `PATCH /alerts/{id}/read`
+
+Marks one alert read. `{id}` is not scoped at route-binding time (`Alert`
+carries no scope of its own), so ownership is re-checked explicitly inside
+the controller against an UNSCOPED `Subscriber` lookup — using the scoped
+`belongsTo` relation here would resolve to `null` for another
+nutritionist's alert and crash rather than 404. Returns 404, not 403 — the
+alert's existence is not confirmed to a caller who doesn't own it.

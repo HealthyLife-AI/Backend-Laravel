@@ -76,6 +76,11 @@ class Subscriber extends Model
         return $this->hasMany(MealLog::class)->orderByDesc('logged_at');
     }
 
+    public function alerts(): HasMany
+    {
+        return $this->hasMany(Alert::class)->orderByDesc('created_at');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
 use App\Http\Controllers\Api\Clients\DashboardController;
+use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
@@ -123,6 +124,14 @@ Route::prefix('v1')->name('api.')->group(function () {
     // S4-03/S4-04 / FR-18, FR-19 / progress.view: plan-vs-actual and the
     // progress charts. Held by nutritionist AND client roles, so each
     // controller re-checks belongsToCaller() on the bound subscriber.
+    // S5-02 / FR-20, alerts.view (nutritionist-only): list own-roster
+    // alerts and mark one read. Isolation via whereHas('subscriber') —
+    // see AlertController's docblock.
+    Route::middleware(['jwt', 'permission:alerts.view'])->group(function () {
+        Route::get('alerts', [AlertController::class, 'index'])->name('alerts.index');
+        Route::patch('alerts/{alert}/read', [AlertController::class, 'markRead'])->name('alerts.mark-read');
+    });
+
     Route::middleware(['jwt', 'permission:progress.view'])->group(function () {
         Route::get('clients/{subscriber}/adherence', [AdherenceController::class, 'show'])->name('clients.adherence.show');
         Route::get('clients/{subscriber}/progress', [ProgressController::class, 'show'])->name('clients.progress.show');

@@ -2,6 +2,7 @@
 
 use App\Exceptions\Auth\AccountLockedException;
 use App\Http\Middleware\JwtAuthenticate;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,6 +18,13 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withSchedule(function (Schedule $schedule): void {
+        // S5-01 / FR-20. First scheduled job in this project — Taqat
+        // (production) needs its own cron entry running
+        // `php artisan schedule:run` every minute for this to actually
+        // fire; Laravel's scheduler does nothing on its own without one.
+        $schedule->command('alerts:evaluate')->dailyAt('06:00');
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'jwt' => JwtAuthenticate::class,
