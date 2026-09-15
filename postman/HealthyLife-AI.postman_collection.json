@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "HealthyLife AI — API",
-    "description": "# HealthyLife AI — API\n\nAI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 3 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.\n\n## Getting started\n\n1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).\n2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.\n3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.\n4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition / Meal Plans request below it references.\n5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → build a meal plan with an alternative → activate it → generate + approve an AI draft → dashboard and the client's own `/me/meal-plan` both reflect the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email, phone number, or food id, so a fresh run never collides with \"already taken\" or 404s on a food that doesn't exist on this particular database. Two exceptions, both documented on the request itself:\n   - **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward.\n   - **Food Submission & Approval**'s three admin-only requests (`List Pending Foods`, `Approve Food`, `Reject Food`) need `{{admin_access_token}}`, which starts **empty** — there's no self-serve admin registration (PRD §2.1: admin is a system operator). See **List Pending Foods**'s description for the one-time local setup.\n\n## Authentication model\n\nEvery endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, and `POST /invites/{token}/activate` requires `Authorization: Bearer <access_token>` — set once at the collection level, individual requests inherit it. The four exceptions are marked **No Auth** on the request itself.\n\n**Two layers**, matching the PRD's own security model — permission alone is never treated as security:\n- **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.\n- **Data isolation** — every Clients/Health Profile/Body Composition/Meal Plans query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client or plan ID returns `404`, never `403` — the response never confirms the ID belongs to someone else. The one exception is **Client's Own Plan**, which has no ID to isolate at all (see that folder).\n\n## Common response shapes\n\n**User object** (`register` / `login` / `activate` / `GET /auth/me`):\n```json\n{ \"id\": 1, \"name\": \"Demo Nutritionist\", \"email\": \"nutritionist@example.com\", \"phone\": null, \"role\": \"nutritionist\", \"nutritionist_id\": null }\n```\n`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.\n\n**Token pair** (`register` / `login` / `refresh` / `activate`):\n```json\n{ \"access_token\": \"eyJ...\", \"refresh_token\": \"WpoI...\", \"token_type\": \"Bearer\", \"expires_in\": 900 }\n```\n- `access_token` — short-lived JWT (15 min default). Send as `Authorization: Bearer <access_token>`.\n- `refresh_token` — opaque, **single-use, rotates on every `/auth/refresh` call**. Reusing an already-rotated or already-logged-out one revokes *every* session the user holds — deliberate theft detection.\n\n**Validation error** (any endpoint, `422`):\n```json\n{ \"message\": \"The email has already been taken. (and 1 more error)\", \"errors\": { \"email\": [\"...\"] } }\n```\n\n**Rate limiting** (`429`): register/login 10 req/min, refresh 20 req/min, per IP — response includes a `Retry-After` header.\n\n## Folders\n\n| Folder | Covers |\n|---|---|\n| **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |\n| **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |\n| **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |\n| **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |\n| **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |\n| **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |\n| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |\n| **Meal Plan Templates** | Save a plan as a template; apply one to a client — Sprint 3, FR-15 |\n| **Food Submission & Approval** | Nutritionist suggests a food; admin approves/rejects — Sprint 3, FR-24/BR-5 |\n| **Client's Own Plan** | The client role's own active plan, no ID to isolate — Sprint 3, FR-16 |\n\n---\nGenerated for HealthyLife AI · Sprint 1–3 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.\n",
+    "description": "# HealthyLife AI — API\n\nAI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 5 — for the Frontend (Web Dashboard) and Mobile (Flutter) roles integrating against it (the Desktop/Electron role was discontinued after Sprint 3 — see the sprint tracker's team-change note; its endpoints, all shared with Web, needed no removal). It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.\n\n## Getting started\n\n1. **Run the backend locally**: `php artisan serve` (default `http://127.0.0.1:8000`), migrated and seeded (`php artisan migrate --seed`).\n2. **Set `base_url`** (collection variable, already defaulted to `http://127.0.0.1:8000/api/v1`) if your server runs elsewhere.\n3. **Run `Authentication → Register Nutritionist`** once. Its test script saves `access_token` / `refresh_token` as collection variables automatically — every other authenticated request in this collection is pre-wired to use them via the collection-level Bearer auth, so nothing else needs manual token copy-pasting.\n4. **Run `Clients → Add Client`** to populate `subscriber_id` and `invite_token`, which every Clients / Health Profile / Body Composition / Meal Plans request below it references.\n5. Run the whole collection top-to-bottom via **Collection Runner** as a working demo of the full core loop: register → add client → fill health profile → activate invite → build a meal plan with an alternative → activate it → generate + approve an AI draft → dashboard and the client's own `/me/meal-plan` both reflect the change. Every request that needs a value from an earlier one reuses a collection variable (see each request's description) — nothing is hardcoded to a stranger's email, phone number, or food id, so a fresh run never collides with \"already taken\" or 404s on a food that doesn't exist on this particular database. Two exceptions, both documented on the request itself:\n   - **Login — Client (phone)** sits in the Authentication folder for discoverability, but a client's password doesn't exist until **Clients → Activate Invite** has run later in the same pass — so on a first top-to-bottom run it correctly `401`s, then succeeds if you run it again by itself afterward.\n   - **Food Submission & Approval**'s three admin-only requests (`List Pending Foods`, `Approve Food`, `Reject Food`) need `{{admin_access_token}}`, which starts **empty** — there's no self-serve admin registration (PRD §2.1: admin is a system operator). See **List Pending Foods**'s description for the one-time local setup.\n\n## Authentication model\n\nEvery endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, and `POST /invites/{token}/activate` requires `Authorization: Bearer <access_token>` — set once at the collection level, individual requests inherit it. The four exceptions are marked **No Auth** on the request itself.\n\n**Two layers**, matching the PRD's own security model — permission alone is never treated as security:\n- **Role** (Spatie permissions) — e.g. only a `nutritionist`-role token can call the Clients endpoints; a client or admin token gets `403`.\n- **Data isolation** — every Clients/Health Profile/Body Composition/Meal Plans query is scoped to the *calling* nutritionist's own data at the database layer. Another nutritionist's client or plan ID returns `404`, never `403` — the response never confirms the ID belongs to someone else. The one exception is **Client's Own Plan**, which has no ID to isolate at all (see that folder).\n\n## Common response shapes\n\n**User object** (`register` / `login` / `activate` / `GET /auth/me`):\n```json\n{ \"id\": 1, \"name\": \"Demo Nutritionist\", \"email\": \"nutritionist@example.com\", \"phone\": null, \"role\": \"nutritionist\", \"nutritionist_id\": null }\n```\n`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.\n\n**Token pair** (`register` / `login` / `refresh` / `activate`):\n```json\n{ \"access_token\": \"eyJ...\", \"refresh_token\": \"WpoI...\", \"token_type\": \"Bearer\", \"expires_in\": 900 }\n```\n- `access_token` — short-lived JWT (15 min default). Send as `Authorization: Bearer <access_token>`.\n- `refresh_token` — opaque, **single-use, rotates on every `/auth/refresh` call**. Reusing an already-rotated or already-logged-out one revokes *every* session the user holds — deliberate theft detection.\n\n**Validation error** (any endpoint, `422`):\n```json\n{ \"message\": \"The email has already been taken. (and 1 more error)\", \"errors\": { \"email\": [\"...\"] } }\n```\n\n**Rate limiting** (`429`): register/login 10 req/min, refresh 20 req/min, per IP — response includes a `Retry-After` header.\n\n## Folders\n\n| Folder | Covers |\n|---|---|\n| **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |\n| **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |\n| **Nutritionist Profile** | The nutritionist's own professional details, read-only plan_tier — Sprint 4, S4-00/BR-12 |\n| **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |\n| **Body Composition Readings** | Per-visit measurement history (clinic side) — Sprint 2/4, FR-10/BR-13 |\n| **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |\n| **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |\n| **System** | Operational read-only checks (e.g. AI provider status) |\n| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, LLM-or-rule-based AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |\n| **Meal Plan Templates** | Save a plan as a template; apply one to a client — Sprint 3, FR-15 |\n| **Food Submission & Approval** | Nutritionist suggests a food; admin approves/rejects — Sprint 3, FR-24/BR-5 |\n| **Client's Own Plan** | The client role's own active plan, no ID to isolate — Sprint 3, FR-16 |\n| **Meal Logs** | The client logging what they actually ate, retry-safe — Sprint 4, FR-17/BR-9/S4-05 |\n| **Measurements** | The client's own weight + circumferences (client side) — Sprint 4, FR-17/FR-29/BR-11/BR-13 |\n| **Progress & Adherence** | Plan-vs-actual by direction, not level; the combined progress payload — Sprint 4, FR-18/FR-19/FR-30/BR-14 |\n| **Alerts** | Rule-based proactive alerts from a daily job — Sprint 5, FR-20 |\n| **AI Summaries** | Weekly natural-language progress note per client, LLM-or-fallback — Sprint 5, FR-21 |\n| **Push Notifications** | The client's own FCM device token — Sprint 5, FR-22 |\n\n## Roles this collection authenticates as\n\nTwo saved token pairs, switched per-request via each request's own Authorization tab (not the collection default) wherever the endpoint is client-only:\n- **`{{access_token}}` / `{{refresh_token}}`** (collection default) — the nutritionist created by **Authentication → Register Nutritionist**.\n- **`{{client_access_token}}` / `{{client_refresh_token}}`** — the client activated by **Clients → Activate Invite (Client)**. Every request under **Meal Logs**, **Measurements**, and **Push Notifications** overrides its own Authorization tab to this token — look for it explicitly if a request 403s unexpectedly with the wrong one selected.\n\n## Endpoints this collection cannot exercise end-to-end\n\n**Alerts** and **AI Summaries** are both populated only by server-side scheduled jobs (`alerts:evaluate` daily 06:00, `ai-summaries:generate-weekly` Mondays 07:00) — nothing in a Postman/Newman run can trigger a cron job. A fresh top-to-bottom pass correctly gets an empty list from both; run the artisan command once on the server under test (or wait for its next scheduled fire) to see real data. This is explained again on each affected request, not just here.\n\n---\nGenerated for HealthyLife AI · Sprint 1–5 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "healthylife-ai"
   },
@@ -102,6 +102,12 @@
       "description": "Most recently hand-built plan's id. Auto-set by Meal Plans → Create Meal Plan."
     },
     {
+      "key": "meal_item_id",
+      "value": "",
+      "type": "string",
+      "description": "A real planned item's id from that same plan. Auto-set alongside meal_plan_id by Meal Plans → Create Meal Plan — used by Meal Logs → Log a Meal."
+    },
+    {
       "key": "ai_draft_plan_id",
       "value": "",
       "type": "string",
@@ -124,6 +130,12 @@
       "value": "",
       "type": "string",
       "description": "An admin-role JWT. Starts empty — there's no self-serve admin registration; see Food Submission & Approval → List Pending Foods for one-time local setup."
+    },
+    {
+      "key": "alert_id",
+      "value": "1",
+      "type": "string",
+      "description": "Most recently listed alert's id. Auto-set by Alerts → List Alerts, IF the list isn't empty — see that request's description for why it can be empty on a fresh database. Defaults to '1' (not empty) so Mark Alert Read hits a real route and gets a clean 404 JSON from the app when no alert exists yet, rather than a malformed double-slash URL."
     }
   ],
   "item": [
@@ -1129,8 +1141,8 @@
                 },
                 {
                   "key": "adherence",
-                  "value": "on_track",
-                  "description": "on_track | needs_attention | late",
+                  "value": "stable",
+                  "description": "stable | declining | stopped_logging (BR-14: direction, not level)",
                   "disabled": true
                 },
                 {
@@ -1181,8 +1193,8 @@
                     },
                     {
                       "key": "adherence",
-                      "value": "on_track",
-                      "description": "on_track | needs_attention | late",
+                      "value": "stable",
+                      "description": "stable | declining | stopped_logging (BR-14: direction, not level)",
                       "disabled": true
                     },
                     {
@@ -1468,6 +1480,162 @@
                   "}"
                 ]
               }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Nutritionist Profile",
+      "description": "Sprint 4 (S4-00 / PRD Section 5.2). The nutritionist's own professional profile - specialty, clinic name, bio, and a read-only plan_tier that only billing may change (BR-12).",
+      "item": [
+        {
+          "name": "Get Nutritionist Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/nutritionist-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "nutritionist-profile"
+              ]
+            },
+            "description": "S4-00 / PRD Section 5.2. The nutritionist's own professional details - a table the SRS documented since early design that a Sprint 4 documentation audit found had never been built. Resolved from the JWT, no route-bound id - there is nothing here for one nutritionist to point at another's profile with.\n\nThe row is created on first access, not at registration - an account that never opens this screen carries no empty row. Still answers **200**, not 201, on that first read: creating the row is an implementation detail of reading it, not something the caller asked for."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/nutritionist-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "nutritionist-profile"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 1,\n  \"specialty\": null,\n  \"clinic_name\": null,\n  \"bio\": null,\n  \"plan_tier\": \"basic\",\n  \"updated_at\": \"2026-09-13T11:40:00+00:00\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Nutritionist Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/nutritionist-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "nutritionist-profile"
+              ]
+            },
+            "description": "Accepts `specialty` / `clinic_name` / `bio` only.\n\nWARNING: **`plan_tier` is read-only**, even if included in this request body - it is billing state, not profile content (BR-12). Accepting it here would let a nutritionist move themselves onto a paid tier for free by adding one field to the request. It is returned in every response so the dashboard can display the current tier; it is set only by an internal/billing-authorized process (Post-MVP).\n\nGated on `role:nutritionist` directly, not a permission - the PRD permission matrix has no \"edit my own profile\" entry.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specialty\": \"Clinical nutrition\",\n  \"clinic_name\": \"Gaza Nutrition Center\",\n  \"bio\": \"Ten years of practice.\",\n  \"plan_tier\": \"professional\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK - plan_tier unchanged despite being sent",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/nutritionist-profile",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "nutritionist-profile"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"specialty\": \"Clinical nutrition\",\n  \"clinic_name\": \"Gaza Nutrition Center\",\n  \"bio\": \"Ten years of practice.\",\n  \"plan_tier\": \"professional\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 1,\n  \"specialty\": \"Clinical nutrition\",\n  \"clinic_name\": \"Gaza Nutrition Center\",\n  \"bio\": \"Ten years of practice.\",\n  \"plan_tier\": \"basic\",\n  \"updated_at\": \"2026-09-13T11:40:00+00:00\"\n}"
             }
           ]
         }
@@ -1828,7 +1996,7 @@
                 }
               ],
               "cookie": [],
-              "body": "[\n  {\n    \"id\": 9,\n    \"recorded_at\": \"2026-09-01\",\n    \"weight_kg\": 80,\n    \"body_fat_percent\": 23.5,\n    \"muscle_mass_kg\": null,\n    \"water_percent\": null,\n    \"waist_cm\": null\n  }\n]"
+              "body": "[\n  {\n    \"id\": 9,\n    \"recorded_at\": \"2026-09-01\",\n    \"source\": \"clinic-analyser\",\n    \"weight_kg\": 80,\n    \"body_fat_percent\": 23.5,\n    \"muscle_mass_kg\": null,\n    \"water_percent\": null,\n    \"waist_cm\": null,\n    \"hip_cm\": null,\n    \"thigh_cm\": null,\n    \"arm_cm\": null\n  }\n]"
             }
           ]
         },
@@ -1860,7 +2028,7 @@
             "description": "Logs one dated reading. Only `recorded_at` and `weight_kg` are required — the rest are whatever the device/visit actually captured, so a nutritionist without a body-composition scale can still log weight alone.\n\n`recorded_at` must not be in the future.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+              "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85,\n  \"hip_cm\": 98\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1896,7 +2064,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85,\n  \"hip_cm\": 98\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -1914,7 +2082,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"id\": 15,\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"muscle_mass_kg\": null,\n  \"water_percent\": null,\n  \"waist_cm\": 85\n}"
+              "body": "{\n  \"id\": 15,\n  \"recorded_at\": \"2026-09-06\",\n  \"source\": \"clinic-analyser\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"muscle_mass_kg\": null,\n  \"water_percent\": null,\n  \"waist_cm\": 85,\n  \"hip_cm\": 98,\n  \"thigh_cm\": null,\n  \"arm_cm\": null\n}"
             },
             {
               "name": "422 Future date",
@@ -1943,7 +2111,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85\n}",
+                  "raw": "{\n  \"recorded_at\": \"2026-09-06\",\n  \"weight_kg\": 82,\n  \"body_fat_percent\": 30.5,\n  \"waist_cm\": 85,\n  \"hip_cm\": 98\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -2201,7 +2369,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"total\": 3,\n  \"active\": 2,\n  \"pending\": 1,\n  \"on_track\": 1,\n  \"needs_attention\": 1,\n  \"late\": 0,\n  \"not_logged_today\": 2\n}"
+              "body": "{\n  \"total\": 3,\n  \"active\": 2,\n  \"pending\": 1,\n  \"stable\": 1,\n  \"declining\": 1,\n  \"stopped_logging\": 0,\n  \"not_logged_today\": 2\n}"
             }
           ]
         }
@@ -2424,6 +2592,12 @@
                   "const body = pm.response.json();",
                   "if (pm.response.code < 300 && body.id) {",
                   "    pm.collectionVariables.set('meal_plan_id', body.id);",
+                  "    // Feeds Meal Logs -> Log a Meal below: a real planned item id",
+                  "    // to log against, rather than a hardcoded number that may not",
+                  "    // exist on whatever database this runs against.",
+                  "    if (body.meals && body.meals[0] && body.meals[0].items && body.meals[0].items[0]) {",
+                  "        pm.collectionVariables.set('meal_item_id', body.meals[0].items[0].id);",
+                  "    }",
                   "}"
                 ]
               }
@@ -2594,7 +2768,7 @@
                 "{{meal_plan_id}}"
               ]
             },
-            "description": "Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate \"edit a draft\" endpoint.",
+            "description": "Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate \"edit a draft\" endpoint.\n\n⚠️ A full replace means every `meal_items` row from **Create Meal Plan** is deleted and recreated with brand-new ids — this request's test script re-saves `{{meal_item_id}}` from the fresh response for exactly that reason. **Meal Logs → Log a Meal**, later in this collection, uses whatever `{{meal_item_id}}` was captured *last* — if you skip this request in a partial run, re-run **Create Meal Plan** again first rather than relying on a stale id.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"start_date\": \"2026-09-15\",\n  \"meals\": [\n    {\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"items\": [\n        {\n          \"food_id\": \"{{food_id}}\",\n          \"quantity_grams\": 200,\n          \"alternatives\": [\n            {\n              \"food_id\": \"{{food_id}}\",\n              \"quantity_grams\": 150\n            }\n          ]\n        }\n      ]\n    }\n  ]\n}",
@@ -2653,6 +2827,26 @@
               ],
               "cookie": [],
               "body": "{\n  \"id\": 8,\n  \"subscriber_id\": 3,\n  \"is_template\": false,\n  \"is_ai_draft\": false,\n  \"start_date\": \"2026-09-15\",\n  \"status\": \"draft\",\n  \"meals\": [\n    {\n      \"id\": 21,\n      \"name\": \"breakfast\",\n      \"day_index\": null,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"items\": [\n        {\n          \"id\": 55,\n          \"food\": {\n            \"id\": 12,\n            \"name_en\": \"Grilled Chicken\",\n            \"name_ar\": null,\n            \"source\": \"admin\",\n            \"status\": \"approved\",\n            \"calories_per_100g\": 200,\n            \"protein_g_per_100g\": 25,\n            \"carbs_g_per_100g\": 0,\n            \"fat_g_per_100g\": 8,\n            \"fiber_g_per_100g\": 0\n          },\n          \"quantity_grams\": 200.0,\n          \"macros\": {\n            \"calories\": 400.0,\n            \"protein_g\": 50.0,\n            \"carbs_g\": 0.0,\n            \"fat_g\": 16.0\n          },\n          \"alternatives\": [\n            {\n              \"id\": 56,\n              \"food\": {\n                \"id\": 45,\n                \"name_en\": \"Grilled Fish Fillet\",\n                \"name_ar\": null,\n                \"source\": \"admin\",\n                \"status\": \"approved\",\n                \"calories_per_100g\": 150,\n                \"protein_g_per_100g\": 22,\n                \"carbs_g_per_100g\": 0,\n                \"fat_g_per_100g\": 5,\n                \"fiber_g_per_100g\": 0\n              },\n              \"quantity_grams\": 150.0,\n              \"macros\": {\n                \"calories\": 225.0,\n                \"protein_g\": 33.0,\n                \"carbs_g\": 0.0,\n                \"fat_g\": 7.5\n              },\n              \"alternatives\": []\n            }\n          ]\n        }\n      ]\n    }\n  ],\n  \"summary_by_day\": {\n    \"0\": {\n      \"calories\": 400.0,\n      \"protein_g\": 50.0,\n      \"carbs_g\": 0.0,\n      \"fat_g\": 16.0\n    }\n  },\n  \"created_at\": \"2026-09-09T10:00:00+00:00\",\n  \"updated_at\": \"2026-09-09T10:00:00+00:00\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.id) {",
+                  "    pm.collectionVariables.set('meal_plan_id', body.id);",
+                  "    // Feeds Meal Logs -> Log a Meal below: a real planned item id",
+                  "    // to log against, rather than a hardcoded number that may not",
+                  "    // exist on whatever database this runs against.",
+                  "    if (body.meals && body.meals[0] && body.meals[0].items && body.meals[0].items[0]) {",
+                  "        pm.collectionVariables.set('meal_item_id', body.meals[0].items[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
             }
           ]
         },
@@ -2754,7 +2948,7 @@
                 "ai-draft"
               ]
             },
-            "description": "S3-06/S3-07 / F-5 (PRD, P1) — \"Suggest a starting plan.\" No request body; the client's `HealthProfile` (calorie target, allergies — saved earlier by **Health Profile → Save Health Profile**, which must run first) drives it entirely.\n\nRule-based, not a real LLM call — no LLM provider is wired into this backend, and F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note. Splits the daily calorie target across breakfast/snack/lunch/dinner by a standard clinical rule of thumb, picks the best calorie-matching **approved** food per slot plus up to two alternatives, and excludes any food whose name contains one of the client's allergy terms (case-insensitive substring match — a real safety net, explicitly not a certified allergen system).\n\nAlways `is_ai_draft: true`, `status: \"draft\"` — saved separately as `{{ai_draft_plan_id}}`, not overwriting `{{meal_plan_id}}` from **Create Meal Plan** above, so both plans stay independently addressable. **Activate AI Draft** below is how a nutritionist approves it (BR-6/BR-10) — the exact same action as approving any hand-built plan, not a special case.\n\n**422** — the client has no `HealthProfile` yet, or every approved food conflicts with a listed allergy."
+            "description": "S3-06/S3-07 / F-5 (PRD, P1) — \"Suggest a starting plan.\" No request body; the client's `HealthProfile` (calorie target, allergies — saved earlier by **Health Profile → Save Health Profile**, which must run first) drives it entirely.\n\nTwo paths, not one: an **LLM path** (any OpenAI-compatible provider — Groq by default; see `GET /system/ai-status`) is tried first when one is configured, given the client's health profile, goal, and only their allergy-safe **approved** foods; a **rule-based** calorie-fit ranking is the automatic fallback whenever no provider is configured, the request fails, or the response fails validation. F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note.\n\nBR-6: clinical safety is enforced **in code on the result**, never left to the prompt — allergens are filtered out of the candidate list before either path runs (not just asked to be avoided), and every `food_id` the LLM returns must resolve to a food from that exact same pre-filtered list or the entire response is discarded, falling back to rule-based rather than trusting anything partially.\n\nAlways `is_ai_draft: true`, `status: \"draft\"` — saved separately as `{{ai_draft_plan_id}}`, not overwriting `{{meal_plan_id}}` from **Create Meal Plan** above, so both plans stay independently addressable. **Activate AI Draft** below is how a nutritionist approves it (BR-6/BR-10) — the exact same action as approving any hand-built plan, not a special case.\n\n**422** — the client has no `HealthProfile` yet, or every approved food conflicts with a listed allergy."
           },
           "response": [
             {
@@ -3586,6 +3780,1351 @@
                     "me",
                     "meal-plan"
                   ]
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Meal Logs",
+      "description": "Sprint 4 (S4-01/S4-05 / FR-17, BR-9). The client logging what they actually ate, and reading back their own history. Retry-safe via idempotency_key for the mobile offline queue.",
+      "item": [
+        {
+          "name": "Log a Meal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/meal-logs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "meal-logs"
+              ]
+            },
+            "description": "S4-01 / FR-17, BR-9, `logs.manage.own` (**client** role - this request's Authorization tab is set to `{{client_access_token}}`). What the client actually ate.\n\nRun **Meal Plans -> Create Meal Plan** first so `{{meal_item_id}}` is populated (a real planned item's id, captured automatically from that response) - this logs against the exact item this client's plan actually contains, not a hardcoded id that may not exist on whatever database this runs against.\n\n**BR-9 - what \"on-plan\" means**: a log carrying `meal_item_id` is on-plan; omit it entirely for a food eaten outside the plan. `meal_item_id` is validated by **ownership** (must belong to a plan assigned to *this* client), not mere existence - referencing another client's item returns `422` on the field, not `404`; confirming the row exists at all would itself leak information. `food_id` must also match that item's own food - \"I ate the planned item, but the food was something else\" is not a coherent claim and is rejected the same way.\n\n**S4-05 - retry-safe.** `idempotency_key` uses Postman's `{{$guid}}` dynamic variable, generated fresh on every send. Sending the **same** key again returns **200** with the *existing* log instead of creating a second one - the mobile offline queue's replay-safety mechanism. A genuine second helping is a different entry with a different key.\n\nAlso stamps `last_logged_at` on the client's own record and recomputes `adherence_status` (see **Progress & Adherence** below) - both fields the dashboard has read since Sprint 2 with no write path until this endpoint closed the gap (SRS Section 2.4.2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"food_id\": \"{{food_id}}\",\n  \"meal_item_id\": \"{{meal_item_id}}\",\n  \"quantity_grams\": 200,\n  \"idempotency_key\": \"{{$guid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-logs",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"food_id\": \"{{food_id}}\",\n  \"meal_item_id\": \"{{meal_item_id}}\",\n  \"quantity_grams\": 200,\n  \"idempotency_key\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 3,\n  \"food\": {\n    \"id\": 12,\n    \"name_en\": \"Grilled Chicken\",\n    \"name_ar\": null,\n    \"source\": \"admin\",\n    \"status\": \"approved\",\n    \"calories_per_100g\": 200,\n    \"protein_g_per_100g\": 25,\n    \"carbs_g_per_100g\": 0,\n    \"fat_g_per_100g\": 8,\n    \"fiber_g_per_100g\": 0\n  },\n  \"quantity_grams\": 200.0,\n  \"macros\": {\n    \"calories\": 400.0,\n    \"protein_g\": 50.0,\n    \"carbs_g\": 0.0,\n    \"fat_g\": 16.0\n  },\n  \"meal_item_id\": 55,\n  \"is_on_plan\": true,\n  \"logged_at\": \"2026-09-15T12:30:00+00:00\"\n}"
+            },
+            {
+              "name": "200 OK - replayed idempotency_key",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-logs",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"food_id\": \"{{food_id}}\",\n  \"meal_item_id\": \"{{meal_item_id}}\",\n  \"quantity_grams\": 200,\n  \"idempotency_key\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 3,\n  \"food\": {\n    \"id\": 12,\n    \"name_en\": \"Grilled Chicken\",\n    \"name_ar\": null,\n    \"source\": \"admin\",\n    \"status\": \"approved\",\n    \"calories_per_100g\": 200,\n    \"protein_g_per_100g\": 25,\n    \"carbs_g_per_100g\": 0,\n    \"fat_g_per_100g\": 8,\n    \"fiber_g_per_100g\": 0\n  },\n  \"quantity_grams\": 200.0,\n  \"macros\": {\n    \"calories\": 400.0,\n    \"protein_g\": 50.0,\n    \"carbs_g\": 0.0,\n    \"fat_g\": 16.0\n  },\n  \"meal_item_id\": 55,\n  \"is_on_plan\": true,\n  \"logged_at\": \"2026-09-15T12:30:00+00:00\"\n}"
+            },
+            {
+              "name": "422 meal_item_id not this client's own",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-logs",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-logs"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"food_id\": \"{{food_id}}\",\n  \"meal_item_id\": \"{{meal_item_id}}\",\n  \"quantity_grams\": 200,\n  \"idempotency_key\": \"{{$guid}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The selected meal item is not part of your plan.\",\n  \"errors\": {\n    \"meal_item_id\": [\n      \"The selected meal item is not part of your plan.\"\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "List My Meal Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/meal-logs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "meal-logs"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-08",
+                  "description": "Must be paired with to",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-15",
+                  "description": "Must be paired with from",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "This client's own log history, paginated, newest first (`{{client_access_token}}`). `from`/`to` (both `YYYY-MM-DD`) are optional but must be sent **together** - a half-open range is rejected with `422` rather than silently returning the full history.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/meal-logs",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "meal-logs"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-09-08",
+                      "description": "Must be paired with to",
+                      "disabled": true
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-09-15",
+                      "description": "Must be paired with from",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 3,\n      \"food\": {\n        \"id\": 12,\n        \"name_en\": \"Grilled Chicken\",\n        \"name_ar\": null,\n        \"source\": \"admin\",\n        \"status\": \"approved\",\n        \"calories_per_100g\": 200,\n        \"protein_g_per_100g\": 25,\n        \"carbs_g_per_100g\": 0,\n        \"fat_g_per_100g\": 8,\n        \"fiber_g_per_100g\": 0\n      },\n      \"quantity_grams\": 200.0,\n      \"macros\": {\n        \"calories\": 400.0,\n        \"protein_g\": 50.0,\n        \"carbs_g\": 0.0,\n        \"fat_g\": 16.0\n      },\n      \"meal_item_id\": 55,\n      \"is_on_plan\": true,\n      \"logged_at\": \"2026-09-15T12:30:00+00:00\"\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/me/meal-logs?page=1\",\n    \"last\": \"{{base_url}}/me/meal-logs?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/me/meal-logs\",\n    \"per_page\": 15,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Measurements",
+      "description": "Sprint 4 (S4-02/S4-16 / FR-17, FR-29, BR-11, BR-13). A remotely managed client recording their own weight and circumferences - never the analyser-only figures, which stay nutritionist-only. See Body Composition Readings (Sprint 2) for the clinic-visit side of the same table.",
+      "item": [
+        {
+          "name": "Log My Measurements",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/measurements",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "measurements"
+              ]
+            },
+            "description": "S4-02/S4-16 / FR-17, FR-29, BR-11, BR-13 (**client** role, `{{client_access_token}}`).\n\nWARNING: **Renamed from `POST /me/weight-logs`** in S4-16 - it stopped being weight-only once the four circumference fields were added, and no consumer had been built yet, so the rename was free then and would have cost a client migration after it shipped.\n\n**BR-11 - what a client may send**: `weight_kg` plus circumferences (`waist_cm`/`hip_cm`/`thigh_cm`/`arm_cm`) - a scale and a tape measure are all a remote client needs. `body_fat_percent`/`muscle_mass_kg`/`water_percent` require a bio-impedance analyser and are **silently dropped** if included here, even though the request won't be rejected for sending them - they exist only through the nutritionist's own **Body Composition Readings** endpoint. At least one field is required; an empty body is `422`.\n\n**BR-13**: this endpoint always stamps `source: \"self-reported\"`. Writes to the **same** `body_composition_readings` table the nutritionist writes to (one weight/circumference series, not two), with `source` on every row so the two are never silently mixed.\n\nIdempotent by date, same as a meal log's `idempotency_key` but simpler - the table holds one reading per day, so re-sending the same day updates that row (**200**) instead of appending a duplicate (**201** on the first write for a date). A client editing a day the nutritionist already measured in clinic does **not** downgrade that row to self-reported - the analyser figures on it stay analyser figures.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_kg\": 79.5,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "201 Created - first entry for this date",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/measurements",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "measurements"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 79.5,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 25,\n  \"recorded_at\": \"2026-09-15\",\n  \"source\": \"self-reported\",\n  \"weight_kg\": 79.5,\n  \"body_fat_percent\": 23.5,\n  \"muscle_mass_kg\": null,\n  \"water_percent\": null,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}"
+            },
+            {
+              "name": "200 OK - same date, updates in place",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/measurements",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "measurements"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 79.5,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 25,\n  \"recorded_at\": \"2026-09-15\",\n  \"source\": \"self-reported\",\n  \"weight_kg\": 79.5,\n  \"body_fat_percent\": 23.5,\n  \"muscle_mass_kg\": null,\n  \"water_percent\": null,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}"
+            },
+            {
+              "name": "422 Empty body",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/measurements",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "measurements"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"weight_kg\": 79.5,\n  \"waist_cm\": 91,\n  \"hip_cm\": 99,\n  \"thigh_cm\": 57,\n  \"arm_cm\": 30.5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unprocessable Content",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"The weight kg field is required when none of waist cm / hip cm / thigh cm / arm cm are present.\",\n  \"errors\": {\n    \"weight_kg\": [\n      \"The weight kg field is required when none of waist cm / hip cm / thigh cm / arm cm are present.\"\n    ]\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Progress & Adherence",
+      "description": "Sprint 4 (S4-03/S4-04 / FR-18, FR-19, FR-30, BR-14). Plan-vs-actual, classified by direction (stable/declining/stopped_logging) rather than a fixed threshold - and the combined progress-screen payload built on top of it.",
+      "item": [
+        {
+          "name": "Get Client Adherence",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/adherence",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "adherence"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-08",
+                  "description": "Must be paired with to",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-15",
+                  "description": "Must be paired with from",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "S4-03 / FR-18, FR-30, BR-14, `progress.view` (nutritionist **and** client roles - this one request uses the collection default nutritionist token). `from`/`to` optional but must be sent together; defaults to the last 7 days.\n\nPer FR-18 the denominator is what the client **logged**, not what they were planned to eat - measuring against planned items would merge two different failures (eating the wrong thing, and not logging at all) into one number. `adherence_percent` is **`null`, not `0`**, when nothing was logged: \"0% adherent\" and \"no data yet\" are different clinical statements.\n\nWARNING: **`status` is classified by DIRECTION, not level** (BR-14) - both interviewed nutritionists rejected a level as the trigger. `stable` even below the 70% `reference_percent`; `declining` (fell >= the configured material-decline threshold vs the *previous* equally-long window) even while still above it; `stopped_logging` when stale (no log for `ADHERENCE_LATE_AFTER_DAYS` days, checked *before* the rate - a client who logged once perfectly a fortnight ago must not read as `stable`). `reference_percent` ships for **display only** - never branch UI logic on it.\n\nRun **Meal Logs -> Log a Meal** first for a non-null `total_logs`/`adherence_percent`."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/adherence",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "adherence"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-09-08",
+                      "description": "Must be paired with to",
+                      "disabled": true
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-09-15",
+                      "description": "Must be paired with from",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"from\": \"2026-09-08\",\n  \"to\": \"2026-09-15\",\n  \"total_logs\": 4,\n  \"on_plan_logs\": 3,\n  \"off_plan_logs\": 1,\n  \"adherence_percent\": 75.0,\n  \"previous\": {\n    \"from\": \"2026-09-01\",\n    \"to\": \"2026-09-07\",\n    \"adherence_percent\": 85.0\n  },\n  \"change_pp\": -10.0,\n  \"status\": \"declining\",\n  \"reference_percent\": 70\n}"
+            },
+            {
+              "name": "404 Not yours",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/adherence",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "adherence"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-09-08",
+                      "description": "Must be paired with to",
+                      "disabled": true
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-09-15",
+                      "description": "Must be paired with from",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"No query results for model [App\\\\Models\\\\Subscriber] 999\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Client Progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/progress",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "progress"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-09-08",
+                  "description": "Must be paired with to",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-09-15",
+                  "description": "Must be paired with from",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "S4-04 / FR-19, `progress.view`. Everything the Client Profile & Progress screen needs in one response - weight trend, body-composition change, and the adherence headline - so painting one screen doesn't cost three round-trips (NFR-01).\n\n`weight_trend` is oldest -> newest, ready to plot, each point carrying `source` (BR-13) so the chart can mark clinic-analyser readings distinctly from self-reported ones (S4-18). `change` compares the **first and last reading in the window** (\"what changed this period\", not against an all-time baseline) - `null` with fewer than two readings (one reading is a position, not a trend), and it omits any metric not present at **both** ends rather than fabricate a loss from a null."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/progress",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "progress"
+                  ],
+                  "query": [
+                    {
+                      "key": "from",
+                      "value": "2026-09-08",
+                      "description": "Must be paired with to",
+                      "disabled": true
+                    },
+                    {
+                      "key": "to",
+                      "value": "2026-09-15",
+                      "description": "Must be paired with from",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"weight_trend\": [\n    {\n      \"recorded_at\": \"2026-09-08\",\n      \"weight_kg\": 84.0,\n      \"source\": \"clinic-analyser\"\n    },\n    {\n      \"recorded_at\": \"2026-09-14\",\n      \"weight_kg\": 82.0,\n      \"source\": \"self-reported\"\n    }\n  ],\n  \"body_composition\": {\n    \"latest\": {\n      \"id\": 22,\n      \"recorded_at\": \"2026-09-14\",\n      \"source\": \"self-reported\",\n      \"weight_kg\": 82.0,\n      \"body_fat_percent\": 23.5,\n      \"muscle_mass_kg\": null,\n      \"water_percent\": null,\n      \"waist_cm\": null,\n      \"hip_cm\": null,\n      \"thigh_cm\": null,\n      \"arm_cm\": null\n    },\n    \"previous\": {\n      \"id\": 9,\n      \"recorded_at\": \"2026-09-01\",\n      \"source\": \"clinic-analyser\",\n      \"weight_kg\": 84.0,\n      \"body_fat_percent\": 23.5,\n      \"muscle_mass_kg\": null,\n      \"water_percent\": null,\n      \"waist_cm\": null,\n      \"hip_cm\": null,\n      \"thigh_cm\": null,\n      \"arm_cm\": null\n    },\n    \"change\": {\n      \"weight_kg\": -2.0\n    }\n  },\n  \"adherence\": {\n    \"from\": \"2026-09-08\",\n    \"to\": \"2026-09-15\",\n    \"total_logs\": 4,\n    \"on_plan_logs\": 3,\n    \"off_plan_logs\": 1,\n    \"adherence_percent\": 75.0,\n    \"previous\": {\n      \"from\": \"2026-09-01\",\n      \"to\": \"2026-09-07\",\n      \"adherence_percent\": 85.0\n    },\n    \"change_pp\": -10.0,\n    \"status\": \"declining\",\n    \"reference_percent\": 70\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Alerts",
+      "description": "Sprint 5 (S5-01/S5-02 / FR-20). Rule-based proactive alerts - no_log, calories_exceeded, milestone - produced by a daily scheduled job, not by anything in this collection. See List Alerts for the one-time manual step needed to see real data.",
+      "item": [
+        {
+          "name": "List Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/alerts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "is_read",
+                  "value": "false",
+                  "description": "true | false",
+                  "disabled": true
+                },
+                {
+                  "key": "subscriber_id",
+                  "value": "{{subscriber_id}}",
+                  "description": "Narrow to one client",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "S5-02 / FR-20, `alerts.view` (**nutritionist**-only per the permission matrix). Every alert across the caller's own roster - `Alert` carries no `nutritionist_id` of its own, so isolation is reached through the owning `Subscriber`'s scope, the same pattern this API uses wherever a child table has no scope to apply directly.\n\nWARNING: **This collection cannot generate an alert by itself.** Alerts are produced only by the server-side scheduled job (`php artisan alerts:evaluate`, daily at 06:00) evaluating FR-20's three rules - no-log, calories-exceeded, milestone - nothing in this collection can trigger a cron job. Run that command once on the server you're testing against (or wait for its next scheduled run), *then* run this request; until then, an empty `data: []` is the correct response, not a bug.\n\nBoth filters are optional and independent; omitting `is_read` returns both read and unread - never defaulted to unread-only. This request's test script saves the first result's `id` as `{{alert_id}}` for **Mark Alert Read** below, if the list isn't empty."
+          },
+          "response": [
+            {
+              "name": "200 OK - with alerts",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/alerts",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "alerts"
+                  ],
+                  "query": [
+                    {
+                      "key": "is_read",
+                      "value": "false",
+                      "description": "true | false",
+                      "disabled": true
+                    },
+                    {
+                      "key": "subscriber_id",
+                      "value": "{{subscriber_id}}",
+                      "description": "Narrow to one client",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 12,\n      \"subscriber_id\": 3,\n      \"type\": \"calories_exceeded\",\n      \"message\": \"Daily calorie target exceeded for 3 consecutive days.\",\n      \"is_read\": false,\n      \"is_resolved\": false,\n      \"created_at\": \"2026-09-15T06:00:00+00:00\"\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/alerts?page=1\",\n    \"last\": \"{{base_url}}/alerts?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/alerts\",\n    \"per_page\": 15,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            },
+            {
+              "name": "200 OK - none generated yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/alerts",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "alerts"
+                  ],
+                  "query": [
+                    {
+                      "key": "is_read",
+                      "value": "false",
+                      "description": "true | false",
+                      "disabled": true
+                    },
+                    {
+                      "key": "subscriber_id",
+                      "value": "{{subscriber_id}}",
+                      "description": "Narrow to one client",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [],\n  \"links\": {\n    \"first\": null,\n    \"last\": null,\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": null,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/alerts\",\n    \"per_page\": 15,\n    \"to\": null,\n    \"total\": 0\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Only populated once the SERVER-side scheduled job",
+                  "// (`php artisan alerts:evaluate`) has actually run at least once —",
+                  "// see List Alerts' description for why this collection cannot",
+                  "// trigger that itself. An empty list here is a correct, valid",
+                  "// response (200 with data: []), not a failure.",
+                  "const body = pm.response.json();",
+                  "if (pm.response.code < 300 && body.data && body.data.length > 0) {",
+                  "    pm.collectionVariables.set('alert_id', body.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Alert Read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/alerts/{{alert_id}}/read",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "alerts",
+                "{{alert_id}}",
+                "read"
+              ]
+            },
+            "description": "Requires `{{alert_id}}` from **List Alerts** above - see that request's description for why this collection can't produce one on a fresh database without a manual server-side step.\n\nReturns **404**, not `403`, for another nutritionist's alert - its existence is never confirmed to a caller who doesn't own it. Ownership is checked against an explicitly **unscoped** lookup of the owning subscriber rather than the scoped `belongsTo` relation - using the scoped relation here would resolve to `null` for another nutritionist's alert and crash instead of returning a clean 404."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/alerts/{{alert_id}}/read",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "alerts",
+                    "{{alert_id}}",
+                    "read"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": 12,\n  \"subscriber_id\": 3,\n  \"type\": \"calories_exceeded\",\n  \"message\": \"Daily calorie target exceeded for 3 consecutive days.\",\n  \"is_read\": true,\n  \"is_resolved\": false,\n  \"created_at\": \"2026-09-15T06:00:00+00:00\"\n}"
+            },
+            {
+              "name": "404 Not yours / doesn't exist",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/alerts/{{alert_id}}/read",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "alerts",
+                    "{{alert_id}}",
+                    "read"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"No query results for model [App\\\\Models\\\\Alert] 999\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AI Summaries",
+      "description": "Sprint 5 (S5-03/S5-04/S5-05 / FR-21). One natural-language weekly progress note per client, generated by a scheduled job - real LLM write-up or a deterministic fallback, always labelled which (is_fallback).",
+      "item": [
+        {
+          "name": "Get Client Weekly Summaries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "clients",
+                "{{subscriber_id}}",
+                "ai-summaries"
+              ]
+            },
+            "description": "S5-03/S5-04 / FR-21, `ai_summary.view` (**nutritionist**-only). This client's weekly natural-language progress notes, newest week first, paginated.\n\nWARNING: **Same manual-step note as Alerts**: populated only by the server-side scheduled job (`php artisan ai-summaries:generate-weekly`, Mondays 07:00), summarising the week that just closed. An empty list is the correct response on a fresh database, not a bug.\n\nReuses `OpenAiCompatibleClient` (Sprint 3) with a new prompt: only this-week's already-computed adherence rate, alert counts, and weight change are sent to the model - never raw health-profile data - and the system prompt explicitly forbids medical or dietary advice, restricting the summary to logging behaviour and progress.\n\nWARNING: **`is_fallback`** distinguishes a real LLM write-up from the S5-05 templated fallback (built directly from the same numbers, used whenever the LLM is unconfigured, unreachable, or returns something too short/malformed) - same reasoning as `is_ai_draft` on meal plans (BR-6/BR-10): the origin of AI-adjacent output is never hidden from the nutritionist."
+          },
+          "response": [
+            {
+              "name": "200 OK - with summaries",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "ai-summaries"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [\n    {\n      \"id\": 8,\n      \"week_start\": \"2026-09-08\",\n      \"summary_text\": \"Great consistency logging breakfast this week; try logging dinner more regularly too.\",\n      \"is_fallback\": false,\n      \"generated_at\": \"2026-09-15T07:00:00+00:00\"\n    }\n  ],\n  \"links\": {\n    \"first\": \"{{base_url}}/clients/{{subscriber_id}}/ai-summaries?page=1\",\n    \"last\": \"{{base_url}}/clients/{{subscriber_id}}/ai-summaries?page=1\",\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": 1,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/clients/{{subscriber_id}}/ai-summaries\",\n    \"per_page\": 15,\n    \"to\": 1,\n    \"total\": 1\n  }\n}"
+            },
+            {
+              "name": "200 OK - none generated yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "ai-summaries"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": [],\n  \"links\": {\n    \"first\": null,\n    \"last\": null,\n    \"prev\": null,\n    \"next\": null\n  },\n  \"meta\": {\n    \"current_page\": 1,\n    \"from\": null,\n    \"last_page\": 1,\n    \"path\": \"{{base_url}}/clients/{{subscriber_id}}/ai-summaries\",\n    \"per_page\": 15,\n    \"to\": null,\n    \"total\": 0\n  }\n}"
+            },
+            {
+              "name": "404 Not yours",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "clients",
+                    "{{subscriber_id}}",
+                    "ai-summaries"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"message\": \"No query results for model [App\\\\Models\\\\Subscriber] 999\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Push Notifications",
+      "description": "Sprint 5 (S5-06 / FR-22). The client's own device token, sent via Firebase Cloud Messaging by the daily log-reminder job - server-side FCM sending itself has no HTTP endpoint of its own; this is the one piece of it a client app calls directly.",
+      "item": [
+        {
+          "name": "Register Device Token",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/fcm-token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "fcm-token"
+              ]
+            },
+            "description": "S5-06 / FR-22 (**client** role, `{{client_access_token}}`; gated on `role:client` directly, not a permission - the PRD matrix has no \"register my own device\" entry, same reasoning as the Nutritionist Profile endpoint's `role:nutritionist` gate).\n\nThe mobile app's own device token, used server-side by the daily `notifications:send-log-reminders` job (20:00, placeholder time - see `API_CONTRACT.md`) to push a same-day reminder to any active client who hasn't logged yet. Distinct from S5-01's `no_log` **alert**, which tells the *nutritionist* after 3 quiet days - this reminds the *client*, same day.\n\n**204 No Content** on success, no body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fcm_token\": \"demo-device-token-abc123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/fcm-token",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "fcm-token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fcm_token\": \"demo-device-token-abc123\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "No Content",
+              "code": 204,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "cookie": [],
+              "body": ""
+            }
+          ]
+        },
+        {
+          "name": "Clear Device Token",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/me/fcm-token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "me",
+                "fcm-token"
+              ]
+            },
+            "description": "Same endpoint as **Register Device Token**, sent `null` - how the app signals \"stop sending here\" (logout, denied notification permission), distinct from never having called this endpoint at all.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fcm_token\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{client_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "204 No Content",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/me/fcm-token",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "me",
+                    "fcm-token"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fcm_token\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 }
               },
               "status": "No Content",

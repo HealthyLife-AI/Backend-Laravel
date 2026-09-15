@@ -174,6 +174,12 @@ SAVE_MEAL_PLAN_ID = [
     "const body = pm.response.json();",
     "if (pm.response.code < 300 && body.id) {",
     "    pm.collectionVariables.set('meal_plan_id', body.id);",
+    "    // Feeds Meal Logs -> Log a Meal below: a real planned item id",
+    "    // to log against, rather than a hardcoded number that may not",
+    "    // exist on whatever database this runs against.",
+    "    if (body.meals && body.meals[0] && body.meals[0].items && body.meals[0].items[0]) {",
+    "        pm.collectionVariables.set('meal_item_id', body.meals[0].items[0].id);",
+    "    }",
     "}",
 ]
 
@@ -195,6 +201,18 @@ SAVE_PENDING_FOOD_ID = [
     "const body = pm.response.json();",
     "if (pm.response.code === 201 && body.id) {",
     "    pm.collectionVariables.set('pending_food_id', body.id);",
+    "}",
+]
+
+SAVE_FIRST_ALERT_ID = [
+    "// Only populated once the SERVER-side scheduled job",
+    "// (`php artisan alerts:evaluate`) has actually run at least once —",
+    "// see List Alerts' description for why this collection cannot",
+    "// trigger that itself. An empty list here is a correct, valid",
+    "// response (200 with data: []), not a failure.",
+    "const body = pm.response.json();",
+    "if (pm.response.code < 300 && body.data && body.data.length > 0) {",
+    "    pm.collectionVariables.set('alert_id', body.data[0].id);",
     "}",
 ]
 
@@ -245,8 +263,9 @@ HEALTH_PROFILE_RESPONSE["daily_calorie_needs"] = 2168
 HEALTH_PROFILE_RESPONSE["updated_at"] = "2026-09-06T09:56:45+00:00"
 
 BODY_COMPOSITION_READING = {
-    "id": 9, "recorded_at": "2026-09-01", "weight_kg": 80, "body_fat_percent": 23.5,
-    "muscle_mass_kg": None, "water_percent": None, "waist_cm": None,
+    "id": 9, "recorded_at": "2026-09-01", "source": "clinic-analyser", "weight_kg": 80,
+    "body_fat_percent": 23.5, "muscle_mass_kg": None, "water_percent": None,
+    "waist_cm": None, "hip_cm": None, "thigh_cm": None, "arm_cm": None,
 }
 
 FOOD_ITEM = {
@@ -325,7 +344,10 @@ FOOD_SUBMISSION_RESPONSE = {**FOOD_SUBMISSION_REQUEST, "id": 9001, "source": "nu
 
 DASHBOARD_OVERVIEW = {
     "total": 3, "active": 2, "pending": 1,
-    "on_track": 1, "needs_attention": 1, "late": 0, "not_logged_today": 2,
+    # BR-14: direction, not level — replaced on_track/needs_attention/late
+    # in the S4-03 rework (both interviewed nutritionists rejected a
+    # level as the classifier; see the Progress & Adherence folder).
+    "stable": 1, "declining": 1, "stopped_logging": 0, "not_logged_today": 2,
 }
 
 VALIDATION_ERROR_EXAMPLE = {
@@ -335,6 +357,57 @@ VALIDATION_ERROR_EXAMPLE = {
         "password": ["The password field confirmation does not match."],
     },
 }
+
+# ---- Sprint 4 (S4-06/S4-16) -------------------------------------------------
+
+MEAL_LOG_OBJECT = {
+    "id": 3, "food": FOOD_MAIN, "quantity_grams": 200.0,
+    "macros": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0},
+    "meal_item_id": 55, "is_on_plan": True, "logged_at": "2026-09-15T12:30:00+00:00",
+}
+
+NUTRITIONIST_PROFILE_OBJECT = {
+    "id": 1, "specialty": "Clinical nutrition", "clinic_name": "Gaza Nutrition Center",
+    "bio": "Ten years of practice.",
+    # S4-00 / BR-12: read-only here — see Update Nutritionist Profile.
+    "plan_tier": "basic", "updated_at": "2026-09-13T11:40:00+00:00",
+}
+
+ADHERENCE_OBJECT = {
+    "from": "2026-09-08", "to": "2026-09-15", "total_logs": 4,
+    "on_plan_logs": 3, "off_plan_logs": 1, "adherence_percent": 75.0,
+    "previous": {"from": "2026-09-01", "to": "2026-09-07", "adherence_percent": 85.0},
+    "change_pp": -10.0, "status": "declining", "reference_percent": 70,
+}
+
+PROGRESS_OBJECT = {
+    "weight_trend": [
+        {"recorded_at": "2026-09-08", "weight_kg": 84.0, "source": "clinic-analyser"},
+        {"recorded_at": "2026-09-14", "weight_kg": 82.0, "source": "self-reported"},
+    ],
+    "body_composition": {
+        "latest": {**BODY_COMPOSITION_READING, "id": 22, "recorded_at": "2026-09-14",
+                   "source": "self-reported", "weight_kg": 82.0},
+        "previous": {**BODY_COMPOSITION_READING, "id": 9, "source": "clinic-analyser", "weight_kg": 84.0},
+        "change": {"weight_kg": -2.0},
+    },
+    "adherence": ADHERENCE_OBJECT,
+}
+
+# ---- Sprint 5 (S5-02/S5-04) -------------------------------------------------
+
+ALERT_OBJECT = {
+    "id": 12, "subscriber_id": 3, "type": "calories_exceeded",
+    "message": "Daily calorie target exceeded for 3 consecutive days.",
+    "is_read": False, "is_resolved": False, "created_at": "2026-09-15T06:00:00+00:00",
+}
+
+AI_SUMMARY_OBJECT = {
+    "id": 8, "week_start": "2026-09-08",
+    "summary_text": "Great consistency logging breakfast this week; try logging dinner more regularly too.",
+    "is_fallback": False, "generated_at": "2026-09-15T07:00:00+00:00",
+}
+
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +594,7 @@ All query parameters are optional and start **disabled** in this request — ena
 `search` matches the client's name or code as a **prefix**, e.g. `sar` matches "Sara", not "Ansara" — see the collection description for why (index-friendly prefix scan, not `LIKE '%...%'`).""",
     query=[
         ("status", "active", "pending | active", True),
-        ("adherence", "on_track", "on_track | needs_attention | late", True),
+        ("adherence", "stable", "stable | declining | stopped_logging (BR-14: direction, not level)", True),
         ("search", "sar", "Prefix match on client name or code", True),
         ("per_page", "20", "1–100, default 20", True),
     ],
@@ -645,11 +718,12 @@ add_reading_req = make_request(
     description="""Logs one dated reading. Only `recorded_at` and `weight_kg` are required — the rest are whatever the device/visit actually captured, so a nutritionist without a body-composition scale can still log weight alone.
 
 `recorded_at` must not be in the future.""",
-    body={"recorded_at": "2026-09-06", "weight_kg": 82, "body_fat_percent": 30.5, "waist_cm": 85},
+    body={"recorded_at": "2026-09-06", "weight_kg": 82, "body_fat_percent": 30.5, "waist_cm": 85, "hip_cm": 98},
     examples=[
         ("201 Created", "Created", 201,
-         {"id": 15, "recorded_at": "2026-09-06", "weight_kg": 82, "body_fat_percent": 30.5,
-          "muscle_mass_kg": None, "water_percent": None, "waist_cm": 85}, JSON_RESP_HEADER),
+         {"id": 15, "recorded_at": "2026-09-06", "source": "clinic-analyser", "weight_kg": 82,
+          "body_fat_percent": 30.5, "muscle_mass_kg": None, "water_percent": None,
+          "waist_cm": 85, "hip_cm": 98, "thigh_cm": None, "arm_cm": None}, JSON_RESP_HEADER),
         ("422 Future date", "Unprocessable Content", 422,
          {"message": "The recorded at must be a date before or equal to today.",
           "errors": {"recorded_at": ["The recorded at must be a date before or equal to today."]}},
@@ -811,8 +885,11 @@ update_meal_plan_req = make_request(
     name="Update Meal Plan",
     method="PUT",
     path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}",
-    description="""Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate "edit a draft" endpoint.""",
+    description="""Same request/response shape as **Create**. **Full replace, not a patch** (PRD F-4: edited as one whole form) — omitting a meal that existed before deletes it. This is also how an AI draft gets edited before it's approved (S3-07) — there is no separate "edit a draft" endpoint.
+
+⚠️ A full replace means every `meal_items` row from **Create Meal Plan** is deleted and recreated with brand-new ids — this request's test script re-saves `{{meal_item_id}}` from the fresh response for exactly that reason. **Meal Logs → Log a Meal**, later in this collection, uses whatever `{{meal_item_id}}` was captured *last* — if you skip this request in a partial run, re-run **Create Meal Plan** again first rather than relying on a stale id.""",
     body=MEAL_PLAN_REQUEST_BODY,
+    tests=SAVE_MEAL_PLAN_ID,
     examples=[
         ("200 OK", "OK", 200, MEAL_PLAN_OBJECT, JSON_RESP_HEADER),
     ],
@@ -835,7 +912,9 @@ ai_draft_req = make_request(
     path="clients/{{subscriber_id}}/meal-plans/ai-draft",
     description="""S3-06/S3-07 / F-5 (PRD, P1) — "Suggest a starting plan." No request body; the client's `HealthProfile` (calorie target, allergies — saved earlier by **Health Profile → Save Health Profile**, which must run first) drives it entirely.
 
-Rule-based, not a real LLM call — no LLM provider is wired into this backend, and F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note. Splits the daily calorie target across breakfast/snack/lunch/dinner by a standard clinical rule of thumb, picks the best calorie-matching **approved** food per slot plus up to two alternatives, and excludes any food whose name contains one of the client's allergy terms (case-insensitive substring match — a real safety net, explicitly not a certified allergen system).
+Two paths, not one: an **LLM path** (any OpenAI-compatible provider — Groq by default; see `GET /system/ai-status`) is tried first when one is configured, given the client's health profile, goal, and only their allergy-safe **approved** foods; a **rule-based** calorie-fit ranking is the automatic fallback whenever no provider is configured, the request fails, or the response fails validation. F-5 itself is still an unconfirmed-wanted feature per the PRD's own validation note.
+
+BR-6: clinical safety is enforced **in code on the result**, never left to the prompt — allergens are filtered out of the candidate list before either path runs (not just asked to be avoided), and every `food_id` the LLM returns must resolve to a food from that exact same pre-filtered list or the entire response is discarded, falling back to rule-based rather than trusting anything partially.
 
 Always `is_ai_draft: true`, `status: "draft"` — saved separately as `{{ai_draft_plan_id}}`, not overwriting `{{meal_plan_id}}` from **Create Meal Plan** above, so both plans stay independently addressable. **Activate AI Draft** below is how a nutritionist approves it (BR-6/BR-10) — the exact same action as approving any hand-built plan, not a special case.
 
@@ -1018,6 +1097,305 @@ client_own_plan_folder = {
     "item": [get_my_plan_req],
 }
 
+# ---------------------------------------------------------------------------
+# Folder: Nutritionist Profile (Sprint 4 - S4-00)
+# ---------------------------------------------------------------------------
+
+get_nutritionist_profile_req = make_request(
+    name="Get Nutritionist Profile",
+    method="GET",
+    path="me/nutritionist-profile",
+    description="""S4-00 / PRD Section 5.2. The nutritionist's own professional details - a table the SRS documented since early design that a Sprint 4 documentation audit found had never been built. Resolved from the JWT, no route-bound id - there is nothing here for one nutritionist to point at another's profile with.
+
+The row is created on first access, not at registration - an account that never opens this screen carries no empty row. Still answers **200**, not 201, on that first read: creating the row is an implementation detail of reading it, not something the caller asked for.""",
+    examples=[
+        ("200 OK", "OK", 200, {**NUTRITIONIST_PROFILE_OBJECT, "specialty": None, "clinic_name": None, "bio": None}, JSON_RESP_HEADER),
+    ],
+)
+
+update_nutritionist_profile_req = make_request(
+    name="Update Nutritionist Profile",
+    method="PUT",
+    path="me/nutritionist-profile",
+    description="""Accepts `specialty` / `clinic_name` / `bio` only.
+
+WARNING: **`plan_tier` is read-only**, even if included in this request body - it is billing state, not profile content (BR-12). Accepting it here would let a nutritionist move themselves onto a paid tier for free by adding one field to the request. It is returned in every response so the dashboard can display the current tier; it is set only by an internal/billing-authorized process (Post-MVP).
+
+Gated on `role:nutritionist` directly, not a permission - the PRD permission matrix has no "edit my own profile" entry.""",
+    body={"specialty": "Clinical nutrition", "clinic_name": "Gaza Nutrition Center", "bio": "Ten years of practice.", "plan_tier": "professional"},
+    examples=[
+        ("200 OK - plan_tier unchanged despite being sent", "OK", 200, NUTRITIONIST_PROFILE_OBJECT, JSON_RESP_HEADER),
+    ],
+)
+
+nutritionist_profile_folder = {
+    "name": "Nutritionist Profile",
+    "description": "Sprint 4 (S4-00 / PRD Section 5.2). The nutritionist's own professional profile - specialty, clinic name, bio, and a read-only plan_tier that only billing may change (BR-12).",
+    "item": [get_nutritionist_profile_req, update_nutritionist_profile_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Meal Logs (Sprint 4 - S4-01/S4-05)
+# ---------------------------------------------------------------------------
+
+log_meal_req = make_request(
+    name="Log a Meal",
+    method="POST",
+    path="me/meal-logs",
+    description="""S4-01 / FR-17, BR-9, `logs.manage.own` (**client** role - this request's Authorization tab is set to `{{client_access_token}}`). What the client actually ate.
+
+Run **Meal Plans -> Create Meal Plan** first so `{{meal_item_id}}` is populated (a real planned item's id, captured automatically from that response) - this logs against the exact item this client's plan actually contains, not a hardcoded id that may not exist on whatever database this runs against.
+
+**BR-9 - what "on-plan" means**: a log carrying `meal_item_id` is on-plan; omit it entirely for a food eaten outside the plan. `meal_item_id` is validated by **ownership** (must belong to a plan assigned to *this* client), not mere existence - referencing another client's item returns `422` on the field, not `404`; confirming the row exists at all would itself leak information. `food_id` must also match that item's own food - "I ate the planned item, but the food was something else" is not a coherent claim and is rejected the same way.
+
+**S4-05 - retry-safe.** `idempotency_key` uses Postman's `{{$guid}}` dynamic variable, generated fresh on every send. Sending the **same** key again returns **200** with the *existing* log instead of creating a second one - the mobile offline queue's replay-safety mechanism. A genuine second helping is a different entry with a different key.
+
+Also stamps `last_logged_at` on the client's own record and recomputes `adherence_status` (see **Progress & Adherence** below) - both fields the dashboard has read since Sprint 2 with no write path until this endpoint closed the gap (SRS Section 2.4.2).""",
+    body={"food_id": "{{food_id}}", "meal_item_id": "{{meal_item_id}}", "quantity_grams": 200, "idempotency_key": "{{$guid}}"},
+    examples=[
+        ("201 Created", "Created", 201, MEAL_LOG_OBJECT, JSON_RESP_HEADER),
+        ("200 OK - replayed idempotency_key", "OK", 200, MEAL_LOG_OBJECT, JSON_RESP_HEADER),
+        ("422 meal_item_id not this client's own", "Unprocessable Content", 422,
+         {"message": "The selected meal item is not part of your plan.",
+          "errors": {"meal_item_id": ["The selected meal item is not part of your plan."]}}, JSON_RESP_HEADER),
+    ],
+)
+log_meal_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+list_meal_logs_req = make_request(
+    name="List My Meal Logs",
+    method="GET",
+    path="me/meal-logs",
+    description="""This client's own log history, paginated, newest first (`{{client_access_token}}`). `from`/`to` (both `YYYY-MM-DD`) are optional but must be sent **together** - a half-open range is rejected with `422` rather than silently returning the full history.""",
+    query=[
+        ("from", "2026-09-08", "Must be paired with to", True),
+        ("to", "2026-09-15", "Must be paired with from", True),
+    ],
+    examples=[
+        ("200 OK", "OK", 200, {"data": [MEAL_LOG_OBJECT],
+         "links": {"first": "{{base_url}}/me/meal-logs?page=1", "last": "{{base_url}}/me/meal-logs?page=1", "prev": None, "next": None},
+         "meta": {"current_page": 1, "from": 1, "last_page": 1, "path": "{{base_url}}/me/meal-logs", "per_page": 15, "to": 1, "total": 1}},
+         JSON_RESP_HEADER),
+    ],
+)
+list_meal_logs_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+meal_logs_folder = {
+    "name": "Meal Logs",
+    "description": "Sprint 4 (S4-01/S4-05 / FR-17, BR-9). The client logging what they actually ate, and reading back their own history. Retry-safe via idempotency_key for the mobile offline queue.",
+    "item": [log_meal_req, list_meal_logs_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Measurements (Sprint 4 - S4-02/S4-16)
+# ---------------------------------------------------------------------------
+
+log_measurement_req = make_request(
+    name="Log My Measurements",
+    method="POST",
+    path="me/measurements",
+    description="""S4-02/S4-16 / FR-17, FR-29, BR-11, BR-13 (**client** role, `{{client_access_token}}`).
+
+WARNING: **Renamed from `POST /me/weight-logs`** in S4-16 - it stopped being weight-only once the four circumference fields were added, and no consumer had been built yet, so the rename was free then and would have cost a client migration after it shipped.
+
+**BR-11 - what a client may send**: `weight_kg` plus circumferences (`waist_cm`/`hip_cm`/`thigh_cm`/`arm_cm`) - a scale and a tape measure are all a remote client needs. `body_fat_percent`/`muscle_mass_kg`/`water_percent` require a bio-impedance analyser and are **silently dropped** if included here, even though the request won't be rejected for sending them - they exist only through the nutritionist's own **Body Composition Readings** endpoint. At least one field is required; an empty body is `422`.
+
+**BR-13**: this endpoint always stamps `source: "self-reported"`. Writes to the **same** `body_composition_readings` table the nutritionist writes to (one weight/circumference series, not two), with `source` on every row so the two are never silently mixed.
+
+Idempotent by date, same as a meal log's `idempotency_key` but simpler - the table holds one reading per day, so re-sending the same day updates that row (**200**) instead of appending a duplicate (**201** on the first write for a date). A client editing a day the nutritionist already measured in clinic does **not** downgrade that row to self-reported - the analyser figures on it stay analyser figures.""",
+    body={"weight_kg": 79.5, "waist_cm": 91, "hip_cm": 99, "thigh_cm": 57, "arm_cm": 30.5},
+    examples=[
+        ("201 Created - first entry for this date", "Created", 201,
+         {**BODY_COMPOSITION_READING, "id": 25, "recorded_at": "2026-09-15", "source": "self-reported",
+          "weight_kg": 79.5, "waist_cm": 91, "hip_cm": 99, "thigh_cm": 57, "arm_cm": 30.5}, JSON_RESP_HEADER),
+        ("200 OK - same date, updates in place", "OK", 200,
+         {**BODY_COMPOSITION_READING, "id": 25, "recorded_at": "2026-09-15", "source": "self-reported",
+          "weight_kg": 79.5, "waist_cm": 91, "hip_cm": 99, "thigh_cm": 57, "arm_cm": 30.5}, JSON_RESP_HEADER),
+        ("422 Empty body", "Unprocessable Content", 422,
+         {"message": "The weight kg field is required when none of waist cm / hip cm / thigh cm / arm cm are present.",
+          "errors": {"weight_kg": ["The weight kg field is required when none of waist cm / hip cm / thigh cm / arm cm are present."]}},
+         JSON_RESP_HEADER),
+    ],
+)
+log_measurement_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+measurements_folder = {
+    "name": "Measurements",
+    "description": "Sprint 4 (S4-02/S4-16 / FR-17, FR-29, BR-11, BR-13). A remotely managed client recording their own weight and circumferences - never the analyser-only figures, which stay nutritionist-only. See Body Composition Readings (Sprint 2) for the clinic-visit side of the same table.",
+    "item": [log_measurement_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Progress & Adherence (Sprint 4 - S4-03/S4-04)
+# ---------------------------------------------------------------------------
+
+get_adherence_req = make_request(
+    name="Get Client Adherence",
+    method="GET",
+    path="clients/{{subscriber_id}}/adherence",
+    description="""S4-03 / FR-18, FR-30, BR-14, `progress.view` (nutritionist **and** client roles - this one request uses the collection default nutritionist token). `from`/`to` optional but must be sent together; defaults to the last 7 days.
+
+Per FR-18 the denominator is what the client **logged**, not what they were planned to eat - measuring against planned items would merge two different failures (eating the wrong thing, and not logging at all) into one number. `adherence_percent` is **`null`, not `0`**, when nothing was logged: "0% adherent" and "no data yet" are different clinical statements.
+
+WARNING: **`status` is classified by DIRECTION, not level** (BR-14) - both interviewed nutritionists rejected a level as the trigger. `stable` even below the 70% `reference_percent`; `declining` (fell >= the configured material-decline threshold vs the *previous* equally-long window) even while still above it; `stopped_logging` when stale (no log for `ADHERENCE_LATE_AFTER_DAYS` days, checked *before* the rate - a client who logged once perfectly a fortnight ago must not read as `stable`). `reference_percent` ships for **display only** - never branch UI logic on it.
+
+Run **Meal Logs -> Log a Meal** first for a non-null `total_logs`/`adherence_percent`.""",
+    query=[
+        ("from", "2026-09-08", "Must be paired with to", True),
+        ("to", "2026-09-15", "Must be paired with from", True),
+    ],
+    examples=[
+        ("200 OK", "OK", 200, ADHERENCE_OBJECT, JSON_RESP_HEADER),
+        ("404 Not yours", "Not Found", 404, {"message": "No query results for model [App\\Models\\Subscriber] 999"}, JSON_RESP_HEADER),
+    ],
+)
+
+get_progress_req = make_request(
+    name="Get Client Progress",
+    method="GET",
+    path="clients/{{subscriber_id}}/progress",
+    description="""S4-04 / FR-19, `progress.view`. Everything the Client Profile & Progress screen needs in one response - weight trend, body-composition change, and the adherence headline - so painting one screen doesn't cost three round-trips (NFR-01).
+
+`weight_trend` is oldest -> newest, ready to plot, each point carrying `source` (BR-13) so the chart can mark clinic-analyser readings distinctly from self-reported ones (S4-18). `change` compares the **first and last reading in the window** ("what changed this period", not against an all-time baseline) - `null` with fewer than two readings (one reading is a position, not a trend), and it omits any metric not present at **both** ends rather than fabricate a loss from a null.""",
+    query=[
+        ("from", "2026-09-08", "Must be paired with to", True),
+        ("to", "2026-09-15", "Must be paired with from", True),
+    ],
+    examples=[
+        ("200 OK", "OK", 200, PROGRESS_OBJECT, JSON_RESP_HEADER),
+    ],
+)
+
+progress_adherence_folder = {
+    "name": "Progress & Adherence",
+    "description": "Sprint 4 (S4-03/S4-04 / FR-18, FR-19, FR-30, BR-14). Plan-vs-actual, classified by direction (stable/declining/stopped_logging) rather than a fixed threshold - and the combined progress-screen payload built on top of it.",
+    "item": [get_adherence_req, get_progress_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Alerts (Sprint 5 - S5-01/S5-02)
+# ---------------------------------------------------------------------------
+
+list_alerts_req = make_request(
+    name="List Alerts",
+    method="GET",
+    path="alerts",
+    description="""S5-02 / FR-20, `alerts.view` (**nutritionist**-only per the permission matrix). Every alert across the caller's own roster - `Alert` carries no `nutritionist_id` of its own, so isolation is reached through the owning `Subscriber`'s scope, the same pattern this API uses wherever a child table has no scope to apply directly.
+
+WARNING: **This collection cannot generate an alert by itself.** Alerts are produced only by the server-side scheduled job (`php artisan alerts:evaluate`, daily at 06:00) evaluating FR-20's three rules - no-log, calories-exceeded, milestone - nothing in this collection can trigger a cron job. Run that command once on the server you're testing against (or wait for its next scheduled run), *then* run this request; until then, an empty `data: []` is the correct response, not a bug.
+
+Both filters are optional and independent; omitting `is_read` returns both read and unread - never defaulted to unread-only. This request's test script saves the first result's `id` as `{{alert_id}}` for **Mark Alert Read** below, if the list isn't empty.""",
+    query=[
+        ("is_read", "false", "true | false", True),
+        ("subscriber_id", "{{subscriber_id}}", "Narrow to one client", True),
+    ],
+    tests=SAVE_FIRST_ALERT_ID,
+    examples=[
+        ("200 OK - with alerts", "OK", 200,
+         {"data": [ALERT_OBJECT],
+          "links": {"first": "{{base_url}}/alerts?page=1", "last": "{{base_url}}/alerts?page=1", "prev": None, "next": None},
+          "meta": {"current_page": 1, "from": 1, "last_page": 1, "path": "{{base_url}}/alerts", "per_page": 15, "to": 1, "total": 1}},
+         JSON_RESP_HEADER),
+        ("200 OK - none generated yet", "OK", 200,
+         {"data": [], "links": {"first": None, "last": None, "prev": None, "next": None},
+          "meta": {"current_page": 1, "from": None, "last_page": 1, "path": "{{base_url}}/alerts", "per_page": 15, "to": None, "total": 0}},
+         JSON_RESP_HEADER),
+    ],
+)
+
+mark_alert_read_req = make_request(
+    name="Mark Alert Read",
+    method="PATCH",
+    path="alerts/{{alert_id}}/read",
+    description="""Requires `{{alert_id}}` from **List Alerts** above - see that request's description for why this collection can't produce one on a fresh database without a manual server-side step.
+
+Returns **404**, not `403`, for another nutritionist's alert - its existence is never confirmed to a caller who doesn't own it. Ownership is checked against an explicitly **unscoped** lookup of the owning subscriber rather than the scoped `belongsTo` relation - using the scoped relation here would resolve to `null` for another nutritionist's alert and crash instead of returning a clean 404.""",
+    body=None,
+    examples=[
+        ("200 OK", "OK", 200, {**ALERT_OBJECT, "is_read": True}, JSON_RESP_HEADER),
+        ("404 Not yours / doesn't exist", "Not Found", 404, {"message": "No query results for model [App\\Models\\Alert] 999"}, JSON_RESP_HEADER),
+    ],
+)
+
+alerts_folder = {
+    "name": "Alerts",
+    "description": "Sprint 5 (S5-01/S5-02 / FR-20). Rule-based proactive alerts - no_log, calories_exceeded, milestone - produced by a daily scheduled job, not by anything in this collection. See List Alerts for the one-time manual step needed to see real data.",
+    "item": [list_alerts_req, mark_alert_read_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: AI Summaries (Sprint 5 - S5-03/S5-04/S5-05)
+# ---------------------------------------------------------------------------
+
+list_ai_summaries_req = make_request(
+    name="Get Client Weekly Summaries",
+    method="GET",
+    path="clients/{{subscriber_id}}/ai-summaries",
+    description="""S5-03/S5-04 / FR-21, `ai_summary.view` (**nutritionist**-only). This client's weekly natural-language progress notes, newest week first, paginated.
+
+WARNING: **Same manual-step note as Alerts**: populated only by the server-side scheduled job (`php artisan ai-summaries:generate-weekly`, Mondays 07:00), summarising the week that just closed. An empty list is the correct response on a fresh database, not a bug.
+
+Reuses `OpenAiCompatibleClient` (Sprint 3) with a new prompt: only this-week's already-computed adherence rate, alert counts, and weight change are sent to the model - never raw health-profile data - and the system prompt explicitly forbids medical or dietary advice, restricting the summary to logging behaviour and progress.
+
+WARNING: **`is_fallback`** distinguishes a real LLM write-up from the S5-05 templated fallback (built directly from the same numbers, used whenever the LLM is unconfigured, unreachable, or returns something too short/malformed) - same reasoning as `is_ai_draft` on meal plans (BR-6/BR-10): the origin of AI-adjacent output is never hidden from the nutritionist.""",
+    examples=[
+        ("200 OK - with summaries", "OK", 200,
+         {"data": [AI_SUMMARY_OBJECT],
+          "links": {"first": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries?page=1", "last": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries?page=1", "prev": None, "next": None},
+          "meta": {"current_page": 1, "from": 1, "last_page": 1, "path": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries", "per_page": 15, "to": 1, "total": 1}},
+         JSON_RESP_HEADER),
+        ("200 OK - none generated yet", "OK", 200,
+         {"data": [], "links": {"first": None, "last": None, "prev": None, "next": None},
+          "meta": {"current_page": 1, "from": None, "last_page": 1, "path": "{{base_url}}/clients/{{subscriber_id}}/ai-summaries", "per_page": 15, "to": None, "total": 0}},
+         JSON_RESP_HEADER),
+        ("404 Not yours", "Not Found", 404, {"message": "No query results for model [App\\Models\\Subscriber] 999"}, JSON_RESP_HEADER),
+    ],
+)
+
+ai_summaries_folder = {
+    "name": "AI Summaries",
+    "description": "Sprint 5 (S5-03/S5-04/S5-05 / FR-21). One natural-language weekly progress note per client, generated by a scheduled job - real LLM write-up or a deterministic fallback, always labelled which (is_fallback).",
+    "item": [list_ai_summaries_req],
+}
+
+# ---------------------------------------------------------------------------
+# Folder: Push Notifications (Sprint 5 - S5-06)
+# ---------------------------------------------------------------------------
+
+register_fcm_token_req = make_request(
+    name="Register Device Token",
+    method="PUT",
+    path="me/fcm-token",
+    description="""S5-06 / FR-22 (**client** role, `{{client_access_token}}`; gated on `role:client` directly, not a permission - the PRD matrix has no "register my own device" entry, same reasoning as the Nutritionist Profile endpoint's `role:nutritionist` gate).
+
+The mobile app's own device token, used server-side by the daily `notifications:send-log-reminders` job (20:00, placeholder time - see `API_CONTRACT.md`) to push a same-day reminder to any active client who hasn't logged yet. Distinct from S5-01's `no_log` **alert**, which tells the *nutritionist* after 3 quiet days - this reminds the *client*, same day.
+
+**204 No Content** on success, no body.""",
+    body={"fcm_token": "demo-device-token-abc123"},
+    examples=[
+        ("204 No Content", "No Content", 204, None, []),
+    ],
+)
+register_fcm_token_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+clear_fcm_token_req = make_request(
+    name="Clear Device Token",
+    method="PUT",
+    path="me/fcm-token",
+    description="""Same endpoint as **Register Device Token**, sent `null` - how the app signals "stop sending here" (logout, denied notification permission), distinct from never having called this endpoint at all.""",
+    body={"fcm_token": None},
+    examples=[
+        ("204 No Content", "No Content", 204, None, []),
+    ],
+)
+clear_fcm_token_req["request"]["auth"] = {"type": "bearer", "bearer": [{"key": "token", "value": "{{client_access_token}}", "type": "string"}]}
+
+push_notifications_folder = {
+    "name": "Push Notifications",
+    "description": "Sprint 5 (S5-06 / FR-22). The client's own device token, sent via Firebase Cloud Messaging by the daily log-reminder job - server-side FCM sending itself has no HTTP endpoint of its own; this is the one piece of it a client app calls directly.",
+    "item": [register_fcm_token_req, clear_fcm_token_req],
+}
+
 
 # ---------------------------------------------------------------------------
 # Collection assembly
@@ -1025,7 +1403,7 @@ client_own_plan_folder = {
 
 COLLECTION_DESCRIPTION = """# HealthyLife AI — API
 
-AI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 3 — for the Frontend (Web Dashboard), Desktop (Electron), and Mobile (Flutter) roles integrating against it. It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.
+AI-powered client-management platform for nutritionists. This collection documents every endpoint of the Laravel REST API (`Backend/HealthyLife-Laravel`) implemented through Sprint 5 — for the Frontend (Web Dashboard) and Mobile (Flutter) roles integrating against it (the Desktop/Electron role was discontinued after Sprint 3 — see the sprint tracker's team-change note; its endpoints, all shared with Web, needed no removal). It's the Postman companion to `API_CONTRACT.md` in the backend repo; if the two ever disagree, the code (`app/Http/Controllers/Api/**`) is the tiebreaker for both.
 
 ## Getting started
 
@@ -1073,17 +1451,35 @@ Every endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/ref
 |---|---|
 | **Authentication** | Register, login (email or phone), refresh, logout, current user — Sprint 1 |
 | **Clients** | Add / list / get a client, invite activation — Sprint 2, FR-02/FR-03/FR-06 |
+| **Nutritionist Profile** | The nutritionist's own professional details, read-only plan_tier — Sprint 4, S4-00/BR-12 |
 | **Health Profile** | Body data, conditions, medications — Sprint 2, FR-07/FR-09/FR-11 |
-| **Body Composition Readings** | Per-visit measurement history — Sprint 2, FR-10 |
+| **Body Composition Readings** | Per-visit measurement history (clinic side) — Sprint 2/4, FR-10/BR-13 |
 | **Food Search** | USDA + Arabic-layer food lookup — Sprint 2, FR-25 |
 | **Dashboard** | The client-list overview stat cards — Sprint 2, F-2 |
-| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |
+| **System** | Operational read-only checks (e.g. AI provider status) |
+| **Meal Plans** | Build/edit a plan with alternatives, live macros, activate, LLM-or-rule-based AI draft — Sprint 3, FR-12–FR-16/BR-4/BR-6/BR-10 |
 | **Meal Plan Templates** | Save a plan as a template; apply one to a client — Sprint 3, FR-15 |
 | **Food Submission & Approval** | Nutritionist suggests a food; admin approves/rejects — Sprint 3, FR-24/BR-5 |
 | **Client's Own Plan** | The client role's own active plan, no ID to isolate — Sprint 3, FR-16 |
+| **Meal Logs** | The client logging what they actually ate, retry-safe — Sprint 4, FR-17/BR-9/S4-05 |
+| **Measurements** | The client's own weight + circumferences (client side) — Sprint 4, FR-17/FR-29/BR-11/BR-13 |
+| **Progress & Adherence** | Plan-vs-actual by direction, not level; the combined progress payload — Sprint 4, FR-18/FR-19/FR-30/BR-14 |
+| **Alerts** | Rule-based proactive alerts from a daily job — Sprint 5, FR-20 |
+| **AI Summaries** | Weekly natural-language progress note per client, LLM-or-fallback — Sprint 5, FR-21 |
+| **Push Notifications** | The client's own FCM device token — Sprint 5, FR-22 |
+
+## Roles this collection authenticates as
+
+Two saved token pairs, switched per-request via each request's own Authorization tab (not the collection default) wherever the endpoint is client-only:
+- **`{{access_token}}` / `{{refresh_token}}`** (collection default) — the nutritionist created by **Authentication → Register Nutritionist**.
+- **`{{client_access_token}}` / `{{client_refresh_token}}`** — the client activated by **Clients → Activate Invite (Client)**. Every request under **Meal Logs**, **Measurements**, and **Push Notifications** overrides its own Authorization tab to this token — look for it explicitly if a request 403s unexpectedly with the wrong one selected.
+
+## Endpoints this collection cannot exercise end-to-end
+
+**Alerts** and **AI Summaries** are both populated only by server-side scheduled jobs (`alerts:evaluate` daily 06:00, `ai-summaries:generate-weekly` Mondays 07:00) — nothing in a Postman/Newman run can trigger a cron job. A fresh top-to-bottom pass correctly gets an empty list from both; run the artisan command once on the server under test (or wait for its next scheduled fire) to see real data. This is explained again on each affected request, not just here.
 
 ---
-Generated for HealthyLife AI · Sprint 1–3 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.
+Generated for HealthyLife AI · Sprint 1–5 backend · see `Backend/HealthyLife-Laravel/API_CONTRACT.md` for the prose version of this same contract.
 """
 
 collection = {
@@ -1127,6 +1523,8 @@ collection = {
          "description": "An approved food's id. Auto-set by Food Search → Search Foods (its first result) — used by every Meal Plans item."},
         {"key": "meal_plan_id", "value": "", "type": "string",
          "description": "Most recently hand-built plan's id. Auto-set by Meal Plans → Create Meal Plan."},
+        {"key": "meal_item_id", "value": "", "type": "string",
+         "description": "A real planned item's id from that same plan. Auto-set alongside meal_plan_id by Meal Plans → Create Meal Plan — used by Meal Logs → Log a Meal."},
         {"key": "ai_draft_plan_id", "value": "", "type": "string",
          "description": "Most recently generated AI draft's id. Auto-set by Meal Plans → Generate AI Draft — kept separate from meal_plan_id so both plans stay independently addressable."},
         {"key": "meal_plan_template_id", "value": "", "type": "string",
@@ -1135,10 +1533,13 @@ collection = {
          "description": "Most recently submitted food's id. Auto-set by Food Submission & Approval → Submit Food."},
         {"key": "admin_access_token", "value": "", "type": "string",
          "description": "An admin-role JWT. Starts empty — there's no self-serve admin registration; see Food Submission & Approval → List Pending Foods for one-time local setup."},
+        {"key": "alert_id", "value": "1", "type": "string",
+         "description": "Most recently listed alert's id. Auto-set by Alerts → List Alerts, IF the list isn't empty — see that request's description for why it can be empty on a fresh database. Defaults to '1' (not empty) so Mark Alert Read hits a real route and gets a clean 404 JSON from the app when no alert exists yet, rather than a malformed double-slash URL."},
     ],
     "item": [
         auth_folder,
         clients_folder,
+        nutritionist_profile_folder,
         health_profile_folder,
         body_composition_folder,
         food_search_folder,
@@ -1148,6 +1549,12 @@ collection = {
         meal_plan_templates_folder,
         food_submission_folder,
         client_own_plan_folder,
+        meal_logs_folder,
+        measurements_folder,
+        progress_adherence_folder,
+        alerts_folder,
+        ai_summaries_folder,
+        push_notifications_folder,
     ],
 }
 
