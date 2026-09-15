@@ -1200,3 +1200,83 @@ the rest — same per-recipient isolation as `alerts:evaluate`.
 Both `alerts:evaluate` and this job need Taqat's own system cron running
 `php artisan schedule:run` every minute — Laravel's scheduler is inert on
 its own without one.
+
+---
+
+## AI Weekly Summary (Sprint 5 · S5-03/S5-04/S5-05)
+
+FR-21: a short natural-language progress note per client, generated
+weekly. Reuses `OpenAiCompatibleClient` (Sprint 3) — same provider client,
+same fail-closed contract, a new prompt over a different payload.
+
+Scheduled `ai-summaries:generate-weekly`, Mondays 07:00, summarising the
+week that just closed (Mon-Sun) so every log for it has already landed.
+One client's failure never stops the rest (same isolation as
+`alerts:evaluate` and `notifications:send-log-reminders`).
+
+### `GET /clients/{id}/ai-summaries`
+
+Nutritionist-only (`ai_summary.view`), paginated, newest week first.
+
+```json
+{
+  "id": 8,
+  "week_start": "2026-09-08",
+  "summary_text": "Great consistency logging breakfast this week; try logging dinner more regularly too.",
+  "is_fallback": false,
+  "generated_at": "2026-09-15T07:00:00+00:00"
+}
+```
+
+> ⚠️ **`is_fallback` is not in SRS §2.4's field list.** Added for the same
+> reason `is_ai_draft` exists on meal plans (BR-6/BR-10): a real LLM
+> write-up and the S5-05 templated fallback must not read identically to
+> the nutritionist. The fallback is deterministic, built directly from
+> this week's own adherence/alert/weight numbers — never a network call,
+> never fails.
+
+### What the LLM is given, and isn't
+
+Only numbers this system already computed and trusts: this week's
+adherence percentage (or `null`), its direction status
+(`stable`/`declining`/`stopped_logging`), a count of alerts by type, and a
+signed weight change in kg. **Never** the client's name, conditions,
+medications, or any other health-profile field — the summary is about
+*logging behaviour and progress*, not a clinical assessment, and the
+system prompt explicitly forbids medical or dietary advice.
+
+> ⚠️ **BR-6's enforcement model doesn't fully transfer to prose.** For
+> meal-plan food choices, "clinical safety enforced in code, never left to
+> prompt instructions" means something checkable: a `food_id` either
+> exists in the safe list or it doesn't. Free text has no equivalent
+> ground truth. What IS enforced in code: the input is restricted to
+> trusted numbers (nothing free-text goes in), and the output is
+> length-bounded and rejected as a whole if malformed. What is NOT
+> mechanically verifiable: whether the model actually stayed inside
+> "comment on behaviour, not advice" — that instruction is enforced by
+> restricting the input and validating the output shape, not by any check
+> that could catch prose drifting into advice. A real limitation, not
+> silently treated as equivalent to S3-06's food_id validation.
+
+### Two real bugs found verifying this against production's actual database
+
+Both were pre-existing or newly-introduced logic that passed the
+SQLite-only test suite and broke on real MySQL — caught only because this
+work was verified against a live MySQL database, not just `php artisan
+test`:
+
+1. **`AdherenceService::rateFor()`, broken since S4-03.** `Subscriber::
+   mealLogs()` carries a default `orderByDesc('logged_at')`; mixing that
+   into an aggregate `COUNT()`-only query with no `GROUP BY` is illegal on
+   MySQL ("Mixing of GROUP columns... is illegal") but silently permitted
+   by SQLite. Every call to `GET /clients/{id}/adherence` and
+   `GET /clients/{id}/progress` has been throwing a 500 on real MySQL —
+   including in production — since S4-03 shipped, invisible because the
+   test suite never touches MySQL. Fixed with `->reorder()`, the same
+   pattern already used for `bodyCompositionReadings()` in
+   `ProgressController` (S4-04) — that relation carries an identical
+   default order and was already fixed for it; this one was missed.
+2. **`AiSummary` idempotency**, same class of bug as `MeasurementController`'s
+   `recorded_at` lookup (S4-02): `updateOrCreate(['week_start' => ...])`
+   against a `date`-cast column is not reliable across drivers. Fixed with
+   the same `whereDate()` lookup pattern.

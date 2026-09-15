@@ -81,6 +81,11 @@ class Subscriber extends Model
         return $this->hasMany(Alert::class)->orderByDesc('created_at');
     }
 
+    public function aiSummaries(): HasMany
+    {
+        return $this->hasMany(AiSummary::class)->orderByDesc('week_start');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

@@ -133,7 +133,20 @@ class AdherenceService
         // One aggregate query rather than loading the logs: a client with
         // months of history would otherwise pull every row into memory to
         // count two things (NFR-01).
+        //
+        // `reorder()` strips `mealLogs()`'s own default `orderByDesc
+        // ('logged_at')` before the aggregate select. Without it, MySQL
+        // (unlike SQLite, which is lenient) rejects the query outright:
+        // "Mixing of GROUP columns... is illegal if there is no GROUP BY
+        // clause" — a non-aggregated ORDER BY column alongside bare
+        // COUNT()s with no GROUP BY. This was invisible in the test suite
+        // (SQLite-only) and broke every real call to this method on
+        // MySQL. Same class of bug as ProgressController's `reorder()` on
+        // `bodyCompositionReadings()` — that relation carries the same
+        // kind of default ordering and was already fixed for it; this one
+        // was missed.
         $totals = $subscriber->mealLogs()
+            ->reorder()
             ->loggedBetween($from, $to)
             ->selectRaw('count(*) as total')
             ->selectRaw('count(meal_item_id) as on_plan')

@@ -31,6 +31,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // breakfast), early enough to still leave time to log before
         // midnight resets the "today" the reminder is about.
         $schedule->command('notifications:send-log-reminders')->dailyAt('20:00');
+
+        // S5-04 / FR-21. Monday morning, summarising the week that just
+        // closed (Mon-Sun) so every log for it has already landed.
+        $schedule->command('ai-summaries:generate-weekly')->weeklyOn(1, '07:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

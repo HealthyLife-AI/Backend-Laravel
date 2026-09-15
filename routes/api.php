@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
@@ -145,6 +146,12 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['jwt', 'permission:progress.view'])->group(function () {
         Route::get('clients/{subscriber}/adherence', [AdherenceController::class, 'show'])->name('clients.adherence.show');
         Route::get('clients/{subscriber}/progress', [ProgressController::class, 'show'])->name('clients.progress.show');
+    });
+
+    // S5-04 / FR-21, ai_summary.view (nutritionist-only): weekly
+    // natural-language summaries for one client.
+    Route::middleware(['jwt', 'permission:ai_summary.view'])->group(function () {
+        Route::get('clients/{subscriber}/ai-summaries', [AiSummaryController::class, 'index'])->name('clients.ai-summaries.index');
     });
 
     Route::middleware(['jwt', 'permission:foods.suggest'])->group(function () {
