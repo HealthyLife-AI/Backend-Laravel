@@ -1142,3 +1142,61 @@ the controller against an UNSCOPED `Subscriber` lookup — using the scoped
 `belongsTo` relation here would resolve to `null` for another
 nutritionist's alert and crash rather than 404. Returns 404, not 403 — the
 alert's existence is not confirmed to a caller who doesn't own it.
+
+---
+
+## Push Notifications (Sprint 5 · S5-06)
+
+Firebase Cloud Messaging, sent server-side via the HTTP v1 API. No new
+Composer dependency — `firebase/php-jwt` (already installed for this
+project's own JWT auth) signs the RS256 service-account assertion; the
+rest is two plain HTTP calls.
+
+Configuration is one env var: `FIREBASE_CREDENTIALS_PATH`, pointing at the
+service-account JSON from Firebase console (Project settings → Service
+accounts → Generate new private key). **That file is never committed** —
+see `storage/app/firebase` in `.gitignore`. Left blank, `FcmPushService`
+and the reminder job both fail closed: no push, no error, exactly the
+`OPENAI_API_KEY`-blank pattern.
+
+### `PUT /me/fcm-token`
+
+The client's mobile app registers (or clears) its own device token.
+
+```json
+{ "fcm_token": "the device's FCM registration token" }
+```
+
+`fcm_token: null` clears it — how the app signals "stop sending here"
+(logout, denied notification permission), distinct from never having
+called this endpoint. Gated on `role:client` directly, not a permission —
+the PRD matrix has no "register my own device" entry, same reasoning as
+the nutritionist-profile endpoint's `role:nutritionist` gate.
+
+**204** on success, no body.
+
+### Daily reminder job — `notifications:send-log-reminders`
+
+Scheduled at 20:00. Pushes to every **active** client who:
+- has not logged today (`last_logged_at` null or before today's start —
+  the same definition `DashboardController`'s "not logged today" count
+  already uses, so the two can't quietly disagree), **and**
+- has a registered `fcm_token`.
+
+> ⚠️ **Distinct from S5-01's `no_log` alert.** That alert tells the
+> **nutritionist** after 3 quiet days. This reminds the **client**, same
+> day. Different audience, different trigger, deliberately not merged.
+
+> ⚠️ **20:00 is a placeholder**, not a documented time. Late enough that
+> "hasn't logged today" is a real signal rather than a nag at breakfast;
+> early enough to leave time to log before midnight resets what "today"
+> means.
+
+One recipient's send failing (bad token, FCM unreachable) does not stop
+the rest — same per-recipient isolation as `alerts:evaluate`.
+
+### Operational note
+
+Both `alerts:evaluate` and this job need Taqat's own system cron running
+`php artisan schedule:run` every minute — Laravel's scheduler is inert on
+its own without one.

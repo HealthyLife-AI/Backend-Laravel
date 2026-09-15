@@ -24,6 +24,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // `php artisan schedule:run` every minute for this to actually
         // fire; Laravel's scheduler does nothing on its own without one.
         $schedule->command('alerts:evaluate')->dailyAt('06:00');
+
+        // S5-06 / FR-22. 20:00 is a placeholder, not a documented time —
+        // late enough that most of a client's day is behind them (so
+        // "hasn't logged today" is a meaningful signal, not a nag at
+        // breakfast), early enough to still leave time to log before
+        // midnight resets the "today" the reminder is about.
+        $schedule->command('notifications:send-log-reminders')->dailyAt('20:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

@@ -21,6 +21,7 @@
 /storage/*.key
 /storage/pail
 /storage/app/imports
+/storage/app/firebase
 /vendor
 _ide_helper.php
 Homestead.json

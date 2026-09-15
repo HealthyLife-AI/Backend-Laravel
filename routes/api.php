@@ -1,21 +1,22 @@
 <?php
 
+use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
 use App\Http\Controllers\Api\Clients\DashboardController;
-use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
 use App\Http\Controllers\Api\Logs\MealLogController;
-use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Logs\MeasurementController;
-use App\Http\Controllers\Api\Progress\AdherenceController;
-use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
+use App\Http\Controllers\Api\Notifications\FcmTokenController;
+use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
+use App\Http\Controllers\Api\Progress\AdherenceController;
+use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
 use Illuminate\Support\Facades\Route;
 
@@ -109,6 +110,15 @@ Route::prefix('v1')->name('api.')->group(function () {
         // stopped being weight-only when S4-16 added the four tape-measure
         // fields. Writes to body_composition_readings (SRS Section 2.4).
         Route::post('me/measurements', [MeasurementController::class, 'store'])->name('me.measurements.store');
+    });
+
+    // S5-06 / FR-22: the client's own device push token. Gated on the
+    // role directly, not logs.manage.own — registering a device has
+    // nothing to do with logging, and the PRD permission matrix has no
+    // entry for it, the same reasoning nutritionist-profile's role:
+    // gate used (see routes above).
+    Route::middleware(['jwt', 'role:client'])->group(function () {
+        Route::put('me/fcm-token', [FcmTokenController::class, 'store'])->name('me.fcm-token.store');
     });
 
     // S4-00 / PRD Section 5.2: the nutritionist's own professional
