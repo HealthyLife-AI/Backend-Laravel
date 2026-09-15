@@ -30,6 +30,10 @@ class FcmPushService
 
     public function isConfigured(): bool
     {
+        if (filled(config('firebase.credentials_json'))) {
+            return true;
+        }
+
         $path = config('firebase.credentials_path');
 
         return filled($path) && is_file($path);
@@ -66,13 +70,22 @@ class FcmPushService
         }
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * `credentials_json` wins when both are set — the PaaS-friendly path
+     * (see config/firebase.php) over the local-disk one.
+     *
+     * @return array<string, mixed>
+     */
     private function credentials(): array
     {
-        $decoded = json_decode(file_get_contents(config('firebase.credentials_path')), true);
+        $raw = filled(config('firebase.credentials_json'))
+            ? config('firebase.credentials_json')
+            : file_get_contents(config('firebase.credentials_path'));
+
+        $decoded = json_decode((string) $raw, true);
 
         if (! is_array($decoded) || ! isset($decoded['project_id'], $decoded['client_email'], $decoded['private_key'], $decoded['token_uri'])) {
-            throw new PushNotificationException('Firebase credentials file is malformed.');
+            throw new PushNotificationException('Firebase credentials are malformed.');
         }
 
         return $decoded;

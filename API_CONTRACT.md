@@ -1152,11 +1152,20 @@ Composer dependency — `firebase/php-jwt` (already installed for this
 project's own JWT auth) signs the RS256 service-account assertion; the
 rest is two plain HTTP calls.
 
-Configuration is one env var: `FIREBASE_CREDENTIALS_PATH`, pointing at the
-service-account JSON from Firebase console (Project settings → Service
-accounts → Generate new private key). **That file is never committed** —
-see `storage/app/firebase` in `.gitignore`. Left blank, `FcmPushService`
-and the reminder job both fail closed: no push, no error, exactly the
+Configuration is one of two env vars, either supplying the service-account
+JSON from Firebase console (Project settings → Service accounts → Generate
+new private key):
+
+- **`FIREBASE_CREDENTIALS_JSON`** — the file's raw content, one line. **Use
+  this on Taqat/Dokku or any git-push PaaS** — a build like that has no
+  file to receive at all, and the credentials file is deliberately
+  gitignored (see `storage/app/firebase`), so the JSON has to travel as the
+  env var's own value, the same way `OPENAI_API_KEY` is a value, not a path
+  to a file holding one.
+- **`FIREBASE_CREDENTIALS_PATH`** — a file on local disk. Local dev only.
+
+`credentials_json` wins if both are set. Both blank, `FcmPushService` and
+the reminder job fail closed: no push, no error, exactly the
 `OPENAI_API_KEY`-blank pattern.
 
 ### `PUT /me/fcm-token`

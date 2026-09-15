@@ -80,9 +80,9 @@ class FcmPushServiceTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_is_not_configured_when_no_credentials_path_is_set(): void
+    public function test_is_not_configured_when_neither_source_is_set(): void
     {
-        config(['firebase.credentials_path' => null]);
+        config(['firebase.credentials_path' => null, 'firebase.credentials_json' => null]);
 
         $this->assertFalse(app(FcmPushService::class)->isConfigured());
     }
@@ -90,6 +90,57 @@ class FcmPushServiceTest extends TestCase
     public function test_is_configured_when_the_credentials_file_exists(): void
     {
         $this->assertTrue(app(FcmPushService::class)->isConfigured());
+    }
+
+    /**
+     * S5-06 follow-up: a git-push PaaS deploy (Taqat/Dokku) has no way to
+     * receive an uploaded file, and the credentials file is deliberately
+     * gitignored — so the JSON has to travel as the env var's own value,
+     * the same way OPENAI_API_KEY is a value, not a path to a file
+     * holding one.
+     */
+    public function test_sending_works_from_inline_json_with_no_file_on_disk(): void
+    {
+        config(['firebase.credentials_path' => null]);
+        config(['firebase.credentials_json' => json_encode([
+            'project_id' => 'test-project',
+            'client_email' => 'test@test-project.iam.gserviceaccount.com',
+            'private_key' => self::FIXTURE_PRIVATE_KEY,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ])]);
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600]),
+            'https://fcm.googleapis.com/*' => Http::response(['name' => 'x']),
+        ]);
+
+        $this->assertTrue(app(FcmPushService::class)->isConfigured());
+        app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com'));
+    }
+
+    /** credentials_json wins when both happen to be set. */
+    public function test_inline_json_takes_precedence_over_a_file_path(): void
+    {
+        config(['firebase.credentials_json' => json_encode([
+            'project_id' => 'inline-project',
+            'client_email' => 'inline@inline-project.iam.gserviceaccount.com',
+            'private_key' => self::FIXTURE_PRIVATE_KEY,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ])]);
+        // firebase.credentials_path is still the real fixture file from
+        // setUp(), pointing at 'test-project' — if that one gets used
+        // instead, this assertion below catches it.
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600]),
+            'https://fcm.googleapis.com/*' => Http::response(['name' => 'x']),
+        ]);
+
+        app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com/v1/projects/inline-project/'));
     }
 
     public function test_sending_exchanges_a_token_then_calls_fcm(): void
