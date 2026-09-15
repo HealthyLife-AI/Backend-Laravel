@@ -775,6 +775,27 @@ environment never attempts an LLM call at all. `configured: true` while drafts
 still come back rule-based means the call itself or its validation is failing
 — check the application log for `AI draft:`.
 
+### `GET /system/fcm-status`
+
+The FCM twin of `ai-status`, for the same reason: `notifications:send-log-reminders`
+(S5-06) fails closed by design, so a silently misconfigured environment and a
+correctly configured one with nothing due to send yet are indistinguishable
+from outside the container — this is the one way to tell them apart without
+SSH/console access and without sending a real push to find out.
+
+**200 OK**
+
+```json
+{ "configured": true, "source": "credentials_json" }
+```
+
+`source` is `"credentials_json"`, `"credentials_path"`, or `null`.
+`credentials_json` wins when both are set, matching `FcmPushService`'s own
+precedence. On a git-push PaaS deploy (Taqat/Dokku), `source` should read
+`"credentials_json"` — `"credentials_path"` there means the wrong variable was
+set (see the Push Notifications section above). Never returns the JSON/key
+content, and makes no call to Firebase.
+
 ---
 
 ## Meal & Weight Logging (Sprint 4)

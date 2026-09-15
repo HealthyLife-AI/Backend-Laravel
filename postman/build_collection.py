@@ -812,6 +812,11 @@ AI_STATUS = {
     "timeout_seconds": 12,
 }
 
+FCM_STATUS = {
+    "configured": True,
+    "source": "credentials_json",
+}
+
 ai_status_req = make_request(
     name="AI Provider Status",
     method="GET",
@@ -829,10 +834,26 @@ Never returns the API key, and makes no call to the provider.""",
     ],
 )
 
+fcm_status_req = make_request(
+    name="Push Notification Status",
+    method="GET",
+    path="system/fcm-status",
+    description="""S5-06 follow-up. The FCM twin of **AI Provider Status** above, and for the same reason: `notifications:send-log-reminders` fails closed by design, so a silently misconfigured environment and a correctly configured one with nothing due to send yet look identical from outside the container.
+
+- `configured: false` -> neither `FIREBASE_CREDENTIALS_JSON` nor `FIREBASE_CREDENTIALS_PATH` is set in this environment (or the file path doesn't exist).
+- `configured: true`, `source: "credentials_json"` -> the PaaS-friendly form is active. This is what a Taqat/Dokku deploy should show; `credentials_path` there means the wrong variable was set (see `API_CONTRACT.md`).
+- `configured: true`, `source: "credentials_path"` -> a local-disk file is active — correct for local dev, wrong for a git-push PaaS deploy.
+
+Never returns the JSON/key content, and makes no call to Firebase.""",
+    examples=[
+        ("200 OK", "OK", 200, FCM_STATUS, JSON_RESP_HEADER),
+    ],
+)
+
 system_folder = {
     "name": "System",
     "description": "Read-only operational checks. Authenticated, no permission gate - they report no client data.",
-    "item": [ai_status_req],
+    "item": [ai_status_req, fcm_status_req],
 }
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
+use App\Http\Controllers\Api\System\FcmStatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function () {
@@ -80,6 +81,14 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::get('system/ai-status', AiStatusController::class)
         ->middleware('jwt')
         ->name('system.ai-status');
+
+    // S5-06 follow-up: the FCM twin of the check above — see
+    // FcmStatusController for why this exists (fails closed by design,
+    // so "not configured" and "configured but no pushes due yet" look
+    // identical from outside without this).
+    Route::get('system/fcm-status', FcmStatusController::class)
+        ->middleware('jwt')
+        ->name('system.fcm-status');
 
     Route::middleware(['jwt', 'permission:plans.manage'])->group(function () {
         Route::get('clients/{subscriber}/meal-plans', [MealPlanController::class, 'index'])->name('meal-plans.index');

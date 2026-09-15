@@ -2444,6 +2444,72 @@
               "body": "{\n  \"configured\": true,\n  \"provider_host\": \"api.groq.com\",\n  \"model\": \"openai/gpt-oss-120b\",\n  \"timeout_seconds\": 12\n}"
             }
           ]
+        },
+        {
+          "name": "Push Notification Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/system/fcm-status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "system",
+                "fcm-status"
+              ]
+            },
+            "description": "S5-06 follow-up. The FCM twin of **AI Provider Status** above, and for the same reason: `notifications:send-log-reminders` fails closed by design, so a silently misconfigured environment and a correctly configured one with nothing due to send yet look identical from outside the container.\n\n- `configured: false` -> neither `FIREBASE_CREDENTIALS_JSON` nor `FIREBASE_CREDENTIALS_PATH` is set in this environment (or the file path doesn't exist).\n- `configured: true`, `source: \"credentials_json\"` -> the PaaS-friendly form is active. This is what a Taqat/Dokku deploy should show; `credentials_path` there means the wrong variable was set (see `API_CONTRACT.md`).\n- `configured: true`, `source: \"credentials_path\"` -> a local-disk file is active — correct for local dev, wrong for a git-push PaaS deploy.\n\nNever returns the JSON/key content, and makes no call to Firebase."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/system/fcm-status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "system",
+                    "fcm-status"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"configured\": true,\n  \"source\": \"credentials_json\"\n}"
+            }
+          ]
         }
       ]
     },
