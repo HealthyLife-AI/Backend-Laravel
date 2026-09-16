@@ -35,12 +35,21 @@ never in plain prefs/localStorage.
   "email": "nutritionist@example.com",
   "phone": null,
   "role": "nutritionist",
-  "nutritionist_id": null
+  "nutritionist_id": null,
+  "subscriber_id": null
 }
 ```
 
 `role` is one of `nutritionist` / `client` / `admin`. `nutritionist_id` is only
 non-null for a `client`-role user (the nutritionist that owns them — BR-1).
+`subscriber_id` is only non-null for a `client`-role user too — it's this
+client's own row in `subscribers`, needed to call
+[`GET /clients/{id}/adherence`](#get-clientsidadherence) and
+[`/progress`](#get-clientsidprogress) (`progress.view` is held by both roles —
+see the permission matrix — but both routes are `clients/{subscriber}/...`,
+not `me/...`). This is the only place that id is exposed for a client who has
+no meal plan yet; `GET /me/meal-plan` also carries it once a plan exists, but
+returns `204 No Content` until then.
 
 **Token pair** (returned by register/login/refresh):
 
@@ -119,7 +128,7 @@ here — a nutritionist creates them via invite link (Sprint 2, US-02).
 
 ```json
 {
-  "user": { "id": 4, "name": "Jane Nutri", "email": "jane@example.com", "phone": null, "role": "nutritionist", "nutritionist_id": null },
+  "user": { "id": 4, "name": "Jane Nutri", "email": "jane@example.com", "phone": null, "role": "nutritionist", "nutritionist_id": null, "subscriber_id": null },
   "access_token": "...",
   "refresh_token": "...",
   "token_type": "Bearer",

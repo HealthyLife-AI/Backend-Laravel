@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Auth\JwtService;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -50,5 +51,34 @@ class MeEndpointTest extends TestCase
         $response->assertOk()->assertJsonPath('id', $user->id)
             ->assertJsonPath('email', $user->email)
             ->assertJsonPath('role', 'nutritionist');
+    }
+
+    public function test_a_nutritionist_has_no_subscriber_id(): void
+    {
+        $user = User::factory()->nutritionist()->create();
+        $token = app(JwtService::class)->issueAccessToken($user);
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => "Bearer {$token}"])
+            ->assertOk()
+            ->assertJsonPath('subscriber_id', null);
+    }
+
+    /**
+     * The mobile app's only way to learn its own subscriber id — needed
+     * for clients/{subscriber}/adherence and .../progress, which
+     * `progress.view` grants to the client role too (see
+     * RolesAndPermissionsSeeder) but which take a route-bound subscriber
+     * id, not a `me/...` shape.
+     */
+    public function test_a_client_gets_their_own_subscriber_id(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $client = User::factory()->client($nutritionist)->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id, 'user_id' => $client->id]);
+        $token = app(JwtService::class)->issueAccessToken($client);
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => "Bearer {$token}"])
+            ->assertOk()
+            ->assertJsonPath('subscriber_id', $subscriber->id);
     }
 }

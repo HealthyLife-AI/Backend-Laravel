@@ -228,12 +228,12 @@ STATUS_CODE_ASSERTION = lambda code: [
 
 USER_NUTRITIONIST = {
     "id": 4, "name": "Jane Nutri", "email": "jane@example.com", "phone": None,
-    "role": "nutritionist", "nutritionist_id": None,
+    "role": "nutritionist", "nutritionist_id": None, "subscriber_id": None,
 }
 
 USER_CLIENT = {
     "id": 12, "name": "Sara Ahmad", "email": None, "phone": "0501234567",
-    "role": "client", "nutritionist_id": 4,
+    "role": "client", "nutritionist_id": 4, "subscriber_id": 7,
 }
 
 TOKEN_PAIR = {
@@ -1459,9 +1459,9 @@ Every endpoint except `POST /auth/register`, `POST /auth/login`, `POST /auth/ref
 
 **User object** (`register` / `login` / `activate` / `GET /auth/me`):
 ```json
-{ "id": 1, "name": "Demo Nutritionist", "email": "nutritionist@example.com", "phone": null, "role": "nutritionist", "nutritionist_id": null }
+{ "id": 1, "name": "Demo Nutritionist", "email": "nutritionist@example.com", "phone": null, "role": "nutritionist", "nutritionist_id": null, "subscriber_id": null }
 ```
-`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` is only non-null for a `client`-role user.
+`role` is `nutritionist` \\| `client` \\| `admin`. `nutritionist_id` and `subscriber_id` are only non-null for a `client`-role user — `subscriber_id` is the mobile app's only way to learn its own id for `clients/{subscriber}/adherence` and `.../progress` before it has a meal plan.
 
 **Token pair** (`register` / `login` / `refresh` / `activate`):
 ```json
