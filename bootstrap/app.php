@@ -37,6 +37,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('ai-summaries:generate-weekly')->weeklyOn(1, '07:00');
     })
     ->withMiddleware(function (Middleware $middleware): void {
+        // Wires the 'api' RateLimiter defined in AppServiceProvider::boot()
+        // into every routes/api.php route — without this call, defining
+        // the limiter alone has no effect (Laravel's api middleware group
+        // has no throttle unless this is called; see that provider for why).
+        $middleware->throttleApi();
+
         $middleware->alias([
             'jwt' => JwtAuthenticate::class,
             // Not auto-registered by spatie/laravel-permission on this

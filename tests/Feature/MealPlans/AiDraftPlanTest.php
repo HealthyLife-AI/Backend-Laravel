@@ -56,6 +56,34 @@ class AiDraftPlanTest extends TestCase
     }
 
     /**
+     * S6 security hardening: this is a real, paid/quota-limited external
+     * LLM call, not a DB read — throttled tighter than the general api
+     * limit so a double-click loop or a script can't burn the shared Groq
+     * quota the fallback depends on staying available (routes/api.php).
+     */
+    public function test_the_endpoint_is_rate_limited_to_5_per_minute(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        HealthProfile::create([
+            'subscriber_id' => $subscriber->id,
+            'weight_kg' => 70, 'height_cm' => 170, 'age' => 30, 'gender' => 'male',
+            'activity_level' => 'sedentary',
+            'daily_calorie_needs' => 2000,
+        ]);
+        Food::factory()->create();
+        $auth = $this->bearerFor($nutritionist);
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft", [], $auth)
+                ->assertCreated();
+        }
+
+        $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft", [], $auth)
+            ->assertStatus(429);
+    }
+
+    /**
      * Regression test: the quantity a food is scaled to (50g-500g) is
      * elastic enough that almost any food can be made to "fit" almost
      * any calorie target — ranking candidates by fit alone, with no

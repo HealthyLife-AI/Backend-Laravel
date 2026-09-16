@@ -96,7 +96,15 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'show'])->name('meal-plans.show');
         Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->name('meal-plans.update');
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->name('meal-plans.activate');
-        Route::post('clients/{subscriber}/meal-plans/ai-draft', [MealPlanController::class, 'generateAiDraft'])->name('meal-plans.ai-draft');
+        // Stricter than the blanket 120/min api limit: this is a real,
+        // paid/quota-limited external LLM call (Groq), not a DB read —
+        // hammering it (accidental double-click loop, or a script) burns
+        // shared quota the AiDraftPlanService fallback depends on staying
+        // available. 5/min is generous for its actual use (review, maybe
+        // regenerate once or twice) and blocks anything faster than that.
+        Route::post('clients/{subscriber}/meal-plans/ai-draft', [MealPlanController::class, 'generateAiDraft'])
+            ->middleware('throttle:ai-draft')
+            ->name('meal-plans.ai-draft');
 
         Route::get('meal-plan-templates', [MealPlanTemplateController::class, 'index'])->name('meal-plan-templates.index');
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/save-as-template', [MealPlanTemplateController::class, 'store'])->name('meal-plan-templates.store');
