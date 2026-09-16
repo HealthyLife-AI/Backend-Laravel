@@ -80,6 +80,8 @@ Database) of the Sprint 1–3 task breakdown.
 Full request/response payloads and error codes for every `/auth/*` endpoint:
 see [API_CONTRACT.md](API_CONTRACT.md) — the binding reference for the
 Frontend, Desktop, and Mobile roles integrating against this API (S1-06).
+Production environment variables, migration/backup notes, and rollback
+caveats: see [DEPLOYMENT.md](DEPLOYMENT.md) (S6-04).
 
 A runnable Postman collection covering every endpoint in this API (all of
 Sprint 1 + 2) lives in [`postman/`](postman/) —

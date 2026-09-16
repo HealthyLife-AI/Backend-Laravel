@@ -79,4 +79,44 @@ class FoodSubmissionTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data');
     }
+
+    /** S6-01 gap: reject() had no test at all — only approve() was exercised. */
+    public function test_admin_can_reject_a_pending_submission(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $admin = User::factory()->admin()->create();
+
+        $submit = $this->postJson('/api/v1/foods', [
+            'name_en' => 'Rejected Dish',
+            'calories_per_100g' => 100,
+            'protein_g_per_100g' => 5,
+            'carbs_g_per_100g' => 10,
+            'fat_g_per_100g' => 2,
+        ], $this->bearerFor($nutritionist));
+
+        $this->postJson("/api/v1/foods/{$submit->json('id')}/reject", [], $this->bearerFor($admin))
+            ->assertOk()
+            ->assertJsonPath('status', 'rejected');
+
+        // A rejected submission must stay out of search exactly like a
+        // pending one — approved() is the only status search() exposes.
+        $this->getJson('/api/v1/foods/search?q=Rejected', $this->bearerFor($nutritionist))
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_a_nutritionist_cannot_reject_a_submission(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+
+        $submit = $this->postJson('/api/v1/foods', [
+            'name_en' => 'Another Dish',
+            'calories_per_100g' => 100,
+            'protein_g_per_100g' => 5,
+            'carbs_g_per_100g' => 10,
+            'fat_g_per_100g' => 2,
+        ], $this->bearerFor($nutritionist));
+
+        $this->postJson("/api/v1/foods/{$submit->json('id')}/reject", [], $this->bearerFor($nutritionist))
+            ->assertForbidden();
+    }
 }
