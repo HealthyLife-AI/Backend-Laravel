@@ -7,6 +7,7 @@ use App\Models\MealItem;
 use App\Models\MealLog;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\AiSummaries\WeeklySummaryService;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
@@ -70,9 +71,16 @@ class WeeklySummaryServiceTest extends TestCase
         $this->assertStringContainsString('not enough data', $summary->summary_text);
     }
 
+    /**
+     * `ai.summary.*`, not `ai.base_url`/`ai.api_key`/`ai.model` — the
+     * follow-up that gave WeeklySummaryService its own optional
+     * credential profile means it no longer reads the top-level `ai.*`
+     * keys at all (see AppServiceProvider's contextual binding). Every
+     * test below opts into the LLM path through that nested config.
+     */
     public function test_uses_the_llms_summary_when_the_response_is_valid(): void
     {
-        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
         $subscriber = $this->makeSubscriber();
 
         Http::fake(['*' => Http::response($this->chatCompletion([
@@ -87,7 +95,7 @@ class WeeklySummaryServiceTest extends TestCase
 
     public function test_falls_back_when_the_llm_response_is_too_short(): void
     {
-        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
         $subscriber = $this->makeSubscriber();
 
         Http::fake(['*' => Http::response($this->chatCompletion(['summary' => 'Good.']))]);
@@ -99,7 +107,7 @@ class WeeklySummaryServiceTest extends TestCase
 
     public function test_falls_back_when_the_llm_omits_the_summary_key(): void
     {
-        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
         $subscriber = $this->makeSubscriber();
 
         Http::fake(['*' => Http::response($this->chatCompletion(['note' => 'not the right key']))]);
@@ -111,7 +119,7 @@ class WeeklySummaryServiceTest extends TestCase
 
     public function test_falls_back_when_the_llm_request_fails(): void
     {
-        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
         $subscriber = $this->makeSubscriber();
 
         Http::fake(['*' => Http::response(null, 500)]);
@@ -125,7 +133,7 @@ class WeeklySummaryServiceTest extends TestCase
     /** Never fails outright — a bad LLM response must still leave the nutritionist with SOMETHING, per S5-05. */
     public function test_falls_back_when_the_llm_returns_unparseable_content(): void
     {
-        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
         $subscriber = $this->makeSubscriber();
 
         Http::fake(['*' => Http::response(['choices' => [['message' => ['content' => 'not json']]]])]);
@@ -181,5 +189,41 @@ class WeeklySummaryServiceTest extends TestCase
         $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $weekStart);
 
         $this->assertStringContainsString('decline', $summary->summary_text);
+    }
+
+    // --- credential isolation (S5-03 follow-up) -------------------------
+
+    /**
+     * The actual point of the split: configuring the AI-draft feature's
+     * key must not turn the weekly-summary LLM path on. Before the
+     * contextual binding, both features read the same `ai.*` keys and
+     * necessarily shared one Groq quota; this proves they no longer do.
+     */
+    public function test_configuring_only_the_draft_key_does_not_enable_the_summary_llm(): void
+    {
+        config(['ai.base_url' => 'https://fake-llm.test', 'ai.api_key' => 'test-key', 'ai.model' => 'test-model']);
+        config(['ai.summary.base_url' => null, 'ai.summary.api_key' => null, 'ai.summary.model' => null]);
+        $subscriber = $this->makeSubscriber();
+
+        Http::fake(); // any call here means the isolation failed
+
+        $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $this->weekStart());
+
+        $this->assertTrue($summary->is_fallback);
+        Http::assertNothingSent();
+    }
+
+    /**
+     * And the reverse: a summary-only key must not leak into the draft
+     * feature's client — a fresh, unbound `OpenAiCompatibleClient`
+     * resolution (what `AiDraftPlanService` gets) still reads only the
+     * top-level `ai.*` keys, ignoring `ai.summary.*` entirely.
+     */
+    public function test_configuring_only_the_summary_key_does_not_enable_the_draft_llm(): void
+    {
+        config(['ai.base_url' => null, 'ai.api_key' => null, 'ai.model' => null]);
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
+
+        $this->assertFalse(app(OpenAiCompatibleClient::class)->isConfigured());
     }
 }

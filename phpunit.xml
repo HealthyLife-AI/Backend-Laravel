@@ -35,6 +35,12 @@
              config(['ai.api_key' => ...]) at runtime. -->
         <env name="OPENAI_BASE_URL" value=""/>
         <env name="OPENAI_API_KEY" value=""/>
+        <!-- S5-03: the weekly-summary profile falls back to OPENAI_BASE_URL/
+             OPENAI_API_KEY above when unset, so forcing those two empty
+             already covers it in the common case — these are belt-and-
+             suspenders for a local .env that sets the SUMMARY vars directly. -->
+        <env name="OPENAI_SUMMARY_BASE_URL" value=""/>
+        <env name="OPENAI_SUMMARY_API_KEY" value=""/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
