@@ -20,12 +20,42 @@ class FcmStatusTest extends TestCase
 
     public function test_it_reports_configured_via_inline_json_without_revealing_it(): void
     {
-        config(['firebase.credentials_path' => null, 'firebase.credentials_json' => '{"client_email":"super-secret@x.iam.gserviceaccount.com"}']);
+        config(['firebase.credentials_json_base64' => null, 'firebase.credentials_path' => null, 'firebase.credentials_json' => '{"client_email":"super-secret@x.iam.gserviceaccount.com"}']);
 
         $response = $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()));
 
         $response->assertOk()->assertJson(['configured' => true, 'source' => 'credentials_json']);
         $this->assertStringNotContainsString('super-secret', $response->getContent());
+    }
+
+    /** The one Taqat should actually show — see FcmStatusController's docblock for why the OTHER two sources are each a minor red flag on a PaaS deploy. */
+    public function test_it_reports_configured_via_base64(): void
+    {
+        config(['firebase.credentials_json' => null, 'firebase.credentials_path' => null]);
+        config(['firebase.credentials_json_base64' => base64_encode('{"client_email":"super-secret@x.iam.gserviceaccount.com"}')]);
+
+        $response = $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+
+        $response->assertOk()->assertJson(['configured' => true, 'source' => 'credentials_json_base64']);
+        $this->assertStringNotContainsString('super-secret', $response->getContent());
+    }
+
+    /** base64 wins over both other sources — same precedence FcmPushService itself uses. */
+    public function test_base64_is_reported_when_all_three_are_set(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'fcm-status-test');
+        file_put_contents($path, '{}');
+        config([
+            'firebase.credentials_json_base64' => base64_encode('{}'),
+            'firebase.credentials_json' => '{}',
+            'firebase.credentials_path' => $path,
+        ]);
+
+        $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+            ->assertOk()
+            ->assertJson(['source' => 'credentials_json_base64']);
+
+        @unlink($path);
     }
 
     public function test_it_reports_configured_via_local_file_path(): void

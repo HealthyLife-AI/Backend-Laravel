@@ -143,6 +143,72 @@ class FcmPushServiceTest extends TestCase
         Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com/v1/projects/inline-project/'));
     }
 
+    /**
+     * S5-06's real follow-up incident: setting the raw JSON directly as
+     * `credentials_json` on this project's own Taqat deployment broke
+     * login/register outright — the value's unescaped `"` characters
+     * corrupted Taqat's own env-var storage before the app ever got a
+     * chance to log an exception. Base64 output is exactly
+     * `[A-Za-z0-9+/=]`, nothing an env-var store could misinterpret.
+     */
+    public function test_sending_works_from_base64_encoded_json(): void
+    {
+        config(['firebase.credentials_path' => null, 'firebase.credentials_json' => null]);
+        config(['firebase.credentials_json_base64' => base64_encode(json_encode([
+            'project_id' => 'base64-project',
+            'client_email' => 'test@base64-project.iam.gserviceaccount.com',
+            'private_key' => self::FIXTURE_PRIVATE_KEY,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ]))]);
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600]),
+            'https://fcm.googleapis.com/*' => Http::response(['name' => 'x']),
+        ]);
+
+        $this->assertTrue(app(FcmPushService::class)->isConfigured());
+        app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com/v1/projects/base64-project/'));
+    }
+
+    /** base64 wins over both other sources — the safest form should never be silently shadowed. */
+    public function test_base64_takes_precedence_over_raw_json_and_a_file_path(): void
+    {
+        config(['firebase.credentials_json' => json_encode(['project_id' => 'raw-json-project'])]);
+        // firebase.credentials_path is still the real fixture file from
+        // setUp(), pointing at 'test-project'.
+        config(['firebase.credentials_json_base64' => base64_encode(json_encode([
+            'project_id' => 'base64-project',
+            'client_email' => 'test@base64-project.iam.gserviceaccount.com',
+            'private_key' => self::FIXTURE_PRIVATE_KEY,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ]))]);
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600]),
+            'https://fcm.googleapis.com/*' => Http::response(['name' => 'x']),
+        ]);
+
+        app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com/v1/projects/base64-project/'));
+    }
+
+    /** Genuinely invalid base64 must fail loudly, not decode into silent garbage. */
+    public function test_invalid_base64_throws_rather_than_producing_garbage(): void
+    {
+        config(['firebase.credentials_json_base64' => 'not valid base64!!! ###']);
+
+        Http::fake();
+
+        $this->expectException(PushNotificationException::class);
+        $this->expectExceptionMessage('not valid base64');
+        app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
+
+        Http::assertNothingSent();
+    }
+
     public function test_sending_exchanges_a_token_then_calls_fcm(): void
     {
         Http::fake([

@@ -30,7 +30,7 @@ class FcmPushService
 
     public function isConfigured(): bool
     {
-        if (filled(config('firebase.credentials_json'))) {
+        if (filled(config('firebase.credentials_json_base64')) || filled(config('firebase.credentials_json'))) {
             return true;
         }
 
@@ -71,16 +71,29 @@ class FcmPushService
     }
 
     /**
-     * `credentials_json` wins when both are set — the PaaS-friendly path
-     * (see config/firebase.php) over the local-disk one.
+     * Precedence matches config/firebase.php's docblock: base64 > raw
+     * JSON > file path — the base64 form is the one this project actually
+     * needed after a raw-JSON value broke Taqat's own env-var storage
+     * (its unescaped `"` characters corrupted something before the app
+     * ever saw an exception to log).
      *
      * @return array<string, mixed>
      */
     private function credentials(): array
     {
-        $raw = filled(config('firebase.credentials_json'))
-            ? config('firebase.credentials_json')
-            : file_get_contents(config('firebase.credentials_path'));
+        if (filled(config('firebase.credentials_json_base64'))) {
+            $decodedBase64 = base64_decode((string) config('firebase.credentials_json_base64'), true);
+
+            if ($decodedBase64 === false) {
+                throw new PushNotificationException('FIREBASE_CREDENTIALS_JSON_BASE64 is not valid base64.');
+            }
+
+            $raw = $decodedBase64;
+        } elseif (filled(config('firebase.credentials_json'))) {
+            $raw = config('firebase.credentials_json');
+        } else {
+            $raw = file_get_contents(config('firebase.credentials_path'));
+        }
 
         $decoded = json_decode((string) $raw, true);
 

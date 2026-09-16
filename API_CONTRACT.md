@@ -786,15 +786,24 @@ SSH/console access and without sending a real push to find out.
 **200 OK**
 
 ```json
-{ "configured": true, "source": "credentials_json" }
+{ "configured": true, "source": "credentials_json_base64" }
 ```
 
-`source` is `"credentials_json"`, `"credentials_path"`, or `null`.
-`credentials_json` wins when both are set, matching `FcmPushService`'s own
-precedence. On a git-push PaaS deploy (Taqat/Dokku), `source` should read
-`"credentials_json"` — `"credentials_path"` there means the wrong variable was
-set (see the Push Notifications section above). Never returns the JSON/key
-content, and makes no call to Firebase.
+`source` is `"credentials_json_base64"`, `"credentials_json"`,
+`"credentials_path"`, or `null` — base64 wins when more than one is set,
+matching `FcmPushService`'s own precedence.
+
+> ⚠️ On a git-push PaaS deploy (Taqat/Dokku), `source` should read
+> `"credentials_json_base64"`. This is not a style preference: setting the
+> raw JSON directly as `FIREBASE_CREDENTIALS_JSON` on this project's own
+> Taqat deployment **broke login and register outright** — the JSON's
+> unescaped `"` characters corrupted Taqat's own env-var storage before
+> the app ever got a chance to log an exception, so nothing showed up in
+> the application log either. `source: "credentials_json"` on a PaaS
+> deploy is itself a signal something is set up wrong, independent of
+> whether `configured` reads true.
+
+Never returns the JSON/key content, and makes no call to Firebase.
 
 ---
 
@@ -1173,20 +1182,31 @@ Composer dependency — `firebase/php-jwt` (already installed for this
 project's own JWT auth) signs the RS256 service-account assertion; the
 rest is two plain HTTP calls.
 
-Configuration is one of two env vars, either supplying the service-account
+Configuration is one of three env vars, each supplying the service-account
 JSON from Firebase console (Project settings → Service accounts → Generate
 new private key):
 
-- **`FIREBASE_CREDENTIALS_JSON`** — the file's raw content, one line. **Use
-  this on Taqat/Dokku or any git-push PaaS** — a build like that has no
-  file to receive at all, and the credentials file is deliberately
-  gitignored (see `storage/app/firebase`), so the JSON has to travel as the
-  env var's own value, the same way `OPENAI_API_KEY` is a value, not a path
-  to a file holding one.
+- **`FIREBASE_CREDENTIALS_JSON_BASE64`** — the file's content, base64-
+  encoded, one line. **Use this on Taqat/Dokku or any PaaS dashboard.**
+  Not a theoretical precaution — setting the raw JSON directly as
+  `FIREBASE_CREDENTIALS_JSON` on this project's own Taqat deployment
+  **broke login and register outright**: the JSON is full of unescaped
+  `"` characters, and Taqat's own env-var storage mangled the value badly
+  enough to corrupt something read on every request, with no exception
+  ever reaching the application log (the corruption happened before the
+  app got a chance to). Base64 output is exactly `[A-Za-z0-9+/=]` —
+  nothing in that alphabet can be mistaken for a quote, a delimiter, or
+  anything else an env-var store might interpret specially.
+- **`FIREBASE_CREDENTIALS_JSON`** — the raw file content, no encoding. A
+  git-push PaaS build has nowhere to receive an uploaded file at all, and
+  the credentials file is deliberately gitignored (see
+  `storage/app/firebase`), so on a host that passes env vars through
+  genuinely untouched this would work — but prefer the base64 form unless
+  you've specifically confirmed that about your host.
 - **`FIREBASE_CREDENTIALS_PATH`** — a file on local disk. Local dev only.
 
-`credentials_json` wins if both are set. Both blank, `FcmPushService` and
-the reminder job fail closed: no push, no error, exactly the
+Precedence: base64 > raw json > path. All three blank, `FcmPushService`
+and the reminder job fail closed: no push, no error, exactly the
 `OPENAI_API_KEY`-blank pattern.
 
 ### `PUT /me/fcm-token`

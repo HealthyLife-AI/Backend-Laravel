@@ -2469,7 +2469,7 @@
                 "fcm-status"
               ]
             },
-            "description": "S5-06 follow-up. The FCM twin of **AI Provider Status** above, and for the same reason: `notifications:send-log-reminders` fails closed by design, so a silently misconfigured environment and a correctly configured one with nothing due to send yet look identical from outside the container.\n\n- `configured: false` -> neither `FIREBASE_CREDENTIALS_JSON` nor `FIREBASE_CREDENTIALS_PATH` is set in this environment (or the file path doesn't exist).\n- `configured: true`, `source: \"credentials_json\"` -> the PaaS-friendly form is active. This is what a Taqat/Dokku deploy should show; `credentials_path` there means the wrong variable was set (see `API_CONTRACT.md`).\n- `configured: true`, `source: \"credentials_path\"` -> a local-disk file is active — correct for local dev, wrong for a git-push PaaS deploy.\n\nNever returns the JSON/key content, and makes no call to Firebase."
+            "description": "S5-06 follow-up. The FCM twin of **AI Provider Status** above, and for the same reason: `notifications:send-log-reminders` fails closed by design, so a silently misconfigured environment and a correctly configured one with nothing due to send yet look identical from outside the container.\n\n⚠️ **A real incident, not a hypothetical**: setting the raw JSON directly as `FIREBASE_CREDENTIALS_JSON` on this project's own Taqat deployment broke login and register outright — the JSON's unescaped `\"` characters corrupted Taqat's own env-var storage before the app ever got a chance to log an exception, so nothing showed up in the application log either. `source` exists specifically so this is visible from outside the container without waiting for an outage to notice it:\n\n- `configured: false` -> none of the three Firebase env vars is set in this environment (or the file path doesn't exist).\n- `configured: true`, `source: \"credentials_json_base64\"` -> correct for Taqat/Dokku or any PaaS dashboard. This is what a healthy production environment should show.\n- `configured: true`, `source: \"credentials_json\"` -> the raw-JSON form is active. Works only if this specific host passes env vars through untouched — treat this as worth double-checking on any PaaS deploy, independent of whether `configured` reads true.\n- `configured: true`, `source: \"credentials_path\"` -> a local-disk file is active — correct for local dev, wrong for a git-push PaaS deploy.\n\nNever returns the JSON/key content, and makes no call to Firebase."
           },
           "response": [
             {
@@ -2507,7 +2507,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"configured\": true,\n  \"source\": \"credentials_json\"\n}"
+              "body": "{\n  \"configured\": true,\n  \"source\": \"credentials_json_base64\"\n}"
             }
           ]
         }
