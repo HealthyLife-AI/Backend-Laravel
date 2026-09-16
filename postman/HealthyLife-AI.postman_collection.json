@@ -2403,7 +2403,7 @@
                 "ai-status"
               ]
             },
-            "description": "Whether **the environment you are pointed at** has an AI provider configured for Meal Plans -> Generate AI Draft.\n\nRun this first when a draft looks rule-based. The AI draft falls back to its rule-based generator silently and by design, so the draft itself never tells you which path ran:\n\n- `configured: false` -> this environment never even attempts an LLM call. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL`, then **rebuild** (not just restart) so the running process actually receives them.\n- `configured: true` but drafts still come back rule-based -> the call or its validation is failing. A `429` (free-tier rate limit) is the most common cause; check the app log for `AI draft:`.\n\nNever returns the API key, and makes no call to the provider."
+            "description": "Whether **the environment you are pointed at** has an AI provider configured for Meal Plans -> Generate AI Draft.\n\nRun this first when a draft looks rule-based. The AI draft falls back to its rule-based generator silently and by design, so the draft itself never tells you which path ran:\n\n- `configured: false` -> this environment never even attempts an LLM call. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL`, then **rebuild** (not just restart) so the running process actually receives them.\n- `configured: true` but drafts still come back rule-based -> the call or its validation is failing. A `429` (free-tier rate limit) is the most common cause; check the app log for `AI draft:`.\n\n`summary` reports the same thing for the weekly-summary feature's own optional `OPENAI_SUMMARY_*` credential (S5-03 follow-up, isolated from the draft key/quota via a contextual binding). `shares_draft_key: true` means `OPENAI_SUMMARY_*` isn't set here and the summary job is still spending the draft feature's quota.\n\nNever returns the API key, and makes no call to the provider."
           },
           "response": [
             {
@@ -2441,7 +2441,7 @@
                 }
               ],
               "cookie": [],
-              "body": "{\n  \"configured\": true,\n  \"provider_host\": \"api.groq.com\",\n  \"model\": \"openai/gpt-oss-120b\",\n  \"timeout_seconds\": 12\n}"
+              "body": "{\n  \"configured\": true,\n  \"provider_host\": \"api.groq.com\",\n  \"model\": \"openai/gpt-oss-120b\",\n  \"timeout_seconds\": 12,\n  \"summary\": {\n    \"configured\": true,\n    \"provider_host\": \"api.groq.com\",\n    \"model\": \"openai/gpt-oss-120b\",\n    \"shares_draft_key\": false\n  }\n}"
             }
           ]
         },

@@ -765,7 +765,13 @@ arithmetic of a returned plan.
   "configured": true,
   "provider_host": "api.groq.com",
   "model": "openai/gpt-oss-120b",
-  "timeout_seconds": 12
+  "timeout_seconds": 12,
+  "summary": {
+    "configured": true,
+    "provider_host": "api.groq.com",
+    "model": "openai/gpt-oss-120b",
+    "shares_draft_key": false
+  }
 }
 ```
 
@@ -774,6 +780,14 @@ provider (so it can't be polled to burn quota). `configured: false` means this
 environment never attempts an LLM call at all. `configured: true` while drafts
 still come back rule-based means the call itself or its validation is failing
 — check the application log for `AI draft:`.
+
+`summary` reports the same thing for the weekly-summary feature's own
+optional credential (S5-03 follow-up — `OPENAI_SUMMARY_*`, isolated from the
+draft feature's key/quota via a contextual binding so the two features don't
+compete for one rate limit). `shares_draft_key: true` means `OPENAI_SUMMARY_*`
+isn't set in this environment and the summary job is still spending the
+draft feature's quota — set the `OPENAI_SUMMARY_*` vars and redeploy to
+split them.
 
 ### `GET /system/fcm-status`
 

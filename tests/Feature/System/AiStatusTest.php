@@ -66,4 +66,66 @@ class AiStatusTest extends TestCase
     {
         $this->getJson('/api/v1/system/ai-status')->assertUnauthorized();
     }
+
+    // --- summary profile (S5-03 follow-up) ------------------------------
+
+    public function test_it_reports_a_distinct_summary_key_without_revealing_it(): void
+    {
+        config([
+            'ai.api_key' => 'gsk_draft_secret',
+            'ai.summary.base_url' => 'https://api.groq.com/openai/v1',
+            'ai.summary.api_key' => 'gsk_summary_secret',
+            'ai.summary.model' => 'openai/gpt-oss-120b',
+        ]);
+
+        $response = $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+
+        $response->assertOk()->assertJson([
+            'summary' => [
+                'configured' => true,
+                'provider_host' => 'api.groq.com',
+                'model' => 'openai/gpt-oss-120b',
+                'shares_draft_key' => false,
+            ],
+        ]);
+        $this->assertStringNotContainsString('gsk_summary_secret', $response->getContent());
+    }
+
+    public function test_it_reports_the_summary_profile_as_sharing_the_draft_key_when_unset(): void
+    {
+        config([
+            'ai.api_key' => 'gsk_draft_secret',
+            'ai.summary.base_url' => null,
+            'ai.summary.api_key' => null,
+            'ai.summary.model' => null,
+        ]);
+
+        // Mirrors config/ai.php's own env() fallback: an unset summary key
+        // literally IS the draft key at this point, so the comparison
+        // reads true — this is the "still sharing one quota" case.
+        config(['ai.summary.api_key' => config('ai.api_key')]);
+
+        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+            ->assertOk()
+            ->assertJson(['summary' => ['shares_draft_key' => true]]);
+    }
+
+    public function test_an_unconfigured_summary_profile_is_reported_separately_from_the_draft(): void
+    {
+        config([
+            'ai.base_url' => 'https://api.groq.com/openai/v1',
+            'ai.api_key' => 'gsk_draft_secret',
+            'ai.model' => 'openai/gpt-oss-120b',
+            'ai.summary.base_url' => null,
+            'ai.summary.api_key' => null,
+            'ai.summary.model' => null,
+        ]);
+
+        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+            ->assertOk()
+            ->assertJson([
+                'configured' => true,
+                'summary' => ['configured' => false, 'provider_host' => null, 'model' => null],
+            ]);
+    }
 }

@@ -810,6 +810,12 @@ AI_STATUS = {
     "provider_host": "api.groq.com",
     "model": "openai/gpt-oss-120b",
     "timeout_seconds": 12,
+    "summary": {
+        "configured": True,
+        "provider_host": "api.groq.com",
+        "model": "openai/gpt-oss-120b",
+        "shares_draft_key": False,
+    },
 }
 
 FCM_STATUS = {
@@ -827,6 +833,8 @@ Run this first when a draft looks rule-based. The AI draft falls back to its rul
 
 - `configured: false` -> this environment never even attempts an LLM call. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL`, then **rebuild** (not just restart) so the running process actually receives them.
 - `configured: true` but drafts still come back rule-based -> the call or its validation is failing. A `429` (free-tier rate limit) is the most common cause; check the app log for `AI draft:`.
+
+`summary` reports the same thing for the weekly-summary feature's own optional `OPENAI_SUMMARY_*` credential (S5-03 follow-up, isolated from the draft key/quota via a contextual binding). `shares_draft_key: true` means `OPENAI_SUMMARY_*` isn't set here and the summary job is still spending the draft feature's quota.
 
 Never returns the API key, and makes no call to the provider.""",
     examples=[
