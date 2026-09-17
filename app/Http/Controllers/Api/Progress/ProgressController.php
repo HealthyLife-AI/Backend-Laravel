@@ -54,6 +54,12 @@ class ProgressController extends Controller
                 'change' => $this->change($readings),
             ],
             'adherence' => $this->adherence->summary($subscriber, $from, $to),
+            // S4-07: the plan-vs-actual bar chart's series. Shipped in
+            // this response rather than behind its own endpoint for the
+            // same reason the three blocks above are — one screen renders
+            // all of them together, and no client's meal logs are
+            // reachable by their nutritionist any other way.
+            'daily_calories' => $this->adherence->dailyCalories($subscriber, $from, $to),
         ]);
     }
 

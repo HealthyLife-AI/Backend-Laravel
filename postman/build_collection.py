@@ -392,6 +392,14 @@ PROGRESS_OBJECT = {
         "change": {"weight_kg": -2.0},
     },
     "adherence": ADHERENCE_OBJECT,
+    # S4-07: the plan-vs-actual chart's series. `planned_calories` is null
+    # (never 0) on a day with nothing to compare against — no active plan,
+    # or a weekly plan with no meals that weekday.
+    "daily_calories": [
+        {"date": "2026-09-13", "planned_calories": 1850.0, "logged_calories": 1720.0},
+        {"date": "2026-09-14", "planned_calories": 1850.0, "logged_calories": 0.0},
+        {"date": "2026-09-15", "planned_calories": None, "logged_calories": 640.0},
+    ],
 }
 
 # ---- Sprint 5 (S5-02/S5-04) -------------------------------------------------

@@ -1053,11 +1053,31 @@ three round-trips to paint one screen is what NFR-01 is trying to avoid.
     "previous": { "recorded_at": "2026-09-10", "source": "clinic-analyser", "weight_kg": 84, "body_fat_percent": 24 },
     "change":   { "weight_kg": -2 }
   },
-  "adherence": { "...": "same shape as the adherence endpoint" }
+  "adherence": { "...": "same shape as the adherence endpoint" },
+  "daily_calories": [
+    { "date": "2026-09-10", "planned_calories": 1850, "logged_calories": 1720 },
+    { "date": "2026-09-11", "planned_calories": 1850, "logged_calories": 0 },
+    { "date": "2026-09-12", "planned_calories": null, "logged_calories": 640 }
+  ]
 }
 ```
 
 `weight_trend` is ordered oldest → newest, ready to plot.
+
+`daily_calories` (S4-07) is the plan-vs-actual chart's series: one row per
+day in the window, oldest → newest, no gaps. It ships here rather than
+behind its own endpoint because a nutritionist has no other way to reach
+their client's logs — `/me/meal-logs` is the client's own endpoint.
+
+- `planned_calories` is **`null`, never `0`**, when there is nothing to
+  compare against: the client has no active plan, or has a weekly plan
+  with no meals on that weekday. `0` would claim the plan prescribed no
+  food that day, which is a different statement — render the two
+  differently.
+- `logged_calories` counts **everything eaten**, on-plan or not (BR-9).
+  It is calories, not adherence; the on-plan ratio is `adherence` above.
+- Both sides are computed by the same `macrosFor()` arithmetic that built
+  the plan, so the two bars can never disagree by a rounding difference.
 
 `change` compares the **first and last reading in the window**, answering
 "what changed this month" rather than against an all-time baseline. It is

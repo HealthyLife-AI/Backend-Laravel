@@ -2,7 +2,9 @@
 
 namespace App\Services\Adherence;
 
+use App\Models\MealPlan;
 use App\Models\Subscriber;
+use App\Services\Nutrition\MealPlanCalculatorService;
 use Carbon\CarbonImmutable;
 
 /**
@@ -27,6 +29,8 @@ use Carbon\CarbonImmutable;
  */
 class AdherenceService
 {
+    public function __construct(private readonly MealPlanCalculatorService $calculator) {}
+
     public const STATUS_STABLE = 'stable';
 
     public const STATUS_DECLINING = 'declining';
@@ -77,6 +81,146 @@ class AdherenceService
             // reference beside the rate without hardcoding 70 of its own.
             'reference_percent' => (int) config('adherence.reference_percent'),
         ];
+    }
+
+    /**
+     * S4-07: planned versus actually-logged calories, one row per day in
+     * the window — the series behind the dashboard's plan-vs-actual bar
+     * chart.
+     *
+     * Lives here rather than in a new service because this IS the
+     * plan-versus-actual comparison this class is named for; `summary()`
+     * above answers it as a single ratio, this answers it as a daily
+     * series. Both read the same two sides, so splitting them across two
+     * services would be the start of two definitions of "planned".
+     *
+     * `planned_calories` is null, never 0, when there is nothing to
+     * compare against — no active plan, or a weekly plan with no meals on
+     * that weekday. 0 would claim the plan prescribed no food that day,
+     * which is a different (and wrong) statement, and the chart draws the
+     * two cases differently.
+     *
+     * Calories come from `MealPlanCalculatorService` on both sides rather
+     * than a SQL SUM: the plan side has to go through it anyway, and one
+     * rounding implementation for both halves is the whole reason
+     * `macrosFor()` was extracted in S4-01. A window is days, not months,
+     * so the row count stays small.
+     *
+     * @return list<array{date: string, planned_calories: float|null, logged_calories: float}>
+     */
+    public function dailyCalories(Subscriber $subscriber, ?string $from = null, ?string $to = null): array
+    {
+        [$from, $to] = $this->resolveWindow($from, $to);
+
+        $plannedByDate = $this->plannedCaloriesByDate($subscriber, $from, $to);
+        $loggedByDate = $this->loggedCaloriesByDate($subscriber, $from, $to);
+
+        $days = [];
+        $cursor = CarbonImmutable::parse($from);
+        $end = CarbonImmutable::parse($to);
+
+        while ($cursor->lte($end)) {
+            $date = $cursor->toDateString();
+
+            $days[] = [
+                'date' => $date,
+                'planned_calories' => $plannedByDate[$date] ?? null,
+                'logged_calories' => round($loggedByDate[$date] ?? 0.0, 1),
+            ];
+
+            $cursor = $cursor->addDay();
+        }
+
+        return $days;
+    }
+
+    /**
+     * Resolved per DATE rather than per `day_index`, because the two plan
+     * shapes the `meals` migration allows read the same day key for
+     * different reasons: a plan whose meals all carry a null `day_index`
+     * repeats daily and summarises under key 0, and so does a weekly plan
+     * that happens to have Monday meals only. Deciding which one this is
+     * needs the plan itself, so that decision is made once here instead
+     * of being carried around as state.
+     *
+     * @return array<string, float> Calories keyed by `Y-m-d`; a date is
+     *                              absent when nothing is planned for it.
+     */
+    private function plannedCaloriesByDate(Subscriber $subscriber, string $from, string $to): array
+    {
+        $plan = $subscriber->mealPlans()
+            ->where('status', 'active')
+            ->with(['meals.items.food'])
+            ->first();
+
+        if (! $plan instanceof MealPlan) {
+            return [];
+        }
+
+        $byDayIndex = array_map(
+            fn (array $totals) => (float) $totals['calories'],
+            $this->calculator->planSummaryByDay($plan),
+        );
+
+        if ($byDayIndex === []) {
+            return [];
+        }
+
+        $repeatsDaily = $plan->meals->every(fn ($meal) => $meal->day_index === null);
+        $dailyTotal = $byDayIndex[array_key_first($byDayIndex)];
+
+        $planned = [];
+        $cursor = CarbonImmutable::parse($from);
+        $end = CarbonImmutable::parse($to);
+
+        while ($cursor->lte($end)) {
+            if ($repeatsDaily) {
+                $planned[$cursor->toDateString()] = $dailyTotal;
+            } else {
+                // `meals.day_index` is 0 = Monday .. 6 = Sunday (that
+                // migration's docblock). Carbon's own `dayOfWeek` is
+                // 0 = Sunday, so this maps through isoWeekday rather than
+                // passing dayOfWeek straight through and shifting the
+                // whole week by one.
+                $dayIndex = $cursor->isoWeekday() - 1;
+
+                if (isset($byDayIndex[$dayIndex])) {
+                    $planned[$cursor->toDateString()] = $byDayIndex[$dayIndex];
+                }
+            }
+
+            $cursor = $cursor->addDay();
+        }
+
+        return $planned;
+    }
+
+    /** @return array<string, float> Calories keyed by `Y-m-d`. */
+    private function loggedCaloriesByDate(Subscriber $subscriber, string $from, string $to): array
+    {
+        $totals = [];
+
+        // `reorder()` for the same reason rateFor() needs it — mealLogs()
+        // carries a default orderByDesc('logged_at') that MySQL rejects
+        // alongside an aggregate, and that buys nothing here either.
+        $logs = $subscriber->mealLogs()
+            ->reorder()
+            ->loggedBetween($from, $to)
+            ->with('food')
+            ->get();
+
+        foreach ($logs as $log) {
+            if ($log->food === null) {
+                continue;
+            }
+
+            $date = $log->logged_at->toDateString();
+            $calories = $this->calculator->macrosFor($log->food, (float) $log->quantity_grams)['calories'];
+
+            $totals[$date] = ($totals[$date] ?? 0.0) + $calories;
+        }
+
+        return $totals;
     }
 
     /**
