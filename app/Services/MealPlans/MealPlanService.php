@@ -2,9 +2,12 @@
 
 namespace App\Services\MealPlans;
 
+use App\Models\Meal;
+use App\Models\MealItem;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -38,45 +41,139 @@ class MealPlanService
     }
 
     /**
-     * Full replace, not a diff against the existing meals/items — PRD
-     * F-4 treats a plan as edited as one whole form, and a plan is small
-     * enough (a handful of meals, a handful of items each) that
-     * delete-and-rebuild is simpler and no slower than reconciling which
-     * rows changed. `meal_items.parent_item_id` cascades on delete, so
-     * dropping a meal's rows never leaves an orphaned alternative behind.
+     * The caller still submits the plan as one whole form (PRD F-4), but
+     * this RECONCILES it against what is already stored instead of
+     * dropping every row and rebuilding.
+     *
+     * That distinction is not a performance detail, it is a correctness
+     * one. `meal_logs.meal_item_id` is `nullOnDelete`, and adherence
+     * (S4-03) is a live count over that column across any window. A
+     * delete-and-rebuild therefore nulled the reference on EVERY
+     * historical log attached to the plan on EVERY edit — so a
+     * nutritionist who adjusted one meal's portion silently rewrote the
+     * client's past adherence downward, turning meals that were on-plan
+     * when they were eaten into off-plan ones. Nothing in the UI hinted
+     * at it; the percentage simply dropped, and `classify()` could flip
+     * the client to `declining` on the strength of the nutritionist's
+     * own edit.
+     *
+     * Identity is (meal slot, food) — a meal is the same meal if it is
+     * the same `name` on the same `day_index`, and an item is the same
+     * item if it is the same food in that slot:
+     *
+     * - Portion adjusted (250g -> 300g of the same food): clinically the
+     *   same prescription, tuned. The row is UPDATED, its id survives,
+     *   and past logs stay attributed.
+     * - Food swapped (rice -> quinoa): genuinely a different item. The
+     *   old row is deleted and its logs become unattributed, which is
+     *   honest — the thing they were measured against no longer exists.
+     * - Meal or item removed entirely: same as above, by intent.
+     *
+     * The `nullOnDelete` behaviour the `meal_logs` migration describes is
+     * unchanged and still correct; it now only fires for items that were
+     * actually removed, which is what that migration's docblock always
+     * meant.
      *
      * @param  array<int, array<string, mixed>>  $mealsData
      */
     public function replaceMeals(MealPlan $plan, array $mealsData): void
     {
         DB::transaction(function () use ($plan, $mealsData) {
-            $plan->meals()->delete();
+            $existingMeals = $plan->meals()->with('items')->get()
+                ->keyBy(fn (Meal $meal) => $this->mealKey($meal->name, $meal->day_index));
+
+            $keptMealIds = [];
 
             foreach ($mealsData as $mealIndex => $mealData) {
-                $meal = $plan->meals()->create([
-                    'name' => $mealData['name'],
-                    'day_index' => $mealData['day_index'] ?? null,
-                    'sort_order' => $mealData['sort_order'] ?? $mealIndex,
-                ]);
+                $key = $this->mealKey($mealData['name'], $mealData['day_index'] ?? null);
+                $existing = $existingMeals->get($key);
 
-                foreach ($mealData['items'] as $itemIndex => $itemData) {
-                    $plannedItem = $meal->items()->create([
-                        'food_id' => $itemData['food_id'],
-                        'quantity_grams' => $itemData['quantity_grams'],
-                        'sort_order' => $itemIndex,
+                if ($existing instanceof Meal) {
+                    $existing->update(['sort_order' => $mealData['sort_order'] ?? $mealIndex]);
+                    $meal = $existing;
+                } else {
+                    $meal = $plan->meals()->create([
+                        'name' => $mealData['name'],
+                        'day_index' => $mealData['day_index'] ?? null,
+                        'sort_order' => $mealData['sort_order'] ?? $mealIndex,
                     ]);
-
-                    foreach ($itemData['alternatives'] ?? [] as $altIndex => $altData) {
-                        $meal->items()->create([
-                            'food_id' => $altData['food_id'],
-                            'quantity_grams' => $altData['quantity_grams'],
-                            'parent_item_id' => $plannedItem->id,
-                            'sort_order' => $altIndex,
-                        ]);
-                    }
                 }
+
+                $keptMealIds[] = $meal->id;
+                $this->reconcileItems($meal, $existing?->items ?? collect(), $mealData['items']);
             }
+
+            // Whatever the submitted form no longer contains.
+            $plan->meals()->whereNotIn('id', $keptMealIds ?: [0])->delete();
         });
+    }
+
+    /** A meal is the same meal if it is the same slot on the same day. */
+    private function mealKey(string $name, ?int $dayIndex): string
+    {
+        return $name.'@'.($dayIndex ?? 'daily');
+    }
+
+    /**
+     * Planned items are matched by food within the meal; alternatives are
+     * matched by food within their parent item. An alternative promoted
+     * to a planned item (or vice versa) is intentionally NOT carried
+     * over — its role changed, and BR-9 counts the two differently.
+     *
+     * @param  Collection<int, MealItem>  $existingItems
+     * @param  array<int, array<string, mixed>>  $itemsData
+     */
+    private function reconcileItems(Meal $meal, $existingItems, array $itemsData): void
+    {
+        $existingPlanned = $existingItems->whereNull('parent_item_id')->keyBy('food_id');
+        $keptItemIds = [];
+
+        foreach ($itemsData as $itemIndex => $itemData) {
+            $existing = $existingPlanned->get($itemData['food_id']);
+
+            if ($existing instanceof MealItem) {
+                $existing->update([
+                    'quantity_grams' => $itemData['quantity_grams'],
+                    'sort_order' => $itemIndex,
+                ]);
+                $plannedItem = $existing;
+            } else {
+                $plannedItem = $meal->items()->create([
+                    'food_id' => $itemData['food_id'],
+                    'quantity_grams' => $itemData['quantity_grams'],
+                    'sort_order' => $itemIndex,
+                ]);
+            }
+
+            $keptItemIds[] = $plannedItem->id;
+
+            $existingAlternatives = $existingItems
+                ->where('parent_item_id', $plannedItem->id)
+                ->keyBy('food_id');
+
+            foreach ($itemData['alternatives'] ?? [] as $altIndex => $altData) {
+                $existingAlt = $existingAlternatives->get($altData['food_id']);
+
+                if ($existingAlt instanceof MealItem) {
+                    $existingAlt->update([
+                        'quantity_grams' => $altData['quantity_grams'],
+                        'sort_order' => $altIndex,
+                    ]);
+                    $keptItemIds[] = $existingAlt->id;
+
+                    continue;
+                }
+
+                $keptItemIds[] = $meal->items()->create([
+                    'food_id' => $altData['food_id'],
+                    'quantity_grams' => $altData['quantity_grams'],
+                    'parent_item_id' => $plannedItem->id,
+                    'sort_order' => $altIndex,
+                ])->id;
+            }
+        }
+
+        $meal->items()->whereNotIn('id', $keptItemIds ?: [0])->delete();
     }
 
     /**
@@ -168,7 +265,11 @@ class MealPlanService
                 ->where('id', '!=', $plan->id)
                 ->update(['status' => 'archived']);
 
-            $plan->update(['status' => 'active', 'is_ai_draft' => false]);
+            // `activated_at` is when the client could first actually
+            // follow this plan — distinct from created_at (when it was
+            // drafted) and the only honest answer to "since when" for
+            // both the progress chart and a case review.
+            $plan->update(['status' => 'active', 'is_ai_draft' => false, 'activated_at' => now()]);
         });
     }
 }

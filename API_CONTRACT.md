@@ -567,6 +567,7 @@ array of the response shape below.
   "is_ai_draft": false,
   "start_date": "2026-09-15",
   "status": "draft",
+  "activated_at": null,
   "meals": [
     {
       "id": 21,
@@ -616,10 +617,32 @@ Same request/response shape as `POST`. This is also how an AI draft
 (`is_ai_draft: true`) gets edited before it's approved — there's no separate
 "edit a draft" endpoint (S3-07).
 
+Send the plan as a whole form; the server **reconciles** it against what is
+stored rather than rebuilding it. Identity is (meal slot, food): the same
+food in the same `name`/`day_index` meal is the same item, so adjusting a
+portion keeps that item's `id`. Changing the food, or dropping a meal/item,
+really does delete the old row.
+
+That matters beyond ids: `meal_logs.meal_item_id` points at these rows, and
+adherence is counted live over that column. Before reconciling, every edit
+nulled the reference on all historical logs, so adjusting one portion
+silently rewrote the client's **past** adherence downward and could flip
+them to `declining` on the strength of the nutritionist's own edit. A
+client's logged history now only becomes unattributed when the item it was
+measured against is genuinely gone.
+
 ### `POST /clients/{id}/meal-plans/{planId}/activate`
 
 No request body. **200 OK**, same shape, `status: "active"`, `is_ai_draft:
-false` (activating a draft is how it gets approved — BR-6/BR-10).
+false` (activating a draft is how it gets approved — BR-6/BR-10), and
+`activated_at` stamped with the moment it happened.
+
+`activated_at` is when the client could first actually follow the plan, as
+opposed to `created_at` (when it was drafted). It is what
+[`daily_calories`](#get-clientsidprogressfromyyyy-mm-ddtoyyyy-mm-dd) uses to
+decide which days a plan was in force, and the date a case review needs when
+asking when an AI-drafted plan was approved. Null on drafts, and on plans
+that predate the column.
 
 ### `POST /clients/{id}/meal-plans/ai-draft`
 
@@ -1070,10 +1093,15 @@ behind its own endpoint because a nutritionist has no other way to reach
 their client's logs — `/me/meal-logs` is the client's own endpoint.
 
 - `planned_calories` is **`null`, never `0`**, when there is nothing to
-  compare against: the client has no active plan, or has a weekly plan
-  with no meals on that weekday. `0` would claim the plan prescribed no
-  food that day, which is a different statement — render the two
-  differently.
+  compare against: the client has no active plan, the day falls **before
+  that plan took effect**, or a weekly plan has no meals on that weekday.
+  `0` would claim the plan prescribed no food that day, which is a
+  different statement — render the two differently.
+- "Took effect" is `start_date` when the nutritionist set one, otherwise
+  `activated_at` (when they handed the plan to the client), otherwise
+  `created_at` for plans predating that column. A plan activated today
+  therefore reports `null` for earlier days in the window rather than
+  grading the client against a plan that did not exist yet.
 - `logged_calories` counts **everything eaten**, on-plan or not (BR-9).
   It is calories, not adherence; the on-plan ratio is `adherence` above.
 - Both sides are computed by the same `macrosFor()` arithmetic that built

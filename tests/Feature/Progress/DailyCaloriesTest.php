@@ -50,11 +50,20 @@ class DailyCaloriesTest extends TestCase
      * A plan whose meals carry no `day_index` repeats every day (the
      * `meals` migration's "daily plan" shape).
      */
-    private function activeDailyPlan(Subscriber $subscriber, User $nutritionist, Food $food, float $grams): void
-    {
+    private function activeDailyPlan(
+        Subscriber $subscriber,
+        User $nutritionist,
+        Food $food,
+        float $grams,
+        ?string $activatedAt = null,
+    ): void {
+        // Defaults to "in force for a month" so a test that isn't about
+        // the effective-start bound isn't silently truncated by it.
         $planId = DB::table('meal_plans')->insertGetId([
             'subscriber_id' => $subscriber->id, 'created_by' => $nutritionist->id,
-            'status' => 'active', 'created_at' => now(), 'updated_at' => now(),
+            'status' => 'active',
+            'activated_at' => $activatedAt ?? CarbonImmutable::now()->subMonth(),
+            'created_at' => now(), 'updated_at' => now(),
         ]);
         $mealId = DB::table('meals')->insertGetId([
             'meal_plan_id' => $planId, 'name' => 'lunch', 'day_index' => null,
@@ -137,6 +146,34 @@ class DailyCaloriesTest extends TestCase
         );
 
         $this->assertSame([500.0, 500.0, 500.0], $this->floats($days, 'planned_calories'));
+    }
+
+    /**
+     * The plan only applies from the day it took effect. Before this
+     * bound, a plan activated today claimed the client had been
+     * prescribed those calories all week and graded them against a plan
+     * that did not exist yet.
+     */
+    public function test_days_before_the_plan_took_effect_have_no_planned_target(): void
+    {
+        [$nutritionist, $subscriber] = $this->makeClient();
+        $food = Food::factory()->create(['calories_per_100g' => 200]);
+        $this->activeDailyPlan(
+            $subscriber,
+            $nutritionist,
+            $food,
+            250,
+            CarbonImmutable::now()->toDateString(), // activated today
+        );
+
+        $days = $this->progress(
+            $nutritionist,
+            $subscriber,
+            CarbonImmutable::now()->subDays(2)->toDateString(),
+            CarbonImmutable::now()->toDateString()
+        );
+
+        $this->assertSame([null, null, 500.0], $this->floats($days, 'planned_calories'));
     }
 
     public function test_logged_calories_are_summed_per_day_from_what_was_actually_eaten(): void

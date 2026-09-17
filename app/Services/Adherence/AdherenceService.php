@@ -170,10 +170,30 @@ class AdherenceService
         $dailyTotal = $byDayIndex[array_key_first($byDayIndex)];
 
         $planned = [];
+        // The plan only applies from the day it actually took effect.
+        // Without this bound, a plan activated today claimed the client
+        // had been prescribed those calories all week and graded them
+        // against a plan that did not exist yet — which is worse than
+        // showing nothing, because it reads as a real shortfall.
+        //
+        // `start_date` first: if the nutritionist named the day the plan
+        // starts, that is the answer. Otherwise the day they handed it to
+        // the client (`activated_at`), and only failing both — a plan
+        // predating that column — the day it was drafted.
+        $effectiveStart = CarbonImmutable::parse(
+            $plan->start_date ?? $plan->activated_at ?? $plan->created_at
+        )->startOfDay();
+
         $cursor = CarbonImmutable::parse($from);
         $end = CarbonImmutable::parse($to);
 
         while ($cursor->lte($end)) {
+            if ($cursor->lt($effectiveStart)) {
+                $cursor = $cursor->addDay();
+
+                continue;
+            }
+
             if ($repeatsDaily) {
                 $planned[$cursor->toDateString()] = $dailyTotal;
             } else {

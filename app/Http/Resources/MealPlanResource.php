@@ -24,6 +24,10 @@ class MealPlanResource extends JsonResource
             'is_ai_draft' => $this->is_ai_draft,
             'start_date' => $this->start_date?->toDateString(),
             'status' => $this->status,
+            // When the client could first actually follow this plan —
+            // not when it was drafted (`created_at`). Null on a draft,
+            // and on plans that predate the column.
+            'activated_at' => $this->activated_at?->toIso8601String(),
             'meals' => MealResource::collection($this->whenLoaded('meals')),
             // FR-14: the "live daily summary" — per-day totals, shown
             // alongside the plan itself rather than a separate endpoint,

@@ -308,7 +308,7 @@ MEAL_OBJECT = {
 
 MEAL_PLAN_OBJECT = {
     "id": 8, "subscriber_id": 3, "is_template": False, "is_ai_draft": False,
-    "start_date": "2026-09-15", "status": "draft", "meals": [MEAL_OBJECT],
+    "start_date": "2026-09-15", "status": "draft", "activated_at": None, "meals": [MEAL_OBJECT],
     "summary_by_day": {"0": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0}},
     "created_at": "2026-09-09T10:00:00+00:00", "updated_at": "2026-09-09T10:00:00+00:00",
 }
@@ -797,7 +797,9 @@ dashboard_overview_req = make_request(
     path="dashboard/overview",
     description="""F-2's stat-card row, for the **calling nutritionist only** (`clients.manage`).
 
-`on_track` / `needs_attention` / `late` / `not_logged_today` read low or zero until a later sprint's logging feature starts populating real adherence data from plan-vs-actual comparisons — that's an accurate reflection of the current data, not a bug or a placeholder to be replaced.""",
+`stable` / `declining` / `stopped_logging` count clients by the DIRECTION of their adherence, not its level (BR-14 / S4-03) — they replaced the old `on_track` / `needs_attention` / `late` counts, which described where a client sat against a percentage rather than which way they were moving.
+
+A client counts toward none of the three until their adherence has been computed at least once (`adherence_status` null), so these three do not necessarily sum to `active`. `not_logged_today` is a separate axis and overlaps all of them: it counts active clients with no entry today, which is what the daily reminder job (FR-22) acts on.""",
     examples=[
         ("200 OK", "OK", 200, DASHBOARD_OVERVIEW, JSON_RESP_HEADER),
     ],
