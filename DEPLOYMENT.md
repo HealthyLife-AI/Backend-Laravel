@@ -28,6 +28,41 @@ GET /api/v1/system/ai-status   # draft + summary LLM config, never the key
 GET /api/v1/system/fcm-status  # which Firebase credential source is active
 ```
 
+## Performance
+
+Not yet confirmed either way whether Taqat's build runs these — same
+honesty as the Migrations section below. Verified locally against this
+exact codebase before recommending, not assumed safe:
+
+```
+composer install --no-dev  # optimize-autoloader:true in composer.json already applies here
+php artisan config:cache
+php artisan route:cache
+```
+
+Both cache commands were tested against this repo (231/231 tests still
+pass under a cleared cache, and a live `php artisan serve` boot, login,
+and `/system/ai-status` call all behaved identically under a cached one)
+before writing this. Two things make them safe here specifically —
+check both again if either changes before adding this to a deploy step:
+
+- No `env()` call anywhere outside `config/*.php` (`config:cache` freezes
+  `env()` to null everywhere else, which silently breaks any code that
+  reads it directly — this codebase doesn't).
+- Every route in `routes/api.php` is a controller class + method, never a
+  closure handler (`route:cache` can't serialize a closure route).
+
+**Always run `config:clear` and `route:clear` after testing these
+locally** — a leftover `bootstrap/cache/config.php` gets loaded by every
+subsequent `artisan` command, including `php artisan test`, ahead of
+`phpunit.xml`'s own environment overrides. (Already gitignored —
+`bootstrap/cache/.gitignore` — so this can't reach the repo by accident,
+but it can still corrupt your own local dev/test session until cleared.)
+
+OPcache is a PHP-level setting, not something this repo controls — worth
+confirming it's enabled on whatever container Taqat builds, since it's a
+larger win for a PHP API's per-request cost than either command above.
+
 ## Migrations
 
 **Open item, not resolved by this doc**: the exact mechanism that runs

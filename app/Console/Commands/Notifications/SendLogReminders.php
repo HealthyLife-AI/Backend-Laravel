@@ -36,32 +36,37 @@ class SendLogReminders extends Command
 
         $today = now()->startOfDay();
 
-        $subscribers = Subscriber::query()
+        // lazy(), not get() — see EvaluateAlerts's identical note. ->with
+        // ('user') still eager-loads per page (default 1000 rows), so this
+        // stays free of the N+1 that dropping the eager load would cause.
+        $total = 0;
+        $sent = 0;
+        $failed = 0;
+
+        Subscriber::query()
             ->where('status', 'active')
             ->where(fn ($query) => $query->whereNull('last_logged_at')->orWhere('last_logged_at', '<', $today))
             ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
             ->with('user')
-            ->get();
+            ->lazy()
+            ->each(function (Subscriber $subscriber) use ($fcm, &$total, &$sent, &$failed): void {
+                $total++;
 
-        $sent = 0;
-        $failed = 0;
+                try {
+                    $fcm->send(
+                        $subscriber->user->fcm_token,
+                        'Time to log today\'s meals',
+                        'You haven\'t logged anything yet today — تذكير بتسجيل وجباتك اليوم.',
+                    );
+                    $sent++;
+                } catch (\Throwable $e) {
+                    $failed++;
+                    report($e);
+                    $this->error("Reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
+                }
+            });
 
-        foreach ($subscribers as $subscriber) {
-            try {
-                $fcm->send(
-                    $subscriber->user->fcm_token,
-                    'Time to log today\'s meals',
-                    'You haven\'t logged anything yet today — تذكير بتسجيل وجباتك اليوم.',
-                );
-                $sent++;
-            } catch (\Throwable $e) {
-                $failed++;
-                report($e);
-                $this->error("Reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
-            }
-        }
-
-        $this->info(sprintf('Sent %d reminder(s), %d failure(s), out of %d client(s) with a registered device.', $sent, $failed, $subscribers->count()));
+        $this->info(sprintf('Sent %d reminder(s), %d failure(s), out of %d client(s) with a registered device.', $sent, $failed, $total));
 
         return self::SUCCESS;
     }

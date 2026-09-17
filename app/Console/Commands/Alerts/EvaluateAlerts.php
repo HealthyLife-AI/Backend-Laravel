@@ -25,10 +25,17 @@ class EvaluateAlerts extends Command
 
     public function handle(AlertEvaluationService $alerts): int
     {
-        $subscribers = Subscriber::where('status', 'active')->get();
+        // lazy(), not get(): this runs across every nutritionist's active
+        // clients with no pagination anywhere else in the call chain, so
+        // a growing pilot roster must not load the whole table into
+        // memory in one query — lazy() pages through it (default 1000
+        // rows/query) at the same total DB cost.
+        $total = 0;
         $failures = 0;
 
-        foreach ($subscribers as $subscriber) {
+        Subscriber::where('status', 'active')->lazy()->each(function (Subscriber $subscriber) use ($alerts, &$total, &$failures): void {
+            $total++;
+
             try {
                 $alerts->evaluate($subscriber);
             } catch (\Throwable $e) {
@@ -36,9 +43,9 @@ class EvaluateAlerts extends Command
                 report($e);
                 $this->error("Alert evaluation failed for subscriber {$subscriber->id}: {$e->getMessage()}");
             }
-        }
+        });
 
-        $this->info(sprintf('Evaluated %d active client(s), %d failure(s).', $subscribers->count(), $failures));
+        $this->info(sprintf('Evaluated %d active client(s), %d failure(s).', $total, $failures));
 
         return self::SUCCESS;
     }

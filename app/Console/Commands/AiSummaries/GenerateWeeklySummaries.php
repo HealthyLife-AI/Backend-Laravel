@@ -26,11 +26,15 @@ class GenerateWeeklySummaries extends Command
     public function handle(WeeklySummaryService $summaries): int
     {
         $weekStart = CarbonImmutable::now()->subWeek()->startOfWeek();
-        $subscribers = Subscriber::where('status', 'active')->get();
+        // lazy(), not get() — see EvaluateAlerts's identical note. Same
+        // unbounded-roster shape, same fix.
+        $total = 0;
         $fallbacks = 0;
         $failures = 0;
 
-        foreach ($subscribers as $subscriber) {
+        Subscriber::where('status', 'active')->lazy()->each(function (Subscriber $subscriber) use ($summaries, $weekStart, &$total, &$fallbacks, &$failures): void {
+            $total++;
+
             try {
                 $summary = $summaries->generateForWeek($subscriber, $weekStart);
                 if ($summary->is_fallback) {
@@ -41,11 +45,11 @@ class GenerateWeeklySummaries extends Command
                 report($e);
                 $this->error("Summary generation failed for subscriber {$subscriber->id}: {$e->getMessage()}");
             }
-        }
+        });
 
         $this->info(sprintf(
             'Generated %d summar(y/ies) for week of %s (%d via fallback, %d failure(s)).',
-            $subscribers->count() - $failures,
+            $total - $failures,
             $weekStart->toDateString(),
             $fallbacks,
             $failures,
