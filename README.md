@@ -2,9 +2,17 @@
 
 AI-powered client management platform for nutritionists. This is the Laravel REST API
 consumed by the Next.js nutritionist dashboard and the Flutter client app. See the
-project root for the PRD, SRS, Milestones, and User Stories documents — this backend
-implements Sprint 1 (Authentication) and Sprint 2 (Onboarding, Health Profile, Food
-Database) of the Sprint 1–3 task breakdown.
+project root for the PRD, SRS, Milestones, and User Stories documents.
+
+Every backend task through **Sprint 6** is implemented: authentication and data
+isolation (S1), client onboarding, health profiles and the food database (S2),
+the plan designer with AI-assisted drafts (S3), logging, adherence and progress
+(S4), the alert engine, weekly AI summaries and push notifications (S5), and the
+regression/isolation/performance gates plus deployment notes (S6).
+
+One backend item is deliberately still open: **S4-14**, the `material_decline_pp`
+threshold in `config/adherence.php`, which is an engineering placeholder awaiting
+a number from a practicing nutritionist rather than a code decision.
 
 ## Stack
 
@@ -83,8 +91,8 @@ Frontend, Desktop, and Mobile roles integrating against this API (S1-06).
 Production environment variables, migration/backup notes, and rollback
 caveats: see [DEPLOYMENT.md](DEPLOYMENT.md) (S6-04).
 
-A runnable Postman collection covering every endpoint in this API (all of
-Sprint 1 + 2) lives in [`postman/`](postman/) —
+A runnable Postman collection covering every endpoint in this API (Sprints 1–5)
+lives in [`postman/`](postman/) —
 `HealthyLife-AI.postman_collection.json` plus a companion
 `HealthyLife-AI-Local.postman_environment.json`. Import both into Postman, or
 run headless with Newman:
