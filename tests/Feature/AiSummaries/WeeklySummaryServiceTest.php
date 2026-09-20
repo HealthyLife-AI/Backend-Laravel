@@ -68,7 +68,9 @@ class WeeklySummaryServiceTest extends TestCase
         $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $this->weekStart());
 
         $this->assertTrue($summary->is_fallback);
-        $this->assertStringContainsString('not enough data', $summary->summary_text);
+        // Arabic: the fallback stands in for the LLM's own output, so it
+        // is written in the same language the prompt demands.
+        $this->assertStringContainsString('لا توجد بيانات كافية', $summary->summary_text);
     }
 
     /**
@@ -188,7 +190,7 @@ class WeeklySummaryServiceTest extends TestCase
 
         $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $weekStart);
 
-        $this->assertStringContainsString('decline', $summary->summary_text);
+        $this->assertStringContainsString('تراجع', $summary->summary_text);
     }
 
     // --- credential isolation (S5-03 follow-up) -------------------------

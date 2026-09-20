@@ -145,12 +145,30 @@ class WeeklySummaryService
         return trim($summary);
     }
 
+    /**
+     * Output is ALWAYS Arabic, regardless of who reads it.
+     *
+     * Not a locale-following decision: this runs from a scheduled job
+     * (`ai-summaries:generate-weekly`) with no request and therefore no
+     * locale to follow, and nothing in the schema records a per-user
+     * language preference. Arabic is the product's own language (an
+     * Arabic-market platform per the MVP spec), so the summary is written
+     * once, in Arabic, and stored that way — rather than being generated
+     * in whatever language the model happens to default to, which is what
+     * produced English notes on the Arabic dashboard before this.
+     */
     private function systemPrompt(): string
     {
         return <<<'PROMPT'
         You are a clinical assistant writing a SHORT weekly progress note
         for a nutritionist about one of their clients — never for the
         client directly, and never a final assessment.
+
+        WRITE THE SUMMARY IN ARABIC. The `summary` value must be Modern
+        Standard Arabic, in a professional clinical register addressed to
+        the nutritionist. Keep numbers in Western digits (e.g. 88%,
+        -0.8 كجم). This is required even though these instructions and
+        the input data are in English.
 
         You will be given this week's numbers only: an adherence
         percentage (or null if nothing was logged), an adherence status
@@ -176,26 +194,32 @@ class WeeklySummaryService
      * S5-05: deterministic, built directly from the same metrics the LLM
      * would have received — never fails, never calls out.
      *
+     * Arabic for the same reason the prompt is (see `systemPrompt()`):
+     * the fallback stands in for the LLM's output, so it has to read as
+     * the same note in the same language. An English fallback appearing
+     * whenever the provider is unreachable would make the language of a
+     * client's summary depend on whether Groq happened to answer.
+     *
      * @param  array<string, mixed>  $metrics
      */
     private function templatedFallback(array $metrics): string
     {
         if ($metrics['total_logs'] === 0) {
-            return 'No meals were logged this week, so there is not enough data yet for a progress summary.';
+            return 'لم تُسجَّل أي وجبات هذا الأسبوع، فلا توجد بيانات كافية بعد لإعداد ملخص تقدّم.';
         }
 
         $percent = $metrics['adherence_percent'];
-        $sentence = "This week's adherence was {$percent}%, logging {$metrics['total_logs']} meal(s).";
+        $sentence = "بلغ الالتزام بالخطة هذا الأسبوع {$percent}%، بتسجيل {$metrics['total_logs']} وجبة.";
 
         $sentence .= match ($metrics['adherence_status']) {
-            'declining' => ' This is a decline from the previous week worth checking in about.',
-            'stopped_logging' => ' Logging has been inconsistent — a check-in may help.',
-            default => ' This has been holding steady.',
+            'declining' => ' يمثّل هذا تراجعاً عن الأسبوع السابق يستحق المتابعة.',
+            'stopped_logging' => ' التسجيل غير منتظم — قد تفيد متابعة مباشرة مع المريض.',
+            default => ' وقد ظل هذا المستوى مستقراً.',
         };
 
         if ($metrics['weight_change_kg'] !== null) {
-            $direction = $metrics['weight_change_kg'] < 0 ? 'lost' : 'gained';
-            $sentence .= sprintf(' Weight %s %.1fkg this week.', $direction, abs($metrics['weight_change_kg']));
+            $direction = $metrics['weight_change_kg'] < 0 ? 'انخفض' : 'ارتفع';
+            $sentence .= sprintf(' %s الوزن %.1f كجم هذا الأسبوع.', $direction, abs($metrics['weight_change_kg']));
         }
 
         return $sentence;
