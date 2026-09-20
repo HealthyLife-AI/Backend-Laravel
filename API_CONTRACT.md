@@ -1224,6 +1224,8 @@ own scope through the relation.
 {
   "id": 12,
   "subscriber_id": 4,
+  "subscriber_name": "Sara Ahmad",
+  "subscriber_code": "PT-101",
   "type": "calories_exceeded",
   "message": "Daily calorie target exceeded for 3 consecutive days.",
   "is_read": false,
@@ -1234,6 +1236,13 @@ own scope through the relation.
 
 Both filters are optional and independent; omitting `is_read` returns both
 read and unread — it is never defaulted to unread-only.
+
+`subscriber_name`/`subscriber_code` exist because this list is roster-wide —
+without them a caller has only an id per row, and cannot say whose alert it
+is without a second lookup per row. `is_resolved` is `false`, never `null`,
+for a `milestone` alert too — it has no ongoing condition to resolve, so a
+caller distinguishing "open problem" from "one-shot positive event" must key
+that off `type`, not this field.
 
 ### `PATCH /alerts/{id}/read`
 

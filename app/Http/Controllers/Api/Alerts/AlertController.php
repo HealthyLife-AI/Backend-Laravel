@@ -24,6 +24,9 @@ class AlertController extends Controller
     {
         $alerts = Alert::query()
             ->whereHas('subscriber')
+            // For AlertResource's subscriber_name/subscriber_code — one
+            // join per page, not a query per row.
+            ->with(['subscriber.user'])
             // `boolean()` coerces an ABSENT key to false too, so presence
             // must be checked with `has()` — using boolean()'s own null
             // default here would silently filter to is_read=false on

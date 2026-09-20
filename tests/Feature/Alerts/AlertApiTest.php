@@ -34,6 +34,19 @@ class AlertApiTest extends TestCase
         $this->assertSame($alert->id, $response->json('data.0.id'));
     }
 
+    /** A roster-wide list is unusable without knowing whose alert it is. */
+    public function test_each_alert_carries_the_subscribers_name_and_code(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id]);
+        Alert::create(['subscriber_id' => $subscriber->id, 'type' => Alert::TYPE_NO_LOG, 'message' => 'x']);
+
+        $this->getJson('/api/v1/alerts', $this->bearerFor($nutritionist))
+            ->assertOk()
+            ->assertJsonPath('data.0.subscriber_name', $subscriber->user->name)
+            ->assertJsonPath('data.0.subscriber_code', $subscriber->code);
+    }
+
     /** The isolation case: whereHas('subscriber') must honour NutritionistScope. */
     public function test_a_nutritionist_never_sees_another_nutritionists_alerts(): void
     {

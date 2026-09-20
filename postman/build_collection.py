@@ -405,7 +405,8 @@ PROGRESS_OBJECT = {
 # ---- Sprint 5 (S5-02/S5-04) -------------------------------------------------
 
 ALERT_OBJECT = {
-    "id": 12, "subscriber_id": 3, "type": "calories_exceeded",
+    "id": 12, "subscriber_id": 3, "subscriber_name": "Sara Ahmad", "subscriber_code": "PT-101",
+    "type": "calories_exceeded",
     "message": "Daily calorie target exceeded for 3 consecutive days.",
     "is_read": False, "is_resolved": False, "created_at": "2026-09-15T06:00:00+00:00",
 }
