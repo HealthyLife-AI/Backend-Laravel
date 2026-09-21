@@ -63,6 +63,64 @@ OPcache is a PHP-level setting, not something this repo controls — worth
 confirming it's enabled on whatever container Taqat builds, since it's a
 larger win for a PHP API's per-request cost than either command above.
 
+## Scheduler (alerts, log reminders, weekly AI summaries)
+
+**Real production gap, closed by this doc + `app.json`, not previously
+wired anywhere**: `bootstrap/app.php`'s `withSchedule()` registers three
+jobs (`alerts:evaluate` 06:00 daily — S5-01/FR-20, `notifications:send-log-reminders`
+20:00 daily — S5-06/FR-22, `ai-summaries:generate-weekly` Mondays 07:00 —
+S5-04/FR-21), but Laravel's scheduler does nothing on its own — something
+outside the app must call `php artisan schedule:run` every minute. Nothing
+in this repo did that before this doc: no `Procfile`, no `app.json`, no
+CI/CD step. S6-11 ("End-to-end core loop verification") requires a real
+alert to fire in production before pilot onboarding (S6-12) begins, which
+is not verifiable without this wired up.
+
+**Fix, root-caused at the platform level (Taqat is Dokku-based)**:
+`app.json` at the repo root now declares a `cron` entry:
+
+```json
+{
+  "cron": [
+    { "command": "php artisan schedule:run", "schedule": "* * * * *" }
+  ]
+}
+```
+
+This is read by the [`dokku-cron`](https://github.com/dokku/dokku-cron)
+plugin and registered automatically on every deploy — no code change,
+no manual cron editing, survives redeploys. **Requires confirming the
+`dokku-cron` plugin is actually installed on Taqat's Dokku host** —
+ask Taqat, or check after the next deploy with the verification steps
+below.
+
+**Fallback, if `dokku-cron` is not available on Taqat**: a host-level
+crontab entry that shells into the running container (needs SSH access
+to the Dokku host itself, not the app container):
+
+```
+* * * * * dokku run <app-name> php artisan schedule:run >> /dev/null 2>&1
+```
+
+**Verification after any deploy that touches this**:
+
+1. Confirm the 3 jobs are registered app-side: `php artisan schedule:list`
+   — should print all three with correct next-due times.
+2. Confirm the platform actually fires it: `dokku cron:list <app-name>`
+   (if using the plugin) or `crontab -l` on the Dokku host (fallback path)
+   — should show the `schedule:run` entry.
+3. Confirm it actually ran: after the next 06:00, query the `alerts`
+   table for rows with `created_at` around that time for any client with
+   a stale `last_logged_at` — a genuine no_log alert firing is proof the
+   whole chain (cron → schedule:run → alerts:evaluate → DB write) works,
+   not just that it's registered.
+
+No dedicated log output is configured for these jobs (no
+`->appendOutputTo()` on any of the three) — a silent failure shows up as
+"no new alerts/summaries ever appear," not as an error anywhere. Worth
+adding output logging before the pilot (S6-12) if this needs to be
+diagnosable without querying the database directly.
+
 ## Migrations
 
 **Open item, not resolved by this doc**: the exact mechanism that runs

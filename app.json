@@ -1,0 +1,10 @@
+{
+  "name": "HealthyLife AI — Backend",
+  "description": "Laravel API for the HealthyLife AI nutrition platform.",
+  "cron": [
+    {
+      "command": "php artisan schedule:run",
+      "schedule": "* * * * *"
+    }
+  ]
+}
