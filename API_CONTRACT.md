@@ -565,6 +565,7 @@ array of the response shape below.
   "subscriber_id": 3,
   "is_template": false,
   "is_ai_draft": false,
+  "name": null,
   "start_date": "2026-09-15",
   "status": "draft",
   "activated_at": null,
@@ -700,7 +701,18 @@ same response shape as a meal plan.
 
 ### `POST /clients/{id}/meal-plans/{planId}/save-as-template`
 
-No request body. **201 Created** — a new template cloned from `planId`.
+```json
+{ "name": "High-protein weight loss (1800 kcal)" }
+```
+
+`name` is optional (nullable, max 255) — send an empty body to save
+without one. Only a template is ever named; a hand-built client plan's
+`name` is always null, since it has one audience and doesn't need to be
+told apart from another (see the `meal_plans` migration). Worth setting
+in practice: a library of several similarly-sized templates otherwise
+reads as "3 meals · 876 kcal" repeated with nothing to tell them apart.
+
+**201 Created** — a new template cloned from `planId`.
 
 ### `POST /meal-plan-templates/{templateId}/apply/{subscriberId}`
 

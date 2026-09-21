@@ -211,4 +211,39 @@ class MealPlanTest extends TestCase
         $list->assertOk();
         $this->assertCount(1, $list->json('0.meals.0.items'));
     }
+
+    /** A template library of similarly-sized plans is otherwise indistinguishable — see the migration. */
+    public function test_a_template_can_be_saved_with_a_name(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        $food = Food::factory()->create();
+        $auth = $this->bearerFor($nutritionist);
+
+        $plan = $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans", $this->payload($food->id, $food->id), $auth);
+
+        $template = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/{$plan->json('id')}/save-as-template",
+            ['name' => 'High-protein weight loss (1800 kcal)'],
+            $auth
+        );
+
+        $template->assertCreated()->assertJsonPath('name', 'High-protein weight loss (1800 kcal)');
+    }
+
+    /** A hand-built client plan is never named — it has one audience already. */
+    public function test_a_regular_plan_has_no_name(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        $food = Food::factory()->create();
+
+        $plan = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans",
+            $this->payload($food->id, $food->id),
+            $this->bearerFor($nutritionist)
+        );
+
+        $plan->assertCreated()->assertJsonPath('name', null);
+    }
 }

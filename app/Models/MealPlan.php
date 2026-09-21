@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Auth;
  * model's isolation check is NOT the same `belongsToCaller()` shape as
  * `Subscriber`'s.
  */
-#[Fillable(['subscriber_id', 'created_by', 'is_template', 'is_ai_draft', 'start_date', 'status', 'activated_at'])]
+#[Fillable(['subscriber_id', 'created_by', 'is_template', 'is_ai_draft', 'name', 'start_date', 'status', 'activated_at'])]
 class MealPlan extends Model
 {
     use HasFactory;

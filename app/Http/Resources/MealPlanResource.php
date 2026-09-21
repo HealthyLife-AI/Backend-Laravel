@@ -22,6 +22,10 @@ class MealPlanResource extends JsonResource
             'subscriber_id' => $this->subscriber_id,
             'is_template' => $this->is_template,
             'is_ai_draft' => $this->is_ai_draft,
+            // Only a template is ever given one deliberately — see the
+            // migration. Null on a hand-built client plan, which has one
+            // audience and doesn't need to be told apart from another.
+            'name' => $this->name,
             'start_date' => $this->start_date?->toDateString(),
             'status' => $this->status,
             // When the client could first actually follow this plan —

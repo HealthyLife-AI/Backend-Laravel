@@ -182,14 +182,15 @@ class MealPlanService
      * live link, so editing the original client's plan later never
      * changes the template.
      */
-    public function saveAsTemplate(MealPlan $plan, User $creator): MealPlan
+    public function saveAsTemplate(MealPlan $plan, User $creator, ?string $name = null): MealPlan
     {
-        return DB::transaction(function () use ($plan, $creator) {
+        return DB::transaction(function () use ($plan, $creator, $name) {
             $template = MealPlan::create([
                 'subscriber_id' => null,
                 'created_by' => $creator->id,
                 'is_template' => true,
                 'is_ai_draft' => false,
+                'name' => $name,
                 'start_date' => null,
                 'status' => 'draft',
             ]);

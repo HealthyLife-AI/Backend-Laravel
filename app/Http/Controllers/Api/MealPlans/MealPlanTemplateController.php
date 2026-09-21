@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\MealPlans;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\MealPlans\SaveAsTemplateRequest;
 use App\Http\Resources\MealPlanResource;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
@@ -35,12 +36,12 @@ class MealPlanTemplateController extends Controller
         return MealPlanResource::collection($templates);
     }
 
-    public function store(Subscriber $subscriber, MealPlan $mealPlan): MealPlanResource
+    public function store(Subscriber $subscriber, MealPlan $mealPlan, SaveAsTemplateRequest $request): MealPlanResource
     {
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
-        $template = $this->plans->saveAsTemplate($mealPlan, request()->user());
+        $template = $this->plans->saveAsTemplate($mealPlan, request()->user(), $request->validated('name'));
 
         return new MealPlanResource($template->load(self::EAGER_LOAD));
     }

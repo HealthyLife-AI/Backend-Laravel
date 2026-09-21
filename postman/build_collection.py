@@ -307,13 +307,19 @@ MEAL_OBJECT = {
 }
 
 MEAL_PLAN_OBJECT = {
-    "id": 8, "subscriber_id": 3, "is_template": False, "is_ai_draft": False,
+    "id": 8, "subscriber_id": 3, "is_template": False, "is_ai_draft": False, "name": None,
     "start_date": "2026-09-15", "status": "draft", "activated_at": None, "meals": [MEAL_OBJECT],
     "summary_by_day": {"0": {"calories": 400.0, "protein_g": 50.0, "carbs_g": 0.0, "fat_g": 16.0}},
     "created_at": "2026-09-09T10:00:00+00:00", "updated_at": "2026-09-09T10:00:00+00:00",
 }
 
-MEAL_PLAN_TEMPLATE_OBJECT = {**MEAL_PLAN_OBJECT, "id": 30, "subscriber_id": None, "is_template": True}
+# Only a template is ever given a name deliberately (see the meal_plans
+# migration) — a hand-built client plan has one audience and doesn't need
+# to be told apart from another, so MEAL_PLAN_OBJECT's own `name` stays null.
+MEAL_PLAN_TEMPLATE_OBJECT = {
+    **MEAL_PLAN_OBJECT, "id": 30, "subscriber_id": None, "is_template": True,
+    "name": "High-protein weight loss (1800 kcal)",
+}
 
 MEAL_PLAN_AI_DRAFT_OBJECT = {**MEAL_PLAN_OBJECT, "id": 31, "is_ai_draft": True}
 
@@ -1000,10 +1006,12 @@ save_as_template_req = make_request(
     name="Save As Template",
     method="POST",
     path="clients/{{subscriber_id}}/meal-plans/{{meal_plan_id}}/save-as-template",
-    description="""S3-03 / FR-15. Clones `{{meal_plan_id}}`'s meals/items into a new template the nutritionist owns directly (`is_template: true`, no `subscriber_id`) — a **snapshot**: editing the original client's plan afterward never changes the template. No request body.
+    description="""S3-03 / FR-15. Clones `{{meal_plan_id}}`'s meals/items into a new template the nutritionist owns directly (`is_template: true`, no `subscriber_id`) — a **snapshot**: editing the original client's plan afterward never changes the template.
+
+`name` is optional — a template library of several similarly-sized plans is otherwise indistinguishable ("3 meals · 876 kcal" twice over), so worth setting, but nothing here requires it. Only a template is ever named; a hand-built client plan has one audience and doesn't need one (see the `meal_plans` migration).
 
 Saves the new template's `id` as `{{meal_plan_template_id}}`.""",
-    body=None,
+    body={"name": "High-protein weight loss (1800 kcal)"},
     tests=SAVE_TEMPLATE_ID,
     examples=[
         ("201 Created", "Created", 201, MEAL_PLAN_TEMPLATE_OBJECT, JSON_RESP_HEADER),
