@@ -23,6 +23,7 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'role' => $this->getRoleNames()->first(),
             'nutritionist_id' => $this->nutritionist_id,
+            'avatar_url' => $this->avatar_url,
             // The mobile client app needs its own subscriber id to call
             // clients/{subscriber}/adherence and .../progress (both held
             // by `progress.view`, which client and nutritionist share —

@@ -39,6 +39,21 @@ Route::prefix('v1')->name('api.')->group(function () {
 
         Route::post('logout', [AuthController::class, 'logout'])->name('logout');
 
+        // "Continue with Google": the browser hands over a Google access
+        // token, the API verifies it with Google (GoogleAuthService).
+        Route::post('google', [AuthController::class, 'google'])
+            ->middleware('throttle:10,1')
+            ->name('google');
+
+        // Forgot / reset password. Forgot always answers 200 so the
+        // endpoint can't be used to probe which e-mails have accounts.
+        Route::post('forgot-password', [AuthController::class, 'forgotPassword'])
+            ->middleware('throttle:5,1')
+            ->name('forgot-password');
+        Route::post('reset-password', [AuthController::class, 'resetPassword'])
+            ->middleware('throttle:10,1')
+            ->name('reset-password');
+
         Route::get('me', [AuthController::class, 'me'])
             ->middleware('jwt')
             ->name('me');
