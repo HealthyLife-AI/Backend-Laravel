@@ -41,6 +41,10 @@
              suspenders for a local .env that sets the SUMMARY vars directly. -->
         <env name="OPENAI_SUMMARY_BASE_URL" value=""/>
         <env name="OPENAI_SUMMARY_API_KEY" value=""/>
+        <!-- Self-triggered jobs off by default: otherwise whichever request
+             a test makes first would run every overdue job. Tests covering
+             it opt in with config(['scheduling.self_trigger' => true]). -->
+        <env name="SCHEDULE_SELF_TRIGGER" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

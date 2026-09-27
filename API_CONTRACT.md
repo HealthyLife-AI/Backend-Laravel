@@ -314,9 +314,19 @@ nutritionists can each have a client with the same phone number.
 
 `invite_token` is returned **once** — it's not retrievable again (mirrors the
 refresh-token pattern: only its hash is stored). Build the shareable link
-yourself, e.g. `${FRONTEND_URL}/activate/${invite_token}` for web, or a mobile
-deep link — the API doesn't hardcode a frontend URL scheme since more than one
+yourself — the API doesn't hardcode a frontend URL scheme since more than one
 frontend consumes it. Default validity 7 days (`INVITE_TOKEN_TTL_DAYS`).
+
+As of 2026-09-23, activation is app-only: the Next.js dashboard builds
+`healthylifeai://activate/${invite_token}` (a custom URL scheme, not a web
+route — there is no `/activate` page in the Next.js app). This exact scheme
+string must match what the Flutter client app registers
+(`CFBundleURLSchemes` on iOS, an intent-filter on Android). Known gap: a
+custom scheme has no fallback — if the client hasn't installed the app yet,
+tapping the link does nothing. Accepted for now; an upgrade path exists via
+Universal Links / App Links (a real `https://` URL backed by
+`apple-app-site-association` / `assetlinks.json` on the domain, still free,
+no third-party service) if that gap needs closing later.
 
 **422** — validation (duplicate phone for this nutritionist, invalid `goal`, etc).
 

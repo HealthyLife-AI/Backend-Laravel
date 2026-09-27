@@ -9,6 +9,7 @@ use App\Services\Adherence\AdherenceService;
 use App\Services\Ai\OpenAiCompatibleClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 
 /**
  * S5-03/S5-04/S5-05 / FR-21: the natural-language weekly summary.
@@ -41,6 +42,15 @@ class WeeklySummaryService
     private const MIN_SUMMARY_LENGTH = 20;
 
     private const MAX_SUMMARY_LENGTH = 700;
+
+    /**
+     * Seconds to wait before each retry after a 429. The weekly job asks
+     * for one summary per active client back to back, which trips the
+     * provider's per-minute limit on a roster of a dozen or more (seen
+     * live: 7 of 19 fell back to the template). This only ever runs in the
+     * background job, so waiting costs nobody anything.
+     */
+    private const RATE_LIMIT_BACKOFF_SECONDS = [15, 30, 60];
 
     public function __construct(
         private readonly AdherenceService $adherence,
@@ -123,15 +133,27 @@ class WeeklySummaryService
     /** @param array<string, mixed> $metrics */
     private function tryGenerateWithLlm(array $metrics): ?string
     {
-        try {
-            $response = $this->llm->chatJson([
-                ['role' => 'system', 'content' => $this->systemPrompt()],
-                ['role' => 'user', 'content' => json_encode($metrics, JSON_UNESCAPED_UNICODE)],
-            ]);
-        } catch (AiGenerationException $e) {
-            Log::warning('Weekly summary: LLM call failed, falling back to templated summary.', ['error' => $e->getMessage()]);
+        $messages = [
+            ['role' => 'system', 'content' => $this->systemPrompt()],
+            ['role' => 'user', 'content' => json_encode($metrics, JSON_UNESCAPED_UNICODE)],
+        ];
 
-            return null;
+        $attempt = 0;
+        while (true) {
+            try {
+                $response = $this->llm->chatJson($messages);
+                break;
+            } catch (AiGenerationException $e) {
+                if ($e->getCode() === 429 && $attempt < count(self::RATE_LIMIT_BACKOFF_SECONDS)) {
+                    Sleep::for(self::RATE_LIMIT_BACKOFF_SECONDS[$attempt++])->seconds();
+
+                    continue;
+                }
+
+                Log::warning('Weekly summary: LLM call failed, falling back to templated summary.', ['error' => $e->getMessage()]);
+
+                return null;
+            }
         }
 
         $summary = $response['summary'] ?? null;

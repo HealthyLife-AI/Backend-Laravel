@@ -4,6 +4,7 @@ namespace App\Console\Commands\Alerts;
 
 use App\Models\Subscriber;
 use App\Services\Alerts\AlertEvaluationService;
+use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 
 /**
@@ -44,6 +45,8 @@ class EvaluateAlerts extends Command
                 $this->error("Alert evaluation failed for subscriber {$subscriber->id}: {$e->getMessage()}");
             }
         });
+
+        app(SelfScheduler::class)->markRan('alerts');
 
         $this->info(sprintf('Evaluated %d active client(s), %d failure(s).', $total, $failures));
 

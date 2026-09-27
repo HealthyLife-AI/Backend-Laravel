@@ -2,8 +2,13 @@
 
 namespace App\Providers;
 
+use App\Models\BodyCompositionReading;
+use App\Models\HealthProfile;
+use App\Models\MealLog;
+use App\Models\Subscriber;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\AiSummaries\WeeklySummaryService;
+use App\Services\Alerts\AlertEvaluationService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -36,6 +41,30 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Re-evaluate a client's alerts right after new data about them is
+        // saved, instead of waiting for tomorrow's 06:00 run: logging a
+        // meal clears an open "no log" alert, a new weight reading can
+        // raise a milestone, a changed calorie target re-checks the streak.
+        // Deferred until after the response, and keyed per client so
+        // several saves in one request evaluate once.
+        foreach ([MealLog::class, BodyCompositionReading::class, HealthProfile::class] as $model) {
+            $model::saved(function ($record): void {
+                if (! config('scheduling.self_trigger')) {
+                    return;
+                }
+
+                $subscriberId = $record->subscriber_id;
+
+                defer(function () use ($subscriberId): void {
+                    $subscriber = Subscriber::withoutGlobalScopes()->find($subscriberId);
+
+                    if ($subscriber?->status === 'active') {
+                        app(AlertEvaluationService::class)->evaluate($subscriber);
+                    }
+                }, "alerts:evaluate:{$subscriberId}");
+            });
+        }
+
         // API is REST/JSON only (no Blade/Inertia consumer of resources
         // that wants the "data" envelope). Without this, a resource
         // returned directly from a route (e.g. AuthController::me) comes

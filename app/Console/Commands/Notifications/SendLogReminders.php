@@ -4,6 +4,7 @@ namespace App\Console\Commands\Notifications;
 
 use App\Models\Subscriber;
 use App\Services\Notifications\FcmPushService;
+use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 
 /**
@@ -28,6 +29,10 @@ class SendLogReminders extends Command
 
     public function handle(FcmPushService $fcm): int
     {
+        // Recorded up front: a reminder must never be pushed twice for the
+        // same evening, even if this run stops partway.
+        app(SelfScheduler::class)->markRan('reminders');
+
         if (! $fcm->isConfigured()) {
             $this->info('Firebase is not configured — skipping (rule-based fallback: no push, no error).');
 

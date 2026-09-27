@@ -14,6 +14,7 @@ use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 /**
@@ -130,6 +131,37 @@ class WeeklySummaryServiceTest extends TestCase
 
         $this->assertTrue($summary->is_fallback);
         $this->assertNotEmpty($summary->summary_text);
+    }
+
+    public function test_retries_after_a_rate_limit_instead_of_falling_back(): void
+    {
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
+        $subscriber = $this->makeSubscriber();
+        Sleep::fake();
+
+        Http::fakeSequence()
+            ->push(null, 429)
+            ->push(null, 429)
+            ->push($this->chatCompletion(['summary' => 'التزام جيد هذا الأسبوع مع تسجيل منتظم للوجبات.']));
+
+        $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $this->weekStart());
+
+        $this->assertFalse($summary->is_fallback);
+        Sleep::assertSleptTimes(2);
+    }
+
+    public function test_falls_back_once_rate_limit_retries_are_exhausted(): void
+    {
+        config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
+        $subscriber = $this->makeSubscriber();
+        Sleep::fake();
+
+        Http::fake(['*' => Http::response(null, 429)]);
+
+        $summary = app(WeeklySummaryService::class)->generateForWeek($subscriber, $this->weekStart());
+
+        $this->assertTrue($summary->is_fallback);
+        Sleep::assertSleptTimes(3);
     }
 
     /** Never fails outright — a bad LLM response must still leave the nutritionist with SOMETHING, per S5-05. */

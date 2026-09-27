@@ -36,4 +36,23 @@ class GenerateWeeklySummariesCommandTest extends TestCase
         $this->artisan('ai-summaries:generate-weekly')->assertSuccessful();
         $this->assertDatabaseCount('ai_summaries', 0);
     }
+
+    public function test_regenerate_non_arabic_rewrites_only_english_summaries(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id]);
+
+        $english = $subscriber->aiSummaries()->create([
+            'week_start' => '2026-09-07', 'summary_text' => 'Good adherence this week.', 'is_fallback' => false, 'generated_at' => now(),
+        ]);
+        $arabic = $subscriber->aiSummaries()->create([
+            'week_start' => '2026-09-14', 'summary_text' => 'التزام جيد هذا الأسبوع.', 'is_fallback' => false, 'generated_at' => now(),
+        ]);
+
+        $this->artisan('ai-summaries:generate-weekly', ['--regenerate-non-arabic' => true])->assertSuccessful();
+
+        $this->assertSame(2, $subscriber->aiSummaries()->count());
+        $this->assertMatchesRegularExpression('/\p{Arabic}/u', $english->fresh()->summary_text);
+        $this->assertSame('التزام جيد هذا الأسبوع.', $arabic->fresh()->summary_text);
+    }
 }

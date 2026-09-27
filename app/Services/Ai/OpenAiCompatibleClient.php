@@ -69,7 +69,8 @@ class OpenAiCompatibleClient
         }
 
         if (! $response->successful()) {
-            throw new AiGenerationException("AI provider returned HTTP {$response->status()}.");
+            // HTTP status as the exception code, so a caller can tell a rate limit (429) from a hard failure.
+            throw new AiGenerationException("AI provider returned HTTP {$response->status()}.", $response->status());
         }
 
         $content = $response->json('choices.0.message.content');

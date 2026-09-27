@@ -65,6 +65,24 @@ larger win for a PHP API's per-request cost than either command above.
 
 ## Scheduler (alerts, log reminders, weekly AI summaries)
 
+**No cron needed anymore (2026-09-27).** The three jobs now also run with
+no cron at all: every request that reaches the app checks (at most once a
+minute) whether a job's slot has passed without a run, and if so runs it
+*after* the response is sent — `RunOverdueScheduledTasks` middleware →
+`App\Services\Scheduling\SelfScheduler`. Commands record their own runs,
+so cron and this path never repeat each other. Catch-up rules: alerts and
+weekly summaries run late rather than never (both idempotent); reminders
+only within 3 hours of 20:00, otherwise that evening is skipped. Saving a
+meal log, body-composition reading or health profile also re-evaluates
+that client's alerts immediately. Times are read in `SCHEDULE_TIMEZONE`
+(default `Asia/Riyadh`; the app itself stays UTC). Disable with
+`SCHEDULE_SELF_TRIGGER=false`.
+
+Limit: jobs only catch up when *something* hits the app. With zero
+traffic for days, nothing runs until the next request — the cron below is
+still the way to get exact, traffic-independent timing.
+
+
 **Real production gap, closed by this doc + `app.json`, not previously
 wired anywhere**: `bootstrap/app.php`'s `withSchedule()` registers three
 jobs (`alerts:evaluate` 06:00 daily — S5-01/FR-20, `notifications:send-log-reminders`

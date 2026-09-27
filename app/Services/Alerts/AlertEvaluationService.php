@@ -17,6 +17,13 @@ use Illuminate\Support\Facades\DB;
  * a second open alert for the same still-true condition. `milestone` is
  * a one-shot event with no "still true" state to resolve; it is instead
  * debounced so a sustained trend doesn't re-fire on every run.
+ *
+ * Messages are stored as fixed English sentences (a scheduled job has no
+ * request locale). The dashboard re-renders them in the viewer's
+ * language by matching these exact `sprintf` templates — see
+ * `Frontend/.../src/lib/alerts/message.ts`. Changing a template's wording
+ * here means updating its pattern there too, or that alert type falls
+ * back to showing this English text.
  */
 class AlertEvaluationService
 {
