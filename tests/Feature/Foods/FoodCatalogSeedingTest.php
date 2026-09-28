@@ -5,8 +5,10 @@ namespace Tests\Feature\Foods;
 use App\Models\Food;
 use App\Models\User;
 use Database\Seeders\ArabicFoodSeeder;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\AuthenticatesForApi;
 use Tests\TestCase;
 
 /**
@@ -22,7 +24,7 @@ use Tests\TestCase;
  */
 class FoodCatalogSeedingTest extends TestCase
 {
-    use RefreshDatabase;
+    use AuthenticatesForApi, RefreshDatabase;
 
     private function runDedupeMigration(): void
     {
@@ -88,15 +90,59 @@ class FoodCatalogSeedingTest extends TestCase
         $this->assertSame(1, Food::where('name_en', 'Basmati Rice, Cooked')->count());
     }
 
-    public function test_reseeding_corrects_a_changed_value_in_place(): void
+    public function test_reseeding_keeps_an_admin_edit_to_a_dish(): void
     {
         $this->seed(ArabicFoodSeeder::class);
-        Food::where('name_en', 'Hummus')->update(['calories_per_100g' => 1]);
+        Food::where('seed_key', 'hummus')->sole()->update(['calories_per_100g' => 170, 'name_ar' => 'حمص بالطحينة']);
 
         $this->seed(ArabicFoodSeeder::class);
 
-        $hummus = Food::where('name_en', 'Hummus')->sole();
-        $this->assertSame('166.0', $hummus->calories_per_100g);
+        $hummus = Food::where('seed_key', 'hummus')->sole();
+        $this->assertSame('170.0', $hummus->calories_per_100g);
+        $this->assertSame('حمص بالطحينة', $hummus->name_ar);
+    }
+
+    public function test_a_dish_the_admin_deleted_is_not_recreated(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $this->seed(ArabicFoodSeeder::class);
+        $hummus = Food::where('seed_key', 'hummus')->sole();
+        $admin = tap(User::factory()->create())->assignRole('admin');
+
+        $this->deleteJson("/api/v1/admin/foods/{$hummus->id}", [], $this->bearerFor($admin))->assertNoContent();
+        $this->seed(ArabicFoodSeeder::class);
+
+        $this->assertSame(1, Food::where('name_en', 'Hummus')->count());
+        $this->assertSame('rejected', $hummus->fresh()->status);
+        $this->assertSame(0, Food::approved()->where('name_en', 'Hummus')->count());
+    }
+
+    public function test_a_renamed_dish_is_not_duplicated(): void
+    {
+        $this->seed(ArabicFoodSeeder::class);
+        $count = Food::count();
+        Food::where('seed_key', 'hummus')->sole()->update(['name_en' => 'Hummus with Tahini', 'name_ar' => 'حمص مع طحينة']);
+
+        $this->seed(ArabicFoodSeeder::class);
+
+        $this->assertSame($count, Food::count());
+        $this->assertSame(0, Food::where('name_en', 'Hummus')->count());
+    }
+
+    public function test_the_seed_key_migration_backfills_existing_dishes(): void
+    {
+        $existing = $this->makeAdminFood('Hummus', 166);
+        $other = $this->makeAdminFood('Something the admin added');
+        DB::table('foods')->update(['seed_key' => null]);
+
+        $migration = require database_path('migrations/2026_09_29_080000_add_seed_key_to_foods_table.php');
+        $migration->down();
+        $migration->up();
+        $this->seed(ArabicFoodSeeder::class);
+
+        $this->assertSame('hummus', $existing->fresh()->seed_key);
+        $this->assertNull($other->fresh()->seed_key);
+        $this->assertSame(1, Food::where('name_en', 'Hummus')->count());
     }
 
     public function test_the_dedupe_migration_merges_duplicate_admin_dishes(): void

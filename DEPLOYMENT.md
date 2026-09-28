@@ -166,8 +166,10 @@ seeding as a **manual step** until a Taqat build log shows otherwise. No
 
 1. `RolesAndPermissionsSeeder`: roles and permissions (idempotent).
 2. `ArabicFoodSeeder`: 58 curated Arabic dishes, `source = admin`,
-   matched on `name_en` among admin rows. It is idempotent, and a re-run
-   resets those 58 rows to the seeder's values.
+   matched on a stable `seed_key`. It is insert-only: it adds a dish only
+   when no row has its key, so admin edits and renames survive. A dish
+   that the admin deletes is kept as a hidden `status = rejected` row, so
+   it does not come back.
 3. `UsdaFoodSeeder`: the full USDA SR Legacy catalog from the committed
    `database/data/usda_sr_legacy_foods.csv` (7,793 foods, ~690 KB), plus
    Arabic names for 144 of them from `database/data/usda_arabic_names.csv`.

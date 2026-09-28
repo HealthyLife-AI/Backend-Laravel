@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'name_en',
     'name_ar',
     'usda_fdc_id',
+    'seed_key',
     'calories_per_100g',
     'protein_g_per_100g',
     'carbs_g_per_100g',
@@ -53,6 +54,12 @@ class Food extends Model
     public function submitter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    /** Shipped by a seeder (USDA catalog or a curated dish), which re-runs on every `db:seed`. */
+    public function isSeeded(): bool
+    {
+        return $this->usda_fdc_id !== null || $this->seed_key !== null;
     }
 
     /** Only what's publicly searchable — BR-5. */

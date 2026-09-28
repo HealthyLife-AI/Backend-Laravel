@@ -79,10 +79,11 @@ class AdminFoodController extends Controller
      * at), so a food already in use is refused with a clear message
      * instead of a database error — whatever its source.
      *
-     * A USDA food isn't removed but hidden (`status = rejected`): the row
-     * keeps its `usda_fdc_id`, which is what makes UsdaFoodSeeder skip it,
+     * A seeded food (USDA, or one of ArabicFoodSeeder's curated dishes)
+     * isn't removed but hidden (`status = rejected`): the row keeps its
+     * `usda_fdc_id` / `seed_key`, which is what makes the seeders skip it,
      * so the next seed run doesn't bring it back. Rejected foods are out
-     * of search and refused in plans and logs (BR-5). Other sources are
+     * of search and refused in plans and logs (BR-5). Everything else is
      * deleted outright.
      */
     public function destroy(Food $food): JsonResponse
@@ -97,7 +98,7 @@ class AdminFoodController extends Controller
             ], 409);
         }
 
-        if ($food->source === 'usda') {
+        if ($food->isSeeded()) {
             $food->update(['status' => 'rejected']);
         } else {
             $food->delete();
