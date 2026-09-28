@@ -8,6 +8,7 @@ use App\Http\Requests\Foods\SubmitFoodRequest;
 use App\Http\Resources\FoodResource;
 use App\Models\Food;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -37,6 +38,17 @@ class FoodController extends Controller
         ]);
 
         return (new FoodResource($food))->response()->setStatusCode(201);
+    }
+
+    /** The caller's own submissions, newest first, with their review status. */
+    public function mine(Request $request): AnonymousResourceCollection
+    {
+        $foods = Food::query()
+            ->where('submitted_by', $request->user()->id)
+            ->latest()
+            ->paginate(20);
+
+        return FoodResource::collection($foods);
     }
 
     /** Admin review queue — nothing else surfaces a pending submission for review otherwise. */

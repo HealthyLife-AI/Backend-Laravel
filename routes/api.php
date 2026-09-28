@@ -176,6 +176,7 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     Route::middleware(['jwt', 'permission:foods.suggest'])->group(function () {
         Route::post('foods', [FoodController::class, 'store'])->name('foods.store');
+        Route::get('foods/mine', [FoodController::class, 'mine'])->name('foods.mine');
     });
 
     Route::middleware(['jwt', 'permission:foods.approve'])->group(function () {
