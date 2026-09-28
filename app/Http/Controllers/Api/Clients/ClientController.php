@@ -125,6 +125,22 @@ class ClientController extends Controller
         return new SubscriberResource($subscriber->load('user'));
     }
 
+    /**
+     * Removes the client entirely: their login account, and through the
+     * `subscribers.user_id` cascade everything recorded about them —
+     * health profile, readings, plans, logs, alerts, summaries, invites.
+     * Irreversible by design (the dashboard confirms first); another
+     * nutritionist's client is a 404, same as every other client route.
+     */
+    public function destroy(Subscriber $subscriber): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+
+        DB::transaction(fn () => $subscriber->user()->first()?->delete() ?? $subscriber->delete());
+
+        return response()->json(null, 204);
+    }
+
     private function nextClientCode(User $nutritionist): string
     {
         $sequence = $nutritionist->subscribers()->count() + 101;

@@ -56,6 +56,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('clients', [ClientController::class, 'index'])->name('clients.index');
         Route::post('clients', [ClientController::class, 'store'])->name('clients.store');
         Route::get('clients/{subscriber}', [ClientController::class, 'show'])->name('clients.show');
+        Route::delete('clients/{subscriber}', [ClientController::class, 'destroy'])->name('clients.destroy');
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
     });
