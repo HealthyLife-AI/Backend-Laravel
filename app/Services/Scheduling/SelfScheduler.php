@@ -44,6 +44,26 @@ class SelfScheduler
         Cache::forever($this->key($task), CarbonImmutable::now()->toIso8601String());
     }
 
+    /**
+     * What a task's last run did (counts), kept next to its run marker in
+     * the shared cache store. Written from wherever the command ran (cron
+     * container, request, console), so `GET /system/scheduler-status` and
+     * the admin overview can prove the morning job ran without anyone
+     * reading a container's log file.
+     *
+     * @param  array<string, int>  $counts
+     */
+    public function recordResult(string $task, array $counts): void
+    {
+        Cache::forever($this->key($task).':result', ['ran_at' => CarbonImmutable::now()->toIso8601String()] + $counts);
+    }
+
+    /** @return array<string, int|string>|null */
+    public function lastResult(string $task): ?array
+    {
+        return Cache::get($this->key($task).':result');
+    }
+
     public function lastRan(string $task): ?CarbonImmutable
     {
         $value = Cache::get($this->key($task));

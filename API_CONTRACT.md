@@ -313,9 +313,10 @@ internal model name, the API and UI both say "client"):
   ([`POST /clients/{id}/archive`](#post-clientsidarchive)), `null` while the
   patient is followed up.
 - `adherence_status`: `stable` / `declining` / `stopped_logging` / `null`.
-  Written since Sprint 4 by the adherence calculation. `null` means it has
-  not been computed yet for that client (no logs since the S4-03 rework) —
-  never fabricated to look populated. It describes DIRECTION, not level
+  Stored, not computed per request: rewritten on every meal log and for
+  every active client by the 06:00 daily run (see "Client status fields"),
+  so it matches that morning's alerts. `null` means it has never been
+  computed for that client — never fabricated to look populated. It describes DIRECTION, not level
   (BR-14); see "Status is direction, not level".
 
 ### `POST /clients`
@@ -982,7 +983,6 @@ matching `FcmPushService`'s own precedence.
 
 Never returns the JSON/key content, and makes no call to Firebase.
 
----
 
 ## Meal & Weight Logging (Sprint 4)
 
@@ -1256,10 +1256,22 @@ dashboard and client list have read since Sprint 2 with nothing writing
 them (SRS §2.4.2):
 
 - `last_logged_at` — stamped on every meal log.
-- `adherence_status` — recomputed on every meal log as `stable`,
-  `declining` or `stopped_logging`. See "Status is direction, not level"
-  above for the rule; the short version is that it compares this period's
-  rate against the preceding one rather than against a threshold.
+- `adherence_status` — recomputed as `stable`, `declining` or
+  `stopped_logging` on every meal log, **and** for every active client
+  (activated, not archived) once a day by the 06:00 run of
+  `alerts:evaluate`, just before that run evaluates the alerts. Without the
+  daily run a client who stopped logging kept the status of their last log,
+  so the list read "stable" while the no-log alert fired. See "Status is
+  direction, not level" above for the rule; the short version is that it
+  compares this period's rate against the preceding one rather than against
+  a threshold.
+
+Stored versus live: the client list badge, its `adherence` filter and the
+`GET /dashboard/overview` counts read this stored column (as of the last
+meal log or 06:00 run). `GET /clients/{id}/adherence`, the `adherence` block
+of `/progress` and the weekly AI summary compute the status live from the
+logs at the time of the request, so during the day they can already show a
+change the stored column picks up the next morning.
 
 
 ---
