@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(RolesAndPermissionsSeeder::class);
         $this->call(ArabicFoodSeeder::class);
+        $this->call(UsdaFoodSeeder::class);
 
         // Local/demo data only. Not `User::factory()->create()`: a
         // production `composer install --no-dev` (Taqat, or any host)

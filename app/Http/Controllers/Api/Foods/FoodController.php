@@ -21,7 +21,6 @@ class FoodController extends Controller
         $foods = Food::query()
             ->approved()
             ->search(trim($request->string('q')))
-            ->orderBy('name_en')
             ->paginate($request->integer('per_page', 20));
 
         return FoodResource::collection($foods);

@@ -53,14 +53,28 @@ class Food extends Model
     }
 
     /**
-     * Prefix match on either language (see migration comment for why not
-     * FULLTEXT). `$term` should already be trimmed by the caller.
+     * Matches anywhere in either name, not just the start: with the full
+     * USDA catalog loaded, "دجاج" must find "صدر دجاج مشوي" and "chicken"
+     * must find "Soup, chicken noodle". Plain LIKE scans are fine at this
+     * table's size (~8k rows). `$term` should already be trimmed.
+     *
+     * Ordered by relevance: names that START with the term, then ones
+     * where it starts a word, then anywhere; foods with an Arabic name
+     * (the curated local list) ahead of English-only USDA rows; shorter
+     * (more generic) names first — "Rice, white, cooked" before a long
+     * branded variant.
      */
     public function scopeSearch(Builder $query, string $term): void
     {
-        $query->where(function (Builder $q) use ($term) {
-            $q->where('name_en', 'like', "{$term}%")
-                ->orWhere('name_ar', 'like', "{$term}%");
-        });
+        $escaped = addcslashes($term, '%_\\');
+
+        $query->where(function (Builder $q) use ($escaped) {
+            $q->where('name_en', 'like', "%{$escaped}%")
+                ->orWhere('name_ar', 'like', "%{$escaped}%");
+        })->orderByRaw(
+            'CASE WHEN name_ar LIKE ? OR name_en LIKE ? THEN 0 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 1 ELSE 2 END',
+            ["{$escaped}%", "{$escaped}%", "% {$escaped}%", "% {$escaped}%"],
+        )->orderByRaw('CASE WHEN name_ar IS NULL THEN 1 ELSE 0 END')
+            ->orderByRaw('LENGTH(COALESCE(name_ar, name_en))');
     }
 }
