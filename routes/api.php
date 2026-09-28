@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AdminFoodController;
+use App\Http\Controllers\Api\Admin\AdminNutritionistController;
+use App\Http\Controllers\Api\Admin\AdminOverviewController;
 use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Auth\AuthController;
@@ -179,6 +182,21 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('foods/pending', [FoodController::class, 'pending'])->name('foods.pending');
         Route::post('foods/{food}/approve', [FoodController::class, 'approve'])->name('foods.approve');
         Route::post('foods/{food}/reject', [FoodController::class, 'reject'])->name('foods.reject');
+    });
+
+    // Admin panel: platform overview, the full food catalog, nutritionist accounts.
+    Route::prefix('admin')->name('admin.')->group(function () {
+        Route::middleware(['jwt', 'permission:foods.manage'])->group(function () {
+            Route::get('foods', [AdminFoodController::class, 'index'])->name('foods.index');
+            Route::post('foods', [AdminFoodController::class, 'store'])->name('foods.store');
+            Route::put('foods/{food}', [AdminFoodController::class, 'update'])->name('foods.update');
+            Route::delete('foods/{food}', [AdminFoodController::class, 'destroy'])->name('foods.destroy');
+        });
+
+        Route::middleware(['jwt', 'permission:users.manage'])->group(function () {
+            Route::get('overview', AdminOverviewController::class)->name('overview');
+            Route::get('nutritionists', [AdminNutritionistController::class, 'index'])->name('nutritionists.index');
+        });
     });
 
 });

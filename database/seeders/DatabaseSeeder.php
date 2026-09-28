@@ -17,6 +17,21 @@ class DatabaseSeeder extends Seeder
         $this->call(ArabicFoodSeeder::class);
         $this->call(UsdaFoodSeeder::class);
 
+        // Admin account for the admin panel, created only when both are set
+        // in the environment (e.g. on Taqat) — no default credentials are
+        // ever shipped. Re-running updates nothing but the role.
+        if (filled(env('ADMIN_EMAIL')) && filled(env('ADMIN_PASSWORD'))) {
+            $admin = User::firstOrCreate(
+                ['email' => env('ADMIN_EMAIL')],
+                [
+                    'name' => env('ADMIN_NAME', 'HealthyLife Admin'),
+                    'password' => Hash::make(env('ADMIN_PASSWORD')),
+                    'email_verified_at' => now(),
+                ]
+            );
+            $admin->assignRole('admin');
+        }
+
         // Local/demo data only. Not `User::factory()->create()`: a
         // production `composer install --no-dev` (Taqat, or any host)
         // drops `fakerphp/faker` (require-dev only), and the factory's
