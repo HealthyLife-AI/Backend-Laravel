@@ -166,6 +166,28 @@ class DailyAdherenceRefreshTest extends TestCase
         $this->assertSame(1, app(SelfScheduler::class)->lastResult('alerts')['failures']);
     }
 
+    public function test_the_run_is_visible_through_scheduler_status_and_the_admin_overview(): void
+    {
+        $this->patient(['last_logged_at' => now()->subDays(4)]);
+        $auth = $this->bearerFor($this->nutritionist);
+
+        $this->getJson('/api/v1/system/scheduler-status', $auth)->assertOk()->assertJsonPath('jobs.alerts.last_result', null);
+
+        $this->artisan('alerts:evaluate')->assertSuccessful();
+
+        $this->getJson('/api/v1/system/scheduler-status', $auth)
+            ->assertOk()
+            ->assertJsonPath('jobs.alerts.overdue', false)
+            ->assertJsonPath('jobs.alerts.last_result.patients', 1)
+            ->assertJsonPath('jobs.alerts.last_result.status_changes', 1)
+            ->assertJsonPath('jobs.alerts.last_result.stopped_logging', 1);
+
+        $admin = tap(User::factory()->create())->assignRole('admin');
+        $this->getJson('/api/v1/admin/overview', $this->bearerFor($admin))
+            ->assertOk()
+            ->assertJsonPath('last_daily_run.patients', 1);
+    }
+
     public function test_resuming_follow_up_brings_the_stored_status_up_to_date(): void
     {
         $patient = $this->patient(['last_logged_at' => now()->subDays(6)]);

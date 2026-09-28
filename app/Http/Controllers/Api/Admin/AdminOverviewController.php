@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Food;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Http\JsonResponse;
 
 /** Admin panel home: platform-wide counts, across every nutritionist. */
@@ -26,6 +27,8 @@ class AdminOverviewController extends Controller
             'active_clients' => Subscriber::withoutGlobalScopes()->active()->count(),
             'foods_total' => (int) $approved->sum('total'),
             'foods_pending' => (int) $foods->where('status', 'pending')->sum('total'),
+            // Proof the 06:00 job (adherence refresh + alerts) ran: when, and what it did.
+            'last_daily_run' => app(SelfScheduler::class)->lastResult('alerts'),
             'foods_by_source' => [
                 'usda' => (int) $approved->where('source', 'usda')->sum('total'),
                 'admin' => (int) $approved->where('source', 'admin')->sum('total'),

@@ -983,6 +983,41 @@ matching `FcmPushService`'s own precedence.
 
 Never returns the JSON/key content, and makes no call to Firebase.
 
+### `GET /system/scheduler-status`
+
+When each scheduled job last ran, and what the 06:00 run did. The jobs fail
+silently by design, and on Taqat each cron run happens in a one-off
+container whose output is gone afterwards, so this is the way to confirm
+from outside that the morning job ran. Any authenticated user (`jwt`).
+
+**200 OK**
+
+```json
+{
+  "timezone": "Asia/Riyadh",
+  "self_trigger": true,
+  "jobs": {
+    "alerts": {
+      "last_ran_at": "2026-09-29T03:00:04+00:00",
+      "last_slot": "2026-09-29T03:00:00+00:00",
+      "overdue": false,
+      "last_result": {
+        "ran_at": "2026-09-29T03:00:04+00:00",
+        "patients": 12, "status_changes": 3, "failures": 0,
+        "stable": 8, "declining": 1, "stopped_logging": 3
+      }
+    },
+    "reminders": { "last_ran_at": "...", "last_slot": "...", "overdue": false },
+    "summaries": { "last_ran_at": "...", "last_slot": "...", "overdue": false }
+  }
+}
+```
+
+Times are UTC; 06:00 Riyadh is 03:00 UTC. `last_result` is `null` until the
+06:00 job has run once. `stable` / `declining` / `stopped_logging` count the
+active clients after that run's adherence refresh.
+
+---
 
 ## Meal & Weight Logging (Sprint 4)
 

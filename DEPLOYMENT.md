@@ -130,17 +130,36 @@ to the Dokku host itself, not the app container):
 2. Confirm the platform actually fires it: `dokku cron:list <app-name>`
    (if using the plugin) or `crontab -l` on the Dokku host (fallback path)
    — should show the `schedule:run` entry.
-3. Confirm it actually ran: after the next 06:00, query the `alerts`
-   table for rows with `created_at` around that time for any client with
-   a stale `last_logged_at` — a genuine no_log alert firing is proof the
-   whole chain (cron → schedule:run → alerts:evaluate → DB write) works,
-   not just that it's registered.
+3. Confirm the 06:00 job actually ran (it recomputes every active
+   client's adherence status, then evaluates the alerts). Any morning
+   after 06:00 Riyadh (03:00 UTC), use either check:
+   - **Admin overview**: log in as the admin. Under the page title,
+     "آخر فحص يومي" shows today's date and time, how many patients were
+     checked and how many statuses changed. A warning appears instead if
+     the last run is older than a day or never happened.
+   - **API**: `GET /api/v1/system/scheduler-status` with any logged-in
+     user's token. `jobs.alerts.last_ran_at` should be today at about
+     03:00 UTC, `overdue` should be `false`, and `last_result` shows the
+     counts (`patients`, `status_changes`, `stable`, `declining`,
+     `stopped_logging`, `failures`).
 
-No dedicated log output is configured for these jobs (no
-`->appendOutputTo()` on any of the three) — a silent failure shows up as
-"no new alerts/summaries ever appear," not as an error anywhere. Worth
-adding output logging before the pilot (S6-12) if this needs to be
-diagnosable without querying the database directly.
+   ```
+   curl -s -H "Authorization: Bearer <access_token>" \
+     https://healthylife.apps.taqat.academy/api/v1/system/scheduler-status
+   ```
+
+   Telling cron apart from the self-trigger: if `last_ran_at` is close to
+   03:00:00 UTC, cron fired it. If it is later (for example the first
+   request of the morning, at 07:40), cron is not running and the
+   self-trigger caught it up; check `dokku cron:list <app>` (step 2).
+   `failures` above 0 means one or more patients failed; the errors are
+   reported through Laravel's exception handler with the subscriber id.
+
+These markers live in the cache store (`CACHE_STORE=database` on Taqat),
+which every container shares. The command also writes one `Log::info` line
+per run ("Daily check: …"), but with the default `LOG_STACK=single` that
+line goes to a file inside the one-off cron container and is lost with it.
+Set `LOG_STACK=stderr` if you want it in `dokku logs <app>`.
 
 ## Seeding (food catalog, admin account)
 

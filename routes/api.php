@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
 use App\Http\Controllers\Api\System\FcmStatusController;
+use App\Http\Controllers\Api\System\SchedulerStatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function () {
@@ -95,6 +96,12 @@ Route::prefix('v1')->name('api.')->group(function () {
     // FcmStatusController for why this exists (fails closed by design,
     // so "not configured" and "configured but no pushes due yet" look
     // identical from outside without this).
+    // When each scheduled job last ran, and what the 06:00 run did — the way
+    // to confirm on Taqat that cron (or the self-trigger) actually runs them.
+    Route::get('system/scheduler-status', SchedulerStatusController::class)
+        ->middleware('jwt')
+        ->name('system.scheduler-status');
+
     Route::get('system/fcm-status', FcmStatusController::class)
         ->middleware('jwt')
         ->name('system.fcm-status');
