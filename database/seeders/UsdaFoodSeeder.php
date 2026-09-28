@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Food;
+use App\Support\ArabicText;
 use Illuminate\Database\Seeder;
 
 /**
@@ -19,7 +20,10 @@ use Illuminate\Database\Seeder;
  * Safe to run any number of times (`php artisan db:seed --force` after a
  * deploy — nothing runs it automatically, see DEPLOYMENT.md): it only
  * INSERTS fdc_ids that have no row yet and only FILLS an Arabic name
- * that's still empty, so an admin's later edit is never overwritten.
+ * that's still empty, so an admin's later edit is never overwritten. A
+ * USDA food the admin deleted is kept as a hidden `rejected` row (see
+ * AdminFoodController::destroy) precisely so its fdc_id still counts as
+ * "already there" and the food doesn't come back.
  */
 class UsdaFoodSeeder extends Seeder
 {
@@ -63,7 +67,10 @@ class UsdaFoodSeeder extends Seeder
         foreach ($this->rows(database_path('data/usda_arabic_names.csv')) as $row) {
             Food::where('usda_fdc_id', (int) $row['fdc_id'])
                 ->whereNull('name_ar')
-                ->update(['name_ar' => $row['name_ar']]);
+                ->update([
+                    'name_ar' => $row['name_ar'],
+                    'name_ar_normalized' => ArabicText::normalize($row['name_ar']),
+                ]);
         }
     }
 

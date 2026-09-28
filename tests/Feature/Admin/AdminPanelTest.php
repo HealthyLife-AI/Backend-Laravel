@@ -143,7 +143,7 @@ class AdminPanelTest extends TestCase
         $count = Food::where('source', 'usda')->count();
 
         $this->assertGreaterThan(7000, $count);
-        $this->assertSame('موز', Food::where('name_en', 'Bananas, raw')->value('name_ar'));
+        $this->assertSame('موز طازج', Food::where('name_en', 'Bananas, raw')->value('name_ar'));
 
         // Re-seeding adds nothing and keeps an admin's edit.
         Food::where('name_en', 'Bananas, raw')->update(['name_ar' => 'موز بلدي']);

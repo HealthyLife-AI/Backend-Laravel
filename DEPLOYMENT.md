@@ -17,6 +17,9 @@ its own reasoning — this is just the checklist).
 | Auth | `JWT_SECRET`, `JWT_TTL`, `JWT_REFRESH_TTL` | `JWT_SECRET` must be distinct from `APP_KEY` and unique per environment — generate with `php artisan jwt:secret`, never copy the local one. |
 | AI draft (S3-06, optional) | `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TIMEOUT` | Blank = feature stays rule-based, fails closed, nothing breaks. |
 | AI weekly summary (S5-03, optional) | `OPENAI_SUMMARY_*` | Falls back to the `OPENAI_*` vars above when blank — set only if you want the two features on separate quotas. |
+| Admin account (optional) | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | `db:seed` creates the admin panel login only when both email and password are set. No default is shipped. See "Seeding" below. |
+| Demo account (leave unset in production) | `DEMO_NUTRITIONIST_PASSWORD` | `db:seed` creates `nutritionist@example.com` only when this is set, or when `APP_ENV=local`. Leave it unset on Taqat. |
+| Scheduler | `SCHEDULE_TIMEZONE`, `SCHEDULE_SELF_TRIGGER` | See "Scheduler" below. |
 | Push notifications (S5-06, optional) | `FIREBASE_CREDENTIALS_JSON_BASE64` | ⚠️ **Use this form, not `FIREBASE_CREDENTIALS_JSON`.** The raw-JSON form broke login/register outright on this project's own Taqat deployment — its unescaped `"` characters corrupted Taqat's env-var storage before the app could even log an exception. Base64's alphabet (`[A-Za-z0-9+/=]`) is immune to that class of failure. Verify with `GET /api/v1/system/ai-status` and `/system/fcm-status` after any redeploy — see below. |
 
 After any deploy that touches these, confirm the running container
@@ -139,11 +142,104 @@ No dedicated log output is configured for these jobs (no
 adding output logging before the pilot (S6-12) if this needs to be
 diagnosable without querying the database directly.
 
+## Seeding (food catalog, admin account)
+
+**Nothing in this repo runs `db:seed` on deploy.** Checked on 2026-09-28:
+there is no `Procfile`, no release step and no buildpack/nixpacks config.
+`app.json` only declares the scheduler cron. The `setup` script in
+`composer.json` runs `migrate --force` only, and it is a local
+convenience, not a deploy hook. `README.md` tells a developer to run
+`php artisan migrate --seed` by hand. Earlier seeder comments claiming
+"Taqat runs `db:seed --force` on every deploy" were wrong and have been
+corrected.
+
+Git history does show that `db:seed --force` has run on Taqat before.
+Commit 73f154a says the seeder crashed "on the Taqat deploy", and commit
+ec15206 says production ended up with two copies of every admin dish.
+Whether Taqat's platform or a person ran it is not recorded, so treat
+seeding as a **manual step** until a Taqat build log shows otherwise. No
+`Procfile` or release step is added for it without a separate decision.
+
+### What `db:seed` does
+
+`DatabaseSeeder` runs, in order:
+
+1. `RolesAndPermissionsSeeder`: roles and permissions (idempotent).
+2. `ArabicFoodSeeder`: 58 curated Arabic dishes, `source = admin`,
+   matched on `name_en` among admin rows. It is idempotent, and a re-run
+   resets those 58 rows to the seeder's values.
+3. `UsdaFoodSeeder`: the full USDA SR Legacy catalog from the committed
+   `database/data/usda_sr_legacy_foods.csv` (7,793 foods, ~690 KB), plus
+   Arabic names for 144 of them from `database/data/usda_arabic_names.csv`.
+   It inserts in batches of 500. It only inserts `usda_fdc_id`s that have
+   no row yet, and only fills an Arabic name that is still empty, so
+   admin edits survive. A USDA food that the admin deletes is kept as a
+   hidden `status = rejected` row, so the seeder skips it and it does
+   not come back. The raw 36 MB USDA download is not needed on the server.
+4. Admin account: created only when `ADMIN_EMAIL` and `ADMIN_PASSWORD`
+   are both set. It uses `firstOrCreate`, so an existing admin's password
+   is never reset.
+5. Demo nutritionist `nutritionist@example.com`: created only when
+   `DEMO_NUTRITIONIST_PASSWORD` is set or `APP_ENV=local`. A local run
+   without the variable gets a random password, printed once. It is
+   never created on Taqat unless that variable is set there.
+
+Measured on local MySQL, the first run on an empty database takes about
+8.5 s in total (`UsdaFoodSeeder` ~7.0 s, `ArabicFoodSeeder` ~0.3 s). A
+re-run takes about 3.7 s and adds nothing.
+
+### Running it on Taqat
+
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in the Taqat dashboard first (never
+in a committed file), then:
+
+```
+dokku run <app> php artisan migrate --force
+dokku run <app> php artisan db:seed --force
+```
+
+### Post-deploy check
+
+1. Log in with `ADMIN_EMAIL`. You land on the admin overview, which proves
+   the admin account exists.
+2. The "Approved foods" tile shows **at least 7,851** (7,793 USDA + 58
+   curated dishes). It is higher by the number of admin-added and
+   approved nutritionist foods on that database. The 7,856 seen on the
+   developer's local database is 7,851 + 5 local test rows.
+3. The catalog breakdown shows 7,793 USDA foods.
+4. As a nutritionist, search "موز". "موز طازج" (89 kcal) comes first.
+5. `nutritionist@example.com` does not exist, unless you set
+   `DEMO_NUTRITIONIST_PASSWORD` on purpose (see below).
+
+### The demo account on Taqat
+
+Before this change, `db:seed` created `nutritionist@example.com` with the
+password `password` in every environment, and seeding has run on Taqat
+(see above). Assume that account **exists on Taqat with that password**
+until you check. Check it from a one-off container:
+
+```
+dokku run <app> php artisan tinker
+>>> $u = App\Models\User::where('email', 'nutritionist@example.com')->first();
+>>> DB::table('subscribers')->where('nutritionist_id', $u?->id)->count();  // patients it owns
+```
+
+- To keep it but lock it:
+  `$u->update(['password' => Hash::make(Str::password(24))]);`
+  then end its sessions:
+  `DB::table('refresh_tokens')->where('user_id', $u->id)->delete();`
+- To remove it: `$u->delete();` **only if the patient count above is 0.**
+  Deleting a user cascades to every patient it owns
+  (`subscribers.nutritionist_id`) and every plan it created
+  (`meal_plans.created_by`). If the count is above 0, change the password
+  instead. Take a backup first either way (see "Backups").
+
 ## Migrations
 
 **Open item, not resolved by this doc**: the exact mechanism that runs
 `php artisan migrate` on a Taqat deploy is not confirmed. There is no
-`Procfile` or `app.json` in this repo, and migrations have apparently been
+`Procfile` in this repo (`app.json` only declares the scheduler cron), and
+migrations have apparently been
 applying on `git push` to Taqat regardless — most likely Taqat's buildpack
 auto-detects a Laravel app and runs migrations as part of its own
 build/release step, but this has not been verified against an actual

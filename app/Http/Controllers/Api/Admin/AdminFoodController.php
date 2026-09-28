@@ -50,8 +50,24 @@ class AdminFoodController extends Controller
         return (new FoodResource($food))->response()->setStatusCode(201);
     }
 
-    public function update(AdminFoodRequest $request, Food $food): FoodResource
+    /**
+     * Changing a food that plans or logs already use changes what those
+     * plans and logs add up to, so the first attempt is answered 409 with
+     * how many use it; the admin UI shows that and resends with
+     * `confirm_in_use: true` once the admin agrees.
+     */
+    public function update(AdminFoodRequest $request, Food $food): JsonResponse|FoodResource
     {
+        $usage = $this->usage($food);
+
+        if (($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
+            return response()->json([
+                'message' => 'This food is used in meal plans or client logs. Resend with confirm_in_use to save.',
+                'code' => 'food_in_use_confirm',
+                'usage' => $usage,
+            ], 409);
+        }
+
         $food->update($request->validated());
 
         return new FoodResource($food);
@@ -61,22 +77,45 @@ class AdminFoodController extends Controller
      * `meal_items.food_id` and `meal_logs.food_id` restrict deletion (a
      * plan or a client's history would otherwise lose the food it points
      * at), so a food already in use is refused with a clear message
-     * instead of a database error.
+     * instead of a database error — whatever its source.
+     *
+     * A USDA food isn't removed but hidden (`status = rejected`): the row
+     * keeps its `usda_fdc_id`, which is what makes UsdaFoodSeeder skip it,
+     * so the next seed run doesn't bring it back. Rejected foods are out
+     * of search and refused in plans and logs (BR-5). Other sources are
+     * deleted outright.
      */
     public function destroy(Food $food): JsonResponse
     {
-        $inUse = DB::table('meal_items')->where('food_id', $food->id)->exists()
-            || DB::table('meal_logs')->where('food_id', $food->id)->exists();
+        $usage = $this->usage($food);
 
-        if ($inUse) {
+        if ($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) {
             return response()->json([
                 'message' => 'This food is used in a meal plan or a client log and cannot be deleted.',
                 'code' => 'food_in_use',
+                'usage' => $usage,
             ], 409);
         }
 
-        $food->delete();
+        if ($food->source === 'usda') {
+            $food->update(['status' => 'rejected']);
+        } else {
+            $food->delete();
+        }
 
         return response()->json(null, 204);
+    }
+
+    /** @return array{meal_plans: int, meal_logs: int} */
+    private function usage(Food $food): array
+    {
+        return [
+            'meal_plans' => DB::table('meal_items')
+                ->join('meals', 'meals.id', '=', 'meal_items.meal_id')
+                ->where('meal_items.food_id', $food->id)
+                ->distinct()
+                ->count('meals.meal_plan_id'),
+            'meal_logs' => DB::table('meal_logs')->where('food_id', $food->id)->count(),
+        ];
     }
 }

@@ -11,9 +11,10 @@ use Tests\TestCase;
 
 /**
  * The admin food catalog has to survive being seeded more than once:
- * Taqat runs `db:seed --force` as part of a deploy, so every redeploy
- * re-runs `ArabicFoodSeeder` against a database that already has its
- * dishes. It didn't survive it — `upsert(uniqueBy: ['name_en'])` had no
+ * `db:seed --force` has been run on Taqat more than once (by hand or by
+ * the platform; nothing in this repo triggers it, see DEPLOYMENT.md), and
+ * each run re-runs `ArabicFoodSeeder` against a database that already has
+ * its dishes. It didn't survive it — `upsert(uniqueBy: ['name_en'])` had no
  * UNIQUE index behind it, MySQL dropped the conflict clause, and
  * production ended up with two of all 58 dishes. These cover both halves
  * of the repair: the seeder no longer duplicates, and the migration

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ArabicText;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -29,6 +30,14 @@ class Food extends Model
     // "sheep") and would otherwise guess the table name as `food`, not
     // `foods` — override explicitly rather than rely on the convention.
     protected $table = 'foods';
+
+    /** Keeps the search column in step with every Eloquent write of `name_ar`. */
+    protected static function booted(): void
+    {
+        static::saving(function (Food $food) {
+            $food->name_ar_normalized = ArabicText::normalize($food->name_ar);
+        });
+    }
 
     protected function casts(): array
     {
@@ -63,16 +72,19 @@ class Food extends Model
      * (the curated local list) ahead of English-only USDA rows; shorter
      * (more generic) names first — "Rice, white, cooked" before a long
      * branded variant.
+     *
+     * Arabic is compared in its normalized form (ArabicText) on both
+     * sides, so "ارز" finds "أرز" and "بيضه" finds "بيضة".
      */
     public function scopeSearch(Builder $query, string $term): void
     {
-        $escaped = addcslashes($term, '%_\\');
+        $escaped = addcslashes(ArabicText::normalize($term), '%_\\');
 
         $query->where(function (Builder $q) use ($escaped) {
             $q->where('name_en', 'like', "%{$escaped}%")
-                ->orWhere('name_ar', 'like', "%{$escaped}%");
+                ->orWhere('name_ar_normalized', 'like', "%{$escaped}%");
         })->orderByRaw(
-            'CASE WHEN name_ar LIKE ? OR name_en LIKE ? THEN 0 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 1 ELSE 2 END',
+            'CASE WHEN name_ar_normalized LIKE ? OR name_en LIKE ? THEN 0 WHEN name_ar_normalized LIKE ? OR name_en LIKE ? THEN 1 ELSE 2 END',
             ["{$escaped}%", "{$escaped}%", "% {$escaped}%", "% {$escaped}%"],
         )->orderByRaw('CASE WHEN name_ar IS NULL THEN 1 ELSE 0 END')
             ->orderByRaw('LENGTH(COALESCE(name_ar, name_en))');
