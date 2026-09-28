@@ -278,6 +278,37 @@ the session is over — send the user to login.
 
 ---
 
+## `POST /auth/google`
+
+"Continue with Google" for nutritionists. The client obtains a Google OAuth
+**access token** (Google Identity Services token client, scopes
+`openid email profile`) and posts it; the API verifies it with Google
+(`tokeninfo` must report this app's `GOOGLE_CLIENT_ID` as `aud` and a
+verified e-mail), then signs the person in — matching by Google id, then by
+verified e-mail, else creating a new nutritionist. Throttle: 10/min.
+
+Request: `{ "access_token": "ya29...." }`
+Response `200`: same body as `POST /auth/login`.
+Errors: `401` token rejected · `403` `follow_up_ended` (the e-mail belongs to a
+patient whose follow-up has ended; see Common shapes) · `423` account locked ·
+`503` server has no `GOOGLE_CLIENT_ID`.
+
+## `POST /auth/forgot-password`
+
+Sends a reset e-mail whose link opens the web dashboard at
+`{FRONTEND_URL}/{locale}/reset-password?token=…&email=…`. Always `200`, whether
+or not the address has an account. Throttle: 5/min per IP, plus the broker's
+60 s per-address throttle.
+
+Request: `{ "email": "…", "locale": "ar" | "en" }` (locale optional, default `ar`).
+
+## `POST /auth/reset-password`
+
+Request: `{ "email", "token", "password", "password_confirmation" }` — same
+password policy as registration. `200` on success (every refresh token the
+user held is revoked); `422` with a `message` for an invalid/expired token or a
+weak password. Throttle: 10/min.
+
 ## Clients (Sprint 2)
 
 Everything below requires `Authorization: Bearer <access_token>` for a

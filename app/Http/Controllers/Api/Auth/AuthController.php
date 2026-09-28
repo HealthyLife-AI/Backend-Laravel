@@ -4,18 +4,25 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Exceptions\Auth\AccountLockedException;
 use App\Exceptions\Auth\FollowUpEndedException;
+use App\Exceptions\Auth\InvalidGoogleTokenException;
 use App\Exceptions\Auth\InvalidRefreshTokenException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
+use App\Http\Requests\Auth\GoogleAuthRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RefreshTokenRequest;
 use App\Http\Requests\Auth\RegisterNutritionistRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Notifications\Auth\ResetPasswordNotification;
+use App\Services\Auth\GoogleAuthService;
 use App\Services\Auth\JwtService;
 use App\Services\Auth\RefreshTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 
 /**
  * F-1 / FR-01, FR-04, FR-05: nutritionist registration, login (with
@@ -28,6 +35,7 @@ class AuthController extends Controller
     public function __construct(
         private readonly JwtService $jwt,
         private readonly RefreshTokenService $refreshTokens,
+        private readonly GoogleAuthService $google,
     ) {}
 
     /**
@@ -83,6 +91,90 @@ class AuthController extends Controller
         }
 
         return $this->tokenResponse($user, $request, 200);
+    }
+
+    /**
+     * "Continue with Google": sign in, or sign up as a nutritionist, with a
+     * Google access token the browser obtained. 503 when the server has no
+     * GOOGLE_CLIENT_ID (the frontend hides the button in that case too),
+     * 401 when Google won't vouch for the token. Locked accounts stay
+     * locked here as well — Google is another door into the same account.
+     */
+    public function google(GoogleAuthRequest $request): JsonResponse
+    {
+        if (! $this->google->isConfigured()) {
+            return response()->json(['message' => 'Google sign-in is not available.'], 503);
+        }
+
+        try {
+            $user = $this->google->authenticate($request->string('access_token'));
+        } catch (InvalidGoogleTokenException $e) {
+            return response()->json(['message' => $e->getMessage()], 401);
+        }
+
+        if ($user->isLocked()) {
+            throw new AccountLockedException($user->locked_until);
+        }
+
+        $user->resetFailedLogins();
+
+        // Google matches an existing account by e-mail, whatever its role,
+        // so an archived patient is refused here exactly as in login().
+        if ($user->isFollowUpEnded()) {
+            throw new FollowUpEndedException;
+        }
+
+        return $this->tokenResponse($user, $request, 200);
+    }
+
+    /**
+     * Send a password-reset link. The answer is the same 200 whether or
+     * not the address has an account, so this can't enumerate users; the
+     * broker's own per-address throttle (60 s) also hides behind it.
+     */
+    public function forgotPassword(ForgotPasswordRequest $request): JsonResponse
+    {
+        $locale = $request->string('locale', 'ar')->toString();
+
+        Password::broker()->sendResetLink(
+            ['email' => $request->string('email')->lower()->toString()],
+            function (User $user, string $token) use ($locale): void {
+                $user->notify(new ResetPasswordNotification($token, $locale));
+            },
+        );
+
+        return response()->json(['message' => 'If an account exists for that e-mail, a reset link has been sent.']);
+    }
+
+    /**
+     * Set a new password from a reset link. On success every refresh
+     * token the user holds is revoked, so a session an attacker may have
+     * opened before the reset dies with it.
+     */
+    public function resetPassword(ResetPasswordRequest $request): JsonResponse
+    {
+        $status = Password::broker()->reset(
+            [
+                'email' => $request->string('email')->lower()->toString(),
+                'token' => $request->string('token')->toString(),
+                'password' => $request->string('password')->toString(),
+            ],
+            function (User $user, string $password): void {
+                $user->forceFill([
+                    'password' => $password,
+                    'failed_login_attempts' => 0,
+                    'locked_until' => null,
+                ])->save();
+
+                $this->refreshTokens->revokeAllForUser($user);
+            },
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            return response()->json(['message' => __($status)], 422);
+        }
+
+        return response()->json(['message' => 'Your password has been reset. You can sign in now.']);
     }
 
     /**

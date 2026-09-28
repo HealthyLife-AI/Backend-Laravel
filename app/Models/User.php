@@ -22,8 +22,8 @@ use Spatie\Permission\Traits\HasRoles;
  * models will inherit their data-isolation scope from
  * (see App\Models\Scopes\NutritionistScope).
  */
-#[Fillable(['name', 'email', 'phone', 'password', 'nutritionist_id', 'fcm_token'])]
-#[Hidden(['password', 'remember_token'])]
+#[Fillable(['name', 'email', 'phone', 'password', 'nutritionist_id', 'fcm_token', 'google_id', 'avatar_url'])]
+#[Hidden(['password', 'remember_token', 'google_id'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
