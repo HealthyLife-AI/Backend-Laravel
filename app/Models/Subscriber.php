@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToNutritionist;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -43,6 +44,7 @@ class Subscriber extends Model
     {
         return [
             'last_logged_at' => 'datetime',
+            'archived_at' => 'datetime',
         ];
     }
 
@@ -86,9 +88,38 @@ class Subscriber extends Model
         return $this->hasMany(AiSummary::class)->orderByDesc('week_start');
     }
 
+    /** Activated (invite accepted) and still followed up — not archived. */
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === 'active' && ! $this->isArchived();
+    }
+
+    /** Follow-up ended by the nutritionist ("إنهاء المتابعة"). */
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
+    }
+
+    /**
+     * The one filter for "a patient we are following": activated and not
+     * archived. Every scheduled job (alerts, log reminders, weekly AI
+     * summaries) and every active-patient count uses this, so an archived
+     * patient drops out of all of them at once.
+     */
+    public function scopeActive(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('status'), 'active')->whereNull($query->qualifyColumn('archived_at'));
+    }
+
+    /** Not archived, any activation status — the default roster. */
+    public function scopeInFollowUp(Builder $query): void
+    {
+        $query->whereNull($query->qualifyColumn('archived_at'));
+    }
+
+    public function scopeArchived(Builder $query): void
+    {
+        $query->whereNotNull($query->qualifyColumn('archived_at'));
     }
 
     /**

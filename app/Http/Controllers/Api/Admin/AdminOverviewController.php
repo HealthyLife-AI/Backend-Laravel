@@ -23,7 +23,7 @@ class AdminOverviewController extends Controller
         return response()->json([
             'nutritionists' => User::role('nutritionist')->count(),
             'clients' => Subscriber::withoutGlobalScopes()->count(),
-            'active_clients' => Subscriber::withoutGlobalScopes()->where('status', 'active')->count(),
+            'active_clients' => Subscriber::withoutGlobalScopes()->active()->count(),
             'foods_total' => (int) $approved->sum('total'),
             'foods_pending' => (int) $foods->where('status', 'pending')->sum('total'),
             'foods_by_source' => [

@@ -18,7 +18,7 @@ class AdminNutritionistController extends Controller
             ->with('nutritionistProfile')
             ->withCount([
                 'subscribers as clients_count' => fn ($q) => $q->withoutGlobalScopes(),
-                'subscribers as active_clients_count' => fn ($q) => $q->withoutGlobalScopes()->where('status', 'active'),
+                'subscribers as active_clients_count' => fn ($q) => $q->withoutGlobalScopes()->active(),
             ])
             ->when($term !== '', fn ($q) => $q->where(
                 fn ($w) => $w->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%")

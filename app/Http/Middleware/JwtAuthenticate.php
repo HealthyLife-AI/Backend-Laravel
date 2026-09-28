@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\Auth\FollowUpEndedException;
 use App\Models\User;
 use App\Services\Auth\JwtService;
 use Closure;
@@ -48,6 +49,13 @@ class JwtAuthenticate implements AuthenticatesRequests
 
         if ($user === null) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // A patient whose follow-up ended is refused everywhere, including
+        // with an access token issued before archiving (refresh tokens are
+        // revoked on archive, but an access token lives until JWT_TTL).
+        if (($payload->role ?? null) === 'client' && $user->isFollowUpEnded()) {
+            throw new FollowUpEndedException;
         }
 
         Auth::setUser($user);

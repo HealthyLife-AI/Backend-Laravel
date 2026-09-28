@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
+use App\Http\Controllers\Api\Clients\ClientFollowUpController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
 use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Foods\FoodController;
@@ -57,6 +58,8 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients', [ClientController::class, 'store'])->name('clients.store');
         Route::get('clients/{subscriber}', [ClientController::class, 'show'])->name('clients.show');
         Route::delete('clients/{subscriber}', [ClientController::class, 'destroy'])->name('clients.destroy');
+        Route::post('clients/{subscriber}/archive', [ClientFollowUpController::class, 'archive'])->name('clients.archive');
+        Route::post('clients/{subscriber}/resume', [ClientFollowUpController::class, 'resume'])->name('clients.resume');
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
     });
@@ -65,11 +68,13 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('clients/{subscriber}/health-profile', [HealthProfileController::class, 'show'])
             ->name('clients.health-profile.show');
         Route::put('clients/{subscriber}/health-profile', [HealthProfileController::class, 'update'])
+            ->middleware('follow-up')
             ->name('clients.health-profile.update');
 
         Route::get('clients/{subscriber}/body-composition-readings', [BodyCompositionReadingController::class, 'index'])
             ->name('clients.body-composition-readings.index');
         Route::post('clients/{subscriber}/body-composition-readings', [BodyCompositionReadingController::class, 'store'])
+            ->middleware('follow-up')
             ->name('clients.body-composition-readings.store');
     });
 
@@ -96,10 +101,10 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     Route::middleware(['jwt', 'permission:plans.manage'])->group(function () {
         Route::get('clients/{subscriber}/meal-plans', [MealPlanController::class, 'index'])->name('meal-plans.index');
-        Route::post('clients/{subscriber}/meal-plans', [MealPlanController::class, 'store'])->name('meal-plans.store');
+        Route::post('clients/{subscriber}/meal-plans', [MealPlanController::class, 'store'])->middleware('follow-up')->name('meal-plans.store');
         Route::get('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'show'])->name('meal-plans.show');
-        Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->name('meal-plans.update');
-        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->name('meal-plans.activate');
+        Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->middleware('follow-up')->name('meal-plans.update');
+        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->middleware('follow-up')->name('meal-plans.activate');
         // Stricter than the blanket 120/min api limit: this is a real,
         // paid/quota-limited external LLM call (Groq), not a DB read —
         // hammering it (accidental double-click loop, or a script) burns
@@ -107,12 +112,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         // available. 5/min is generous for its actual use (review, maybe
         // regenerate once or twice) and blocks anything faster than that.
         Route::post('clients/{subscriber}/meal-plans/ai-draft', [MealPlanController::class, 'generateAiDraft'])
-            ->middleware('throttle:ai-draft')
+            ->middleware(['follow-up', 'throttle:ai-draft'])
             ->name('meal-plans.ai-draft');
 
         Route::get('meal-plan-templates', [MealPlanTemplateController::class, 'index'])->name('meal-plan-templates.index');
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/save-as-template', [MealPlanTemplateController::class, 'store'])->name('meal-plan-templates.store');
-        Route::post('meal-plan-templates/{mealPlan}/apply/{subscriber}', [MealPlanTemplateController::class, 'apply'])->name('meal-plan-templates.apply');
+        Route::post('meal-plan-templates/{mealPlan}/apply/{subscriber}', [MealPlanTemplateController::class, 'apply'])->middleware('follow-up')->name('meal-plan-templates.apply');
     });
 
     // FR-16 / plans.view.own: the CLIENT role's own current plan — no

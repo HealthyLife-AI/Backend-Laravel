@@ -23,6 +23,7 @@ class SubscriberResource extends JsonResource
             'phone' => $this->user->phone,
             'goal' => $this->goal,
             'status' => $this->status,
+            'archived_at' => $this->archived_at?->toIso8601String(),
             'adherence_status' => $this->adherence_status,
             'last_logged_at' => $this->last_logged_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),

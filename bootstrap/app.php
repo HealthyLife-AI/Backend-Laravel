@@ -1,6 +1,8 @@
 <?php
 
 use App\Exceptions\Auth\AccountLockedException;
+use App\Exceptions\Auth\FollowUpEndedException;
+use App\Http\Middleware\EnsureFollowUpActive;
 use App\Http\Middleware\JwtAuthenticate;
 use App\Http\Middleware\RunOverdueScheduledTasks;
 use Illuminate\Console\Scheduling\Schedule;
@@ -57,6 +59,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'jwt' => JwtAuthenticate::class,
+            'follow-up' => EnsureFollowUpActive::class,
             // Not auto-registered by spatie/laravel-permission on this
             // Laravel version's array-config middleware system — see
             // Sprint 1's own custom `jwt` guard for why: there's no
@@ -77,5 +80,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $e->getMessage(),
                 'locked_until' => $e->lockedUntil->toIso8601String(),
             ], 423);
+        });
+
+        $exceptions->render(function (FollowUpEndedException $e, Request $request) {
+            return response()->json(['message' => $e->getMessage(), 'code' => 'follow_up_ended'], 403);
         });
     })->create();

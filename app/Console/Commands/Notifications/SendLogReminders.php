@@ -48,8 +48,7 @@ class SendLogReminders extends Command
         $sent = 0;
         $failed = 0;
 
-        Subscriber::query()
-            ->where('status', 'active')
+        Subscriber::active()
             ->where(fn ($query) => $query->whereNull('last_logged_at')->orWhere('last_logged_at', '<', $today))
             ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
             ->with('user')

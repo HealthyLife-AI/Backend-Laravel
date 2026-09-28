@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Auth;
 
 use App\Exceptions\Auth\AccountLockedException;
+use App\Exceptions\Auth\FollowUpEndedException;
 use App\Exceptions\Auth\InvalidRefreshTokenException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
@@ -74,6 +75,12 @@ class AuthController extends Controller
         }
 
         $user->resetFailedLogins();
+
+        // Checked only after the password matched, so the response never
+        // reveals to a stranger that an account exists or is archived.
+        if ($user->isFollowUpEnded()) {
+            throw new FollowUpEndedException;
+        }
 
         return $this->tokenResponse($user, $request, 200);
     }

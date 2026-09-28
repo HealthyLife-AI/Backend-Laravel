@@ -58,7 +58,7 @@ class AppServiceProvider extends ServiceProvider
                 defer(function () use ($subscriberId): void {
                     $subscriber = Subscriber::withoutGlobalScopes()->find($subscriberId);
 
-                    if ($subscriber?->status === 'active') {
+                    if ($subscriber?->isActive()) {
                         app(AlertEvaluationService::class)->evaluate($subscriber);
                     }
                 }, "alerts:evaluate:{$subscriberId}");

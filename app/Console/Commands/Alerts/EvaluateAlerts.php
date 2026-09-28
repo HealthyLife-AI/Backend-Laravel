@@ -8,8 +8,8 @@ use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 
 /**
- * S5-01 / FR-20: the daily job. Runs against `Subscriber::where('status',
- * 'active')` with no authenticated user — `NutritionistScope` is
+ * S5-01 / FR-20: the daily job. Runs against `Subscriber::active()`
+ * (activated, not archived) with no authenticated user — `NutritionistScope` is
  * deliberately not applied outside a request (see that class's own
  * docblock), so this iterates every active client across every
  * nutritionist by design, not by a scope bypass.
@@ -34,7 +34,7 @@ class EvaluateAlerts extends Command
         $total = 0;
         $failures = 0;
 
-        Subscriber::where('status', 'active')->lazy()->each(function (Subscriber $subscriber) use ($alerts, &$total, &$failures): void {
+        Subscriber::active()->lazy()->each(function (Subscriber $subscriber) use ($alerts, &$total, &$failures): void {
             $total++;
 
             try {

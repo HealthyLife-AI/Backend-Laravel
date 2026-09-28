@@ -38,6 +38,13 @@ class ClientController extends Controller
     {
         $query = Subscriber::query()->with('user');
 
+        // Archived patients are a separate list, never mixed into the roster.
+        if ($request->boolean('archived')) {
+            $query->archived();
+        } else {
+            $query->inFollowUp();
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->string('status'));
         }

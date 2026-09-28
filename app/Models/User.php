@@ -81,6 +81,15 @@ class User extends Authenticatable
         return $this->hasOne(Subscriber::class);
     }
 
+    /** A patient (client role) whose nutritionist ended follow-up. */
+    public function isFollowUpEnded(): bool
+    {
+        return Subscriber::withoutGlobalScopes()
+            ->where('user_id', $this->id)
+            ->whereNotNull('archived_at')
+            ->exists();
+    }
+
     /**
      * The domain profiles of this nutritionist's clients (only meaningful
      * when this user holds the `nutritionist` role). Prefer this over

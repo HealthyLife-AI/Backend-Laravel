@@ -90,6 +90,26 @@ Standard Laravel form-request shape. Note: a `password`/`password_confirmation`
 mismatch attaches its error to the **`password`** key, not
 `password_confirmation` — a Laravel `confirmed`-rule quirk, not a typo.
 
+**Follow-up ended** (`403`, patient app): the nutritionist has archived this
+patient ("إنهاء المتابعة"). Returned by `POST /auth/login` (only after the
+password matched) and by **every** authenticated request made with a
+`client`-role token, including an access token issued before the archive:
+
+```json
+{
+  "message": "Your nutritionist has ended follow-up. Contact them to resume.",
+  "code": "follow_up_ended"
+}
+```
+
+Match on `code`, not on `message` (the message may be reworded). Handle it by
+clearing both stored tokens and showing a dedicated screen ("متابعتك مع
+أخصائي التغذية متوقفة حاليًا، تواصل معه لاستئنافها") instead of the login form's
+generic error. Do **not** retry and do **not** call `/auth/refresh`: every
+refresh token was revoked on archive, so `/auth/refresh` answers `401`. Once the
+nutritionist resumes follow-up, the patient logs in again with the same
+password.
+
 **Rate limiting** (`429`, register/login: 10 req/min, refresh: 20 req/min, per IP):
 
 ```json
@@ -172,6 +192,11 @@ either way, to avoid leaking which one was wrong:
 
 `locked_until` is ISO 8601 UTC. Show a countdown/retry time to the user rather
 than a generic error.
+
+**403 Forbidden** `follow_up_ended` — correct password, but the nutritionist has
+ended this patient's follow-up. See "Follow-up ended" in Common shapes. A wrong
+password still gets the generic `401`, so the archive is never revealed to
+someone who doesn't know the password.
 
 **422** — missing `email`/`password`.
 
@@ -273,6 +298,7 @@ internal model name, the API and UI both say "client"):
   "phone": "0501234567",
   "goal": "weight_loss",
   "status": "pending",
+  "archived_at": null,
   "adherence_status": null,
   "last_logged_at": null,
   "created_at": "2026-09-06T09:54:30+00:00"
@@ -281,7 +307,11 @@ internal model name, the API and UI both say "client"):
 
 - `goal`: one of `weight_loss` / `weight_gain` / `weight_maintenance` / `health_monitoring`.
 - `status`: `pending` (invited, not yet activated) or `active`. This is invite
-  lifecycle only — there's no "deactivate a client" action in this sprint.
+  lifecycle only. Ending follow-up does not change it (see `archived_at`), so
+  resuming restores it as it was.
+- `archived_at`: ISO 8601 when the nutritionist ended follow-up
+  ([`POST /clients/{id}/archive`](#post-clientsidarchive)), `null` while the
+  patient is followed up.
 - `adherence_status`: `stable` / `declining` / `stopped_logging` / `null`.
   Written since Sprint 4 by the adherence calculation. `null` means it has
   not been computed yet for that client (no logs since the S4-03 rework) —
@@ -340,11 +370,86 @@ envelope).
 | `status` | `pending` \| `active` |
 | `adherence` | `stable` \| `declining` \| `stopped_logging` |
 | `search` | matches client name or code, **prefix only** (`"sar"` matches "Sara", not "Ansara") |
+| `archived` | `1` / `true`: only archived patients. Omitted or `0`: only patients still followed up (the default roster never mixes the two) |
 | `per_page` | 1–100, default 20 |
 
 ### `GET /clients/{id}`
 
-Single client, same shape as the `client` object above.
+Single client, same shape as the `client` object above. Works for archived
+patients too.
+
+### `DELETE /clients/{id}`
+
+Permanently deletes the patient: their login account and, through the database
+cascades, their health profile, measurements, plans, logs, alerts, AI
+summaries and invites. Irreversible. Works on archived patients too.
+
+**204 No Content** · **404** — not your client.
+
+### `POST /clients/{id}/archive`
+
+End follow-up ("إنهاء المتابعة"). Idempotent: archiving an archived patient
+changes nothing and keeps the original `archived_at`. Every record is kept.
+From this moment the patient:
+
+- is left out of `GET /clients` (use `?archived=1`), the dashboard counts and
+  the admin overview's active count;
+- gets no daily alerts, no evening log reminder and no weekly AI summary;
+- can't log in or use the patient app (`403 follow_up_ended`); all of their
+  refresh tokens are revoked and any unused invite link is invalidated;
+- can't be changed: the write endpoints below answer `409 follow_up_ended`
+  until follow-up resumes. Every read endpoint keeps working.
+
+**200 OK**
+
+```json
+{ "client": { "id": 12, "status": "active", "archived_at": "2026-09-29T08:10:00+00:00", "...": "..." } }
+```
+
+**404** — not your client.
+
+### `POST /clients/{id}/resume`
+
+Resume follow-up ("استئناف المتابعة"). Idempotent. Clears `archived_at`; the
+patient is back in the roster, the jobs and the counts, and can log in again
+with their existing password.
+
+**200 OK**
+
+```json
+{
+  "client": { "id": 12, "status": "active", "archived_at": null, "...": "..." },
+  "invite_token": null,
+  "invite_expires_at": null
+}
+```
+
+A patient who never activated (`status: "pending"`) had their invite
+invalidated on archive, so resuming issues a new one: `invite_token` and
+`invite_expires_at` are then filled exactly as in `POST /clients`, and the
+token is returned only this once.
+
+**404** — not your client.
+
+### Writes refused while follow-up has ended
+
+`409 Conflict` on these routes when the patient is archived:
+
+- `PUT /clients/{id}/health-profile`
+- `POST /clients/{id}/body-composition-readings`
+- `POST /clients/{id}/meal-plans`, `PUT /clients/{id}/meal-plans/{planId}`,
+  `POST /clients/{id}/meal-plans/{planId}/activate`,
+  `POST /clients/{id}/meal-plans/ai-draft`
+- `POST /meal-plan-templates/{templateId}/apply/{subscriberId}`
+
+```json
+{
+  "message": "Follow-up with this client has ended. Resume follow-up to make changes.",
+  "code": "follow_up_ended"
+}
+```
+
+Another nutritionist's patient still gets `404` here, never this `409`.
 
 ### `POST /invites/{token}/activate`
 
@@ -500,9 +605,13 @@ F-2 stat cards, for the calling nutritionist only. `permission:clients.manage`.
 {
   "total": 3, "active": 2, "pending": 1,
   "stable": 1, "declining": 1, "stopped_logging": 0,
-  "not_logged_today": 2
+  "not_logged_today": 2,
+  "archived": 0
 }
 ```
+
+Every count except `archived` covers only patients still followed up;
+`archived` is the number whose follow-up has ended.
 
 `stable`/`declining`/`stopped_logging` count clients by the DIRECTION of
 their adherence (BR-14), not by where they sit against a threshold. A client

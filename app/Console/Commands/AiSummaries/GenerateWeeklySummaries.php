@@ -45,7 +45,7 @@ class GenerateWeeklySummaries extends Command
         $fallbacks = 0;
         $failures = 0;
 
-        Subscriber::where('status', 'active')->lazy()->each(function (Subscriber $subscriber) use ($summaries, $weekStart, &$total, &$fallbacks, &$failures): void {
+        Subscriber::active()->lazy()->each(function (Subscriber $subscriber) use ($summaries, $weekStart, &$total, &$fallbacks, &$failures): void {
             $total++;
 
             try {

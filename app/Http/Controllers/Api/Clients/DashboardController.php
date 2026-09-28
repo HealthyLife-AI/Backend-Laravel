@@ -29,7 +29,10 @@ class DashboardController extends Controller
     {
         $today = now()->startOfDay();
 
+        // Archived patients (follow-up ended) are left out of every count
+        // here, adherence included, and reported on their own.
         $row = Subscriber::query()
+            ->inFollowUp()
             ->selectRaw('count(*) as total')
             ->selectRaw("sum(status = 'active') as active")
             ->selectRaw("sum(status = 'pending') as pending")
@@ -47,6 +50,7 @@ class DashboardController extends Controller
             'declining' => (int) $row->declining,
             'stopped_logging' => (int) $row->stopped_logging,
             'not_logged_today' => (int) $row->not_logged_today,
+            'archived' => Subscriber::query()->archived()->count(),
         ]);
     }
 }

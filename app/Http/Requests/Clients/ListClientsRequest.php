@@ -23,6 +23,8 @@ class ListClientsRequest extends FormRequest
             // BR-14: direction, not level. See AdherenceService.
             'adherence' => ['sometimes', Rule::in(['stable', 'declining', 'stopped_logging'])],
             'search' => ['sometimes', 'string', 'max:255'],
+            // true: only patients whose follow-up ended; default: only the rest.
+            'archived' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];
     }
