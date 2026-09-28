@@ -216,23 +216,46 @@ dokku run <app> php artisan db:seed --force
 Before this change, `db:seed` created `nutritionist@example.com` with the
 password `password` in every environment, and seeding has run on Taqat
 (see above). Assume that account **exists on Taqat with that password**
-until you check. Check it from a one-off container:
+until you check.
+
+Changing a password does **not** end existing sessions by itself. Refresh
+tokens are separate rows in `refresh_tokens`, and nothing revokes them on a
+password change, so revoke them right after the change. An access token
+that was already issued stays valid until it expires (`JWT_TTL`, 15
+minutes by default). It cannot be revoked.
+
+Run these in order:
 
 ```
+# 1. Backup first (see "Backups" for the exact plugin command on Taqat)
+dokku mysql:export <database-name> > backup-$(date +%F).sql
+
+# 2. Open tinker in a one-off container
 dokku run <app> php artisan tinker
->>> $u = App\Models\User::where('email', 'nutritionist@example.com')->first();
->>> DB::table('subscribers')->where('nutritionist_id', $u?->id)->count();  // patients it owns
 ```
 
-- To keep it but lock it:
-  `$u->update(['password' => Hash::make(Str::password(24))]);`
-  then end its sessions:
-  `DB::table('refresh_tokens')->where('user_id', $u->id)->delete();`
-- To remove it: `$u->delete();` **only if the patient count above is 0.**
-  Deleting a user cascades to every patient it owns
-  (`subscribers.nutritionist_id`) and every plan it created
-  (`meal_plans.created_by`). If the count is above 0, change the password
-  instead. Take a backup first either way (see "Backups").
+Inside tinker:
+
+```
+// 3. Find the account and count the patients it owns
+$u = App\Models\User::where('email', 'nutritionist@example.com')->first();
+$u?->id;
+DB::table('subscribers')->where('nutritionist_id', $u?->id)->count();
+
+// 4a. Keep it: set a new password, then revoke every refresh token
+$u->password = 'CHOOSE-A-LONG-RANDOM-PASSWORD';   // hashed by the model's cast
+$u->save();
+app(App\Services\Auth\RefreshTokenService::class)->revokeAllForUser($u);
+DB::table('refresh_tokens')->where('user_id', $u->id)->whereNull('revoked_at')->count();   // must be 0
+
+// 4b. OR remove it, only if the patient count in step 3 is 0
+$u->delete();
+```
+
+If step 3 returns `null`, the account does not exist and there is nothing
+to do. Deleting a user cascades to every patient it owns
+(`subscribers.nutritionist_id`) and every plan it created
+(`meal_plans.created_by`). If the patient count is above 0, use 4a.
 
 ## Migrations
 
