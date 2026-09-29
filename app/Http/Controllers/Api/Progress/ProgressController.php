@@ -4,11 +4,9 @@ namespace App\Http\Controllers\Api\Progress;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Progress\DateWindowRequest;
-use App\Models\BodyCompositionReading;
 use App\Models\Subscriber;
-use App\Services\Adherence\AdherenceService;
+use App\Services\Progress\ProgressReportService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Collection;
 
 /**
  * S4-04 / FR-19, progress.view: the data behind the client-profile
@@ -28,89 +26,16 @@ use Illuminate\Support\Collection;
  */
 class ProgressController extends Controller
 {
-    public function __construct(private readonly AdherenceService $adherence) {}
+    public function __construct(private readonly ProgressReportService $report) {}
 
     public function show(Subscriber $subscriber, DateWindowRequest $request): JsonResponse
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        $from = $request->string('from')->toString() ?: null;
-        $to = $request->string('to')->toString() ?: null;
-
-        $readings = $subscriber->bodyCompositionReadings()
-            ->when($from && $to, fn ($query) => $query->whereBetween('recorded_at', [$from, $to]))
-            ->reorder('recorded_at')
-            ->get();
-
-        return response()->json([
-            'weight_trend' => $readings->map(fn (BodyCompositionReading $reading) => [
-                'recorded_at' => $reading->recorded_at->toDateString(),
-                'weight_kg' => (float) $reading->weight_kg,
-                'source' => $reading->source,
-            ])->values(),
-            'body_composition' => [
-                'latest' => $this->snapshot($readings->last()),
-                'previous' => $this->snapshot($readings->count() > 1 ? $readings[$readings->count() - 2] : null),
-                'change' => $this->change($readings),
-            ],
-            'adherence' => $this->adherence->summary($subscriber, $from, $to),
-            // S4-07: the plan-vs-actual bar chart's series. Shipped in
-            // this response rather than behind its own endpoint for the
-            // same reason the three blocks above are — one screen renders
-            // all of them together, and no client's meal logs are
-            // reachable by their nutritionist any other way.
-            'daily_calories' => $this->adherence->dailyCalories($subscriber, $from, $to),
-        ]);
-    }
-
-    /** @return array<string, mixed>|null */
-    private function snapshot(?BodyCompositionReading $reading): ?array
-    {
-        if ($reading === null) {
-            return null;
-        }
-
-        return [
-            'recorded_at' => $reading->recorded_at->toDateString(),
-            // BR-13: carried so the charts (S4-18) can mark which figures
-            // are analyser-grade and which are the client's own estimate.
-            'source' => $reading->source,
-            'weight_kg' => (float) $reading->weight_kg,
-            'body_fat_percent' => $reading->body_fat_percent !== null ? (float) $reading->body_fat_percent : null,
-            'muscle_mass_kg' => $reading->muscle_mass_kg !== null ? (float) $reading->muscle_mass_kg : null,
-            'water_percent' => $reading->water_percent !== null ? (float) $reading->water_percent : null,
-            'waist_cm' => $reading->waist_cm !== null ? (float) $reading->waist_cm : null,
-            'hip_cm' => $reading->hip_cm !== null ? (float) $reading->hip_cm : null,
-            'thigh_cm' => $reading->thigh_cm !== null ? (float) $reading->thigh_cm : null,
-            'arm_cm' => $reading->arm_cm !== null ? (float) $reading->arm_cm : null,
-        ];
-    }
-
-    /**
-     * First-to-last delta per metric, skipping any metric that isn't
-     * present at both ends — a client analysed once at the clinic and
-     * self-weighing since has weight at both ends but body fat only at
-     * one, and subtracting from null would report a fabricated loss.
-     *
-     * @param  Collection<int, BodyCompositionReading>  $readings
-     * @return array<string, float>|null
-     */
-    private function change($readings): ?array
-    {
-        if ($readings->count() < 2) {
-            return null;
-        }
-
-        $first = $readings->first();
-        $last = $readings->last();
-        $change = [];
-
-        foreach (['weight_kg', 'body_fat_percent', 'muscle_mass_kg', 'water_percent', 'waist_cm', 'hip_cm', 'thigh_cm', 'arm_cm'] as $metric) {
-            if ($first->{$metric} !== null && $last->{$metric} !== null) {
-                $change[$metric] = round((float) $last->{$metric} - (float) $first->{$metric}, 1);
-            }
-        }
-
-        return $change;
+        return response()->json($this->report->build(
+            $subscriber,
+            $request->string('from')->toString() ?: null,
+            $request->string('to')->toString() ?: null,
+        ));
     }
 }

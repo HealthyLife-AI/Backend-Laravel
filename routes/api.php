@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
 use App\Http\Controllers\Api\Notifications\FcmTokenController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
+use App\Http\Controllers\Api\Progress\OwnProgressController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
 use App\Http\Controllers\Api\System\FcmStatusController;
@@ -194,6 +195,13 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['jwt', 'permission:alerts.view'])->group(function () {
         Route::get('alerts', [AlertController::class, 'index'])->name('alerts.index');
         Route::patch('alerts/{alert}/read', [AlertController::class, 'markRead'])->name('alerts.mark-read');
+    });
+
+    // FR-18/FR-19: the same two views for the PATIENT'S OWN data. The
+    // routes below can't serve a patient (see OwnProgressController).
+    Route::middleware(['jwt', 'role:client', 'permission:progress.view'])->group(function () {
+        Route::get('me/adherence', [OwnProgressController::class, 'adherence'])->name('me.adherence.show');
+        Route::get('me/progress', [OwnProgressController::class, 'progress'])->name('me.progress.show');
     });
 
     Route::middleware(['jwt', 'permission:progress.view'])->group(function () {

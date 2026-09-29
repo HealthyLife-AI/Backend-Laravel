@@ -66,6 +66,12 @@ error codes. The list grows with the batch; entries are grouped by change.
   `403 log_locked` (re-sending the *same* figures still returns `200`, so a
   replay of a saved entry is never an error).
 
+- `GET /me/adherence` and `GET /me/progress`: the patient's own adherence and
+  progress, with the same bodies the nutritionist sees. The previous routes
+  (`/clients/{id}/adherence|progress`) never worked for a patient token (always
+  `404`); do not call them. See
+  [Adherence & Progress](#get-meadherence-and-get-meprogress).
+
 **New / changed response fields**
 
 - **Every reading returned to the patient carries `deletable_until`**
@@ -98,11 +104,11 @@ error codes. The list grows with the batch; entries are grouped by change.
 `role` is one of `nutritionist` / `client` / `admin`. `nutritionist_id` is only
 non-null for a `client`-role user (the nutritionist that owns them — BR-1).
 `subscriber_id` is only non-null for a `client`-role user too — it's this
-client's own row in `subscribers`, needed to call
-[`GET /clients/{id}/adherence`](#get-clientsidadherence) and
-[`/progress`](#get-clientsidprogress) (`progress.view` is held by both roles —
-see the permission matrix — but both routes are `clients/{subscriber}/...`,
-not `me/...`). This is the only place that id is exposed for a client who has
+client's own row in `subscribers`. A patient does **not** need it to read their
+own progress: use [`GET /me/adherence`](#get-meadherence-and-get-meprogress)
+and `GET /me/progress`. (The `clients/{subscriber}/…` routes are the
+nutritionist's; they answer `404` to a client token.) This is the only place
+that id is exposed for a client who has
 no meal plan yet; `GET /me/meal-plan` also carries it once a plan exists, but
 returns `204 No Content` until then.
 
@@ -1357,9 +1363,11 @@ carries `source`.
 
 ## Adherence & Progress (Sprint 4)
 
-Permission: `progress.view` (nutritionist **and** client roles). The bound
-subscriber is re-checked with `belongsToCaller()`, so reading another
-nutritionist's client returns **404**, not 403 — the id is not confirmed.
+Permission: `progress.view`. The `clients/{id}/…` routes below are the
+**nutritionist's**: the bound subscriber is re-checked with `belongsToCaller()`,
+so reading another nutritionist's client returns **404**, not 403 — the id is
+not confirmed (and a client token is always `404` there). The patient's own
+view is [`/me/adherence` and `/me/progress`](#get-meadherence-and-get-meprogress).
 
 ### `GET /clients/{id}/adherence?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
@@ -1389,6 +1397,22 @@ window: "0% adherent" and "no data yet" are different clinical statements.
 two rates are comparable — a 7-day period against the 7 days before it.
 
 The window defaults to the last 7 days. `from`/`to` must be sent together.
+
+### `GET /me/adherence` and `GET /me/progress`
+
+The patient's own view of the two endpoints above. **Identical response
+bodies** — same shape, same window rules (`from`/`to` together, default last 7
+days), same BR-14 `status` — for the patient the token belongs to; the
+subscriber is resolved from the token, so there is no id in the URL.
+
+Role: `client` only (a nutritionist token gets `403`); `follow_up_ended` (`403`)
+for an archived patient. Nothing in the payload is derived from another
+patient's data.
+
+> **Why this exists.** `progress.view` was granted to the client role, but the
+> only routes were `clients/{subscriber}/adherence|progress`, whose
+> `belongsToCaller()` check compares the subscriber's nutritionist with the
+> caller and so is never true for a client token: a patient always got `404`.
 
 ### Status is direction, not level (BR-14, FR-18)
 
