@@ -32,6 +32,24 @@ Everything the Flutter app must adapt to in the phase-1 backend batch. Each
 entry links to the endpoint's own section for the exact request, response and
 error codes. New business rules are numbered from BR-15 (table at the end).
 
+**Changed since the first version of this section (forgiving data entry):** the
+server now accepts and marks entries instead of refusing them wherever it can.
+
+| Before | Now |
+|---|---|
+| `meal_type` required on an off-plan log (`422` without it) | optional; inferred from the local time of `logged_at` when missing or unrecognised — never a `422` |
+| a log or reading dated more than 7 days back: `422 entry_too_old` | accepted, returned with `is_late: true`; `422 entry_too_old` only beyond **90 days** (`max_age_days: 90`) |
+| edit/delete window 48 hours; `log_locked` carried `editable_hours` | **7 days**; `log_locked` carries `editable_days` |
+| — | `edited_at` on every log and reading |
+| `503 consent_not_configured` possible | removed: the consent gate always has a version; `policy_url` may be `null` |
+
+Two consequences for the app: an entry that arrives more than 7 days late is
+already outside its 7-day edit window, so it is saved but locked at once (its
+`editable_until` / `deletable_until` is in the past); and Dart's
+`DateTime.toIso8601String()` on a local time sends **no offset**, so send
+`toUtc().toIso8601String()` or append the offset yourself, or meals are filed
+by UTC hours.
+
 ### 1. Breaking: the app must change before it works against this backend
 
 - **Consent gate (BR-17).** Until the patient has accepted the current privacy
@@ -58,8 +76,8 @@ error codes. New business rules are numbered from BR-15 (table at the end).
     patient — retrying can never succeed. An entry between 7 and 90 days old is
     **accepted** and comes back with `is_late: true` (below). A replay of an
     entry the server *already saved* still returns `200`, however old it is.
-  - `403 log_locked` on editing/deleting a log or reading past its window
-    (below): show the entry as read-only.
+  - `403 log_locked` (with `editable_days`) on editing/deleting a log or
+    reading past its 7-day window: show the entry as read-only.
   - `403 consent_required` (above).
 - **`weight_kg` is required on `POST /me/measurements`** (`422` on `weight_kg`
   without it, tape-only entries included; it used to be a `500`). Queue tape-only
