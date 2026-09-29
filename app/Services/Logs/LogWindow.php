@@ -12,8 +12,9 @@ use Carbon\CarbonInterface;
  *
  *  - BR-15, the edit window: an entry can be edited or deleted for a
  *    while after its own date, then it is locked.
- *  - BR-19, the backdating limit: a new entry can't be dated further back
- *    than a set number of days.
+ *  - BR-19, the backdating limit: a new entry made by the PATIENT can't be
+ *    dated further back than a set number of days (the nutritionist's clinic
+ *    readings are not limited).
  *
  * Shared by meal logs and self-reported measurements so both follow the
  * same rules.

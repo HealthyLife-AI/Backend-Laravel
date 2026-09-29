@@ -112,7 +112,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 | **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set), the client's choice for an off-plan one |
 | **BR-17** | A patient must accept the current privacy-policy version (`CONSENT_VERSION`) before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). A blank version fails closed outside local/testing |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
-| **BR-19** | A new meal log or self-reported reading can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old` |
+| **BR-19** | A new meal log or self-reported reading **made by the patient** can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old`. It does not apply to the nutritionist's clinic readings, which can be any past date |
 | **BR-20** | The system diagnostics (`/system/*`) are for the admin only |
 | **BR-21** | A patient code (`PT-<n>`) is never issued twice: each nutritionist has a counter that only goes up, even after the highest-numbered patient is deleted |
 
@@ -720,8 +720,10 @@ whatever the device/visit actually captured:
 { "recorded_at": "2026-09-06", "weight_kg": 82, "body_fat_percent": 30.5, "waist_cm": 85 }
 ```
 
-`recorded_at` must not be in the future. Missing `weight_kg` is `422`.
-**201 Created** with the saved reading.
+`recorded_at` must not be in the future, but may be **any past date**: the
+7-day backdating limit (BR-19) applies only to entries the *patient* makes, so a
+nutritionist can enter clinic readings from paper records when onboarding a
+patient. Missing `weight_kg` is `422`. **201 Created** with the saved reading.
 
 ---
 

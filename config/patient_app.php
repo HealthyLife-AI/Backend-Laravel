@@ -21,10 +21,14 @@ return [
     | Backdating limit (BR-19)
     |--------------------------------------------------------------------------
     |
-    | How far in the past a new meal log or self-reported reading may be
-    | dated. Long enough that the app's offline queue still syncs after a
-    | week without signal; short enough that old history can't be filled in
-    | after the fact (422 `entry_too_old`).
+    | How far in the past a new meal log or self-reported reading made by the
+    | PATIENT may be dated. It does not apply to the nutritionist's clinic
+    | readings (POST /clients/{id}/body-composition-readings), who may enter
+    | paper records of any past date when onboarding a patient.
+    |
+    | Long enough that the app's offline queue still syncs after a week
+    | without signal; short enough that old history can't be filled in after
+    | the fact (422 `entry_too_old`).
     |
     */
 

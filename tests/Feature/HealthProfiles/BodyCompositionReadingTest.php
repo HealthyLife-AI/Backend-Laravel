@@ -66,6 +66,29 @@ class BodyCompositionReadingTest extends TestCase
         ], $this->bearerFor($nutritionist))->assertUnprocessable();
     }
 
+    /**
+     * BR-19 limits what the PATIENT enters. The nutritionist onboarding a
+     * patient types in clinic readings from paper records, however old.
+     */
+    public function test_the_nutritionist_can_enter_clinic_readings_of_any_past_date(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+        $token = $this->bearerFor($nutritionist);
+
+        foreach ([now()->subDays(8), now()->subMonths(6), now()->subYears(3)] as $date) {
+            $this->postJson("/api/v1/clients/{$subscriber->id}/body-composition-readings", [
+                'recorded_at' => $date->toDateString(), 'weight_kg' => 84, 'body_fat_percent' => 27,
+            ], $token)->assertCreated()->assertJsonPath('source', 'clinic-analyser');
+        }
+
+        $this->assertSame(3, $subscriber->bodyCompositionReadings()->count());
+        // ...while a date in the future is still refused.
+        $this->postJson("/api/v1/clients/{$subscriber->id}/body-composition-readings", [
+            'recorded_at' => now()->addDay()->toDateString(), 'weight_kg' => 84,
+        ], $token)->assertUnprocessable()->assertJsonValidationErrors('recorded_at');
+    }
+
     /** weight_kg is NOT NULL in the table, so it must be required, not fail in the database. */
     public function test_a_reading_without_weight_is_a_422_not_a_500(): void
     {
