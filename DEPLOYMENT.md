@@ -318,6 +318,104 @@ NOT running automatically, the standard fix is a `Procfile` with a
 round, since the current process is apparently already working and
 changing deploy behavior blind is a worse risk than the status quo.
 
+### Verifying the phase-1 migrations on MySQL
+
+The patient-app phase-1 batch adds five migrations (in this order):
+
+| Migration | What it does | Backfill |
+|---|---|---|
+| `2026_09_29_100000_add_client_code_counter_to_users_table` | `users.client_code_counter` (last patient code issued) | each nutritionist starts at the highest `PT-<n>` they already have |
+| `2026_09_29_110000_add_meal_type_to_meal_logs_table` | `meal_logs.meal_type` | on-plan logs get their plan meal's name; off-plan logs stay `NULL` |
+| `2026_09_29_120000_add_gender_and_whatsapp_to_nutritionist_profiles_table` | `gender`, `whatsapp_number` | none (both `NULL`) |
+| `2026_09_29_130000_create_patient_consents_table` | new table | none |
+| `2026_09_29_140000_create_patient_deletion_notices_table` | new table | none |
+
+They were verified on SQLite and on MariaDB 10.11. Run this on **your local
+MySQL, in a scratch database, before deploying** to check the backfills and the
+rollbacks there. Nothing below touches a real database; use your own MySQL
+user and port.
+
+```bash
+# 0. A scratch database (drop it at the end).
+mysql -u root -p -e "DROP DATABASE IF EXISTS hl_verify; \
+  CREATE DATABASE hl_verify CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+
+# Point artisan at it. These shell variables override .env for this terminal only.
+export DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=hl_verify \
+       DB_USERNAME=<your-mysql-user> DB_PASSWORD=<your-mysql-password> DB_URL=
+M="mysql -u$DB_USERNAME -p$DB_PASSWORD -h$DB_HOST -P$DB_PORT $DB_DATABASE"
+
+# 1. Build the schema, then roll the five phase-1 migrations back so the database
+#    looks like production does today.
+php artisan migrate --force
+php artisan migrate:rollback --step=5 --force
+php artisan migrate:status | tail -7      # the five above must say "Pending", everything else "Ran"
+
+# 2. Plant legacy rows: two nutritionists, patients PT-101 / PT-103 / PT-107 and one
+#    non-PT code, and three meal logs (two on-plan against a dinner and a breakfast
+#    item, one off-plan).
+$M < database/verify/phase1-legacy-fixture.sql
+
+# 3. Apply the batch.
+php artisan migrate --force
+
+# 4. Check the backfills.
+$M -e "SELECT id, client_code_counter FROM users WHERE id IN (901, 902) ORDER BY id"
+$M -e "SELECT id, meal_item_id, meal_type FROM meal_logs ORDER BY id"
+$M -e "SELECT table_name, column_name, column_type, is_nullable FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND ((table_name = 'nutritionist_profiles' AND column_name IN ('gender','whatsapp_number'))
+       OR (table_name = 'meal_logs' AND column_name = 'meal_type')) ORDER BY table_name, column_name"
+$M -e "SHOW TABLES LIKE 'patient_%'"
+```
+
+Expected from step 4:
+
+```
+-- client_code_counter: 901 = highest PT number (PT-101, PT-103, PT-107; "OLD-9" is ignored),
+--                      902 has no patients, so it keeps the default
+id   client_code_counter
+901  107
+902  100
+
+-- meal_type: 6001 sits in the dinner meal, 6002 in the breakfast meal, 6003 is off-plan
+id    meal_item_id  meal_type
+6001  5001          dinner
+6002  5002          breakfast
+6003  NULL          NULL
+
+-- new columns (all nullable) and tables
+meal_type        enum('breakfast','lunch','dinner','snack')   YES
+gender           enum('male','female')                        YES
+whatsapp_number  varchar(20)                                  YES
+patient_consents
+patient_deletion_notices
+```
+
+```bash
+# 5. Roll the batch back and check it leaves nothing behind and loses no data.
+php artisan migrate:rollback --step=5 --force
+$M -e "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE()
+       AND ((table_name = 'nutritionist_profiles' AND column_name IN ('gender','whatsapp_number'))
+       OR (table_name = 'meal_logs' AND column_name = 'meal_type')
+       OR (table_name = 'users' AND column_name = 'client_code_counter'))"   # expect: no rows
+$M -e "SHOW TABLES LIKE 'patient_%'"                                         # expect: no rows
+$M -N -e "SELECT COUNT(*) FROM meal_logs; SELECT COUNT(*) FROM subscribers"   # expect: 3 and 4
+
+# 6. Apply again: the backfills must give the same answers as in step 4.
+php artisan migrate --force
+$M -e "SELECT id, client_code_counter FROM users WHERE id IN (901, 902) ORDER BY id"
+$M -e "SELECT id, meal_type FROM meal_logs ORDER BY id"
+
+# 7. Clean up, and unset the variables so this terminal stops pointing at the scratch database.
+mysql -u root -p -e "DROP DATABASE hl_verify"
+unset DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD DB_URL M
+```
+
+For the real deploy: take the backup from the "Backups" section first, then
+`php artisan migrate --force`. `migrate:rollback --step=5` undoes exactly this
+batch if it has to be undone (it loses the patient-consent records and deletion
+notices created since, and `meal_type`).
+
 ## Backups
 
 **Also unconfirmed**: whether Taqat's MySQL is a managed database with

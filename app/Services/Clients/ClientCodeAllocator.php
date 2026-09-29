@@ -14,7 +14,7 @@ use LogicException;
  * (`FOR UPDATE`) and then incremented, so two patients added at the same
  * moment are serialized and cannot receive the same code. The counter never
  * goes down: deleting the highest-numbered patient does not free its number,
- * so a code is never reused. That also keeps an account-deletion notice
+ * so a code is never reused (BR-21). That also keeps an account-deletion notice
  * (BR-18), which names only the code, unambiguous.
  *
  * Must run inside the transaction that inserts the patient: the lock lasts

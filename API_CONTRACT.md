@@ -30,99 +30,88 @@ never in plain prefs/localStorage.
 
 Everything the Flutter app must adapt to in the phase-1 backend batch. Each
 entry links to the endpoint's own section for the exact request, response and
-error codes. The list grows with the batch; entries are grouped by change.
+error codes. New business rules are numbered from BR-15 (table at the end).
 
-**Breaking (the app must change before it works against this backend)**
+### 1. Breaking: the app must change before it works against this backend
 
 - **Consent gate (BR-17).** Until the patient has accepted the current privacy
-  policy, **every patient data endpoint answers `403 consent_required`**
-  (meal plan, meal logs, measurements, adherence, progress, food search).
-  After login the app must call [`GET /me/consent`](#patient-consent-br-17);
-  if `required` is `true`, show the policy (`policy_url`) and a consent screen,
-  and call `POST /me/consent` when the patient accepts. Also handle
-  `403 consent_required` coming from any data endpoint (the policy version can
-  change while the app is open): send the patient to the same screen. **Not
-  gated**: login/refresh/logout, invite activation, `GET /auth/me`,
-  `GET|POST /me/consent`, `GET /me/nutritionist`, `PUT /me/fcm-token`, and
-  account deletion. `403 follow_up_ended` still wins over `consent_required`.
-  If a deployment has no policy version configured, data endpoints answer
-  `503 consent_not_configured` (fail closed) — show a "service unavailable"
-  message; nothing the app can fix.
-
+  policy, **every patient data endpoint answers `403 consent_required`** (meal
+  plan, meal logs, measurements, adherence, progress, food search). After login
+  the app must call [`GET /me/consent`](#patient-consent-br-17); if `required`
+  is `true`, open the policy (`policy_url`) and a consent screen, and call
+  `POST /me/consent` (with the `version` it showed) when the patient accepts.
+  Also handle `403 consent_required` from *any* data endpoint (the policy can
+  change while the app is open) by sending the patient to the same screen.
+  **Not gated**: login/refresh/logout, invite activation, `GET /auth/me`,
+  `GET|POST /me/consent`, `GET /me/nutritionist`, `PUT /me/fcm-token`,
+  `DELETE /me/account`. `403 follow_up_ended` still wins over
+  `consent_required`. If a deployment has no policy version configured, the
+  gated endpoints answer `503 consent_not_configured` (fail closed): show a
+  "service unavailable" message — nothing the app can fix.
 - **`meal_type` is required on an off-plan meal log** (`POST /me/meal-logs`
-  without `meal_item_id`). One of `breakfast`, `lunch`, `dinner`, `snack`.
-  Without it the request now fails `422` on `meal_type`. Entries already
-  sitting in the offline queue from before this change have no meal type: the
-  app must ask the patient (or default it from the entry's time) before
+  without `meal_item_id`): `breakfast` | `lunch` | `dinner` | `snack`, else `422`
+  on `meal_type`. For an on-plan log it is ignored — the server uses the plan
+  meal. Entries already in the offline queue from before this change have no
+  meal type: ask the patient (or default it from the entry's time) before
   replaying them. See [`POST /me/meal-logs`](#post-memeal-logs).
+- **New refusal codes to handle** (match on `code`, see
+  [Coded refusals](#common-shapes)):
+  - `422 entry_too_old` on `POST /me/meal-logs` (`logged_at`) and
+    `POST /me/measurements` (`recorded_at`) when the entry is dated more than
+    **7 days** back (config `LOG_BACKDATE_LIMIT_DAYS`). The offline queue must
+    **drop** such an entry and tell the patient it was too old to save —
+    retrying can never succeed. A replay of an entry the server *already saved*
+    still returns `200`, however old it is.
+  - `403 log_locked` on editing/deleting a log or reading past its window
+    (below): show the entry as read-only.
+  - `403 consent_required`, `503 consent_not_configured` (above).
+- **`POST /me/measurements` on a day that already has a reading**: once that
+  day's edit window has closed, re-sending it with *different* figures is
+  `403 log_locked` (the same figures still return `200`, so a replay of a saved
+  entry is never an error). Within the window it updates the reading as before.
 
-- **New refusal codes to handle.** `422 entry_too_old` on `POST /me/meal-logs`
-  when `logged_at` is more than 7 days in the past (config
-  `LOG_BACKDATE_LIMIT_DAYS`): the app's offline queue must **drop** such an
-  entry and tell the patient it was too old to save, not retry it. A replay of
-  an entry the server already saved still returns `200` however old it is.
-  `403 log_locked` on `PATCH`/`DELETE /me/meal-logs/{id}` once the edit window
-  has passed: show the entry as read-only.
+### 2. New endpoints
 
-**New endpoints**
+| Endpoint | What it is for |
+|---|---|
+| `PATCH /me/meal-logs/{id}`, `DELETE /me/meal-logs/{id}` | Edit (quantity, time, and meal type of an off-plan log) or delete your own meal log for **48 hours** after its `logged_at` (config `LOG_EDIT_WINDOW_HOURS`). The food can't be changed. See [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid) |
+| `GET /me/measurements`, `DELETE /me/measurements/{id}` | The patient's full measurement history (clinic + self-reported, oldest first); delete your own *self-reported* reading within the window. See [Measurement history](#get-memeasurements-and-delete-memeasurementsid) |
+| `GET /me/adherence`, `GET /me/progress` | The patient's own adherence and progress, same bodies the nutritionist sees. The old `/clients/{id}/adherence\|progress` routes never worked for a patient token (always `404`); do not call them. See [Adherence & Progress](#get-meadherence-and-get-meprogress) |
+| `GET /me/nutritionist` | Name, gender, clinic, specialty and WhatsApp number of the patient's nutritionist, for a "my nutritionist" screen. Everything but `name` can be `null` (hide what is missing). See [Nutritionist Profile](#get-menutritionist) |
+| `GET /me/consent`, `POST /me/consent` | The consent screen. See [Patient Consent](#patient-consent-br-17) |
+| `DELETE /me/account` | Delete my account and all my data (path in the app: **ملفي ← حذف الحساب**). Body `{"password": "…"}`; `204`, `422` on `password` if wrong/missing, `429` if tried too often, `403 follow_up_ended` for a patient whose follow-up ended. After `204` clear all local data and tokens and go to the signed-out screen. See [Account deletion](#account-deletion-br-18) |
 
-- `DELETE /me/account`: the patient deletes their own account and all their data
-  (Apple/Google in-app deletion requirement). Needs the current password in the
-  body; `204` on success, `422` on `password` if wrong or missing, `429` when
-  tried too often, `403 follow_up_ended` for a patient whose follow-up ended
-  (they ask their nutritionist or support). After a `204`, clear all local
-  data and tokens and go to the signed-out screen. See
-  [Account deletion](#account-deletion-br-18).
+### 3. New or changed response fields
 
-- `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`: edit or delete
-  your own meal log for 48 hours after its `logged_at` (config
-  `LOG_EDIT_WINDOW_HOURS`). Quantity, time and (off-plan only) meal type are
-  editable; the food is not. Every log response now carries `editable_until`,
-  so the app can hide the edit/delete actions once it has passed. See
-  [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid).
+- **`meal_type`** on every meal log (`breakfast` | `lunch` | `dinner` | `snack`;
+  `null` only on an off-plan log recorded before this field existed).
+- **`editable_until`** on every meal log (ISO 8601): when its edit window closes.
+  Hide edit/delete once it has passed.
+- **`deletable_until`** on every reading returned to the patient (ISO 8601, or
+  `null` for a clinic reading, which is never the patient's to delete).
+- **`gender`** on the client's user object (`GET /auth/me`, and the `user` in
+  login/refresh responses): `"male"` | `"female"` | `null`. Use it for Arabic
+  grammar; fall back to a neutral form when `null`. Absent for other roles.
 
-- `GET /me/measurements` (the patient's own full series, oldest first) and
-  `DELETE /me/measurements/{id}` (delete your own self-reported reading within
-  the edit window). See [Measurement history](#get-memeasurements-and-delete-memeasurementsid).
-- **`POST /me/measurements` got stricter about old data**: a **new** reading
-  dated more than 7 days back is `422 entry_too_old` (drop it from the queue),
-  and re-sending a day whose edit window has closed with *different* figures is
-  `403 log_locked` (re-sending the *same* figures still returns `200`, so a
-  replay of a saved entry is never an error).
-
-- `GET /me/adherence` and `GET /me/progress`: the patient's own adherence and
-  progress, with the same bodies the nutritionist sees. The previous routes
-  (`/clients/{id}/adherence|progress`) never worked for a patient token (always
-  `404`); do not call them. See
-  [Adherence & Progress](#get-meadherence-and-get-meprogress).
-
-- `GET /me/nutritionist`: name, gender, clinic, specialty and WhatsApp number
-  of the patient's nutritionist for a "my nutritionist" screen. Every field but
-  `name` can be `null`. See [Nutritionist Profile](#get-menutritionist).
-
-**Nothing to call, but note**
+### 4. Nothing to call, but note
 
 - `GET /system/ai-status`, `/system/scheduler-status` and `/system/fcm-status`
   are now **admin-only** (`403` for a patient). They were readable by any
-  logged-in account, a patient's included. The app never needed them; make sure
-  it doesn't call them.
+  logged-in account. The app never needed them; make sure it doesn't call them.
+- A patient whose follow-up has ended still gets `403 follow_up_ended` on
+  **everything**, including consent and account deletion.
 
-**New / changed response fields**
+### 5. New business rules
 
-- **`gender` on the client's user object** (`GET /auth/me`, and the `user` in
-  login/refresh responses): `"male"` | `"female"` | `null`. Use it for
-  Arabic grammar; fall back to a neutral form when `null`.
-
-- **Every reading returned to the patient carries `deletable_until`**
-  (ISO 8601, or `null` for a clinic reading, which the patient can never
-  delete). Hide the delete action once it has passed.
-- **Every meal log now carries `editable_until`** (ISO 8601): the moment the
-  edit window closes (BR-15).
-
-- **Every meal log now carries `meal_type`** (`breakfast` | `lunch` |
-  `dinner` | `snack`, or `null` for off-plan logs recorded before this
-  field existed). On-plan logs get it from the plan meal, so the app can group
-  a day's history by meal without joining against the plan.
+| Rule | What it says |
+|---|---|
+| **BR-15** | A patient can edit or delete their own meal log, and delete their own self-reported reading, for 48 hours after its date (`LOG_EDIT_WINDOW_HOURS`); then `403 log_locked`. The food of a log is never editable |
+| **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set), the client's choice for an off-plan one |
+| **BR-17** | A patient must accept the current privacy-policy version (`CONSENT_VERSION`) before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). A blank version fails closed outside local/testing |
+| **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
+| **BR-19** | A new meal log or self-reported reading can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old` |
+| **BR-20** | The system diagnostics (`/system/*`) are for the admin only |
+| **BR-21** | A patient code (`PT-<n>`) is never issued twice: each nutritionist has a counter that only goes up, even after the highest-numbered patient is deleted |
 
 ## Common shapes
 
@@ -483,7 +472,7 @@ single-use invite in the same call.
 nutritionists can each have a client with the same phone number.
 
 `code` (`PT-101`, `PT-102`, …) comes from a per-nutritionist counter that only
-goes up, allocated under a row lock: a code is **never reused**, not even after
+goes up (BR-21), allocated under a row lock: a code is **never reused**, not even after
 the highest-numbered client is deleted, and two clients added at the same
 instant cannot collide.
 
