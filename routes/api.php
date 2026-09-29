@@ -162,6 +162,8 @@ Route::prefix('v1')->name('api.')->group(function () {
         // stopped being weight-only when S4-16 added the four tape-measure
         // fields. Writes to body_composition_readings (SRS Section 2.4).
         Route::post('me/measurements', [MeasurementController::class, 'store'])->name('me.measurements.store');
+        Route::get('me/measurements', [MeasurementController::class, 'index'])->name('me.measurements.index');
+        Route::delete('me/measurements/{id}', [MeasurementController::class, 'destroy'])->whereNumber('id')->name('me.measurements.destroy');
     });
 
     // S5-06 / FR-22: the client's own device push token. Gated on the

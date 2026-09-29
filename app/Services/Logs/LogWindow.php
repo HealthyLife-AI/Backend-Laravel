@@ -36,6 +36,29 @@ class LogWindow
         return CarbonImmutable::instance($at)->addHours($this->editHours());
     }
 
+    /**
+     * BR-15 for a reading, which has a date and no time of day: the window
+     * runs from the start of its date, so a reading dated today stays
+     * editable through the end of tomorrow.
+     */
+    public function readingEditableUntil(CarbonInterface $date): CarbonImmutable
+    {
+        return $this->editableUntil(CarbonImmutable::instance($date)->startOfDay());
+    }
+
+    public function isReadingLocked(CarbonInterface $date): bool
+    {
+        return CarbonImmutable::now()->greaterThan($this->readingEditableUntil($date));
+    }
+
+    /** BR-15: 403 `log_locked` once a reading's window has passed. */
+    public function assertReadingEditable(CarbonInterface $date): void
+    {
+        if ($this->isReadingLocked($date)) {
+            $this->throwLocked();
+        }
+    }
+
     /** BR-15: the earliest date an edit may move an entry to without locking it on the spot. */
     public function earliestEditableTimestamp(): CarbonImmutable
     {
@@ -51,13 +74,18 @@ class LogWindow
     public function assertEditable(CarbonInterface $at): void
     {
         if ($this->isLocked($at)) {
-            throw new ApiCodeException(
-                'This entry can no longer be changed.',
-                'log_locked',
-                403,
-                ['editable_hours' => $this->editHours()],
-            );
+            $this->throwLocked();
         }
+    }
+
+    public function throwLocked(): never
+    {
+        throw new ApiCodeException(
+            'This entry can no longer be changed.',
+            'log_locked',
+            403,
+            ['editable_hours' => $this->editHours()],
+        );
     }
 
     /**
@@ -76,5 +104,17 @@ class LogWindow
                 [$field => ["The {$field} may not be more than {$this->backdateDays()} days in the past."]],
             );
         }
+    }
+
+    /**
+     * BR-19 for a date-only entry: today minus the limit is still allowed,
+     * a day earlier is not.
+     */
+    public function assertDateNotTooOld(CarbonInterface $date, string $field): void
+    {
+        $this->assertNotTooOld(
+            CarbonImmutable::instance($date)->endOfDay(),
+            $field,
+        );
     }
 }

@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers\Api\Logs;
 
+use App\Exceptions\ApiCodeException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logs\StoreMeasurementRequest;
+use App\Http\Requests\Progress\DateWindowRequest;
 use App\Http\Resources\BodyCompositionReadingResource;
 use App\Models\BodyCompositionReading;
+use App\Services\Logs\LogWindow;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -31,6 +36,59 @@ use Illuminate\Support\Facades\Auth;
  */
 class MeasurementController extends Controller
 {
+    public function __construct(private readonly LogWindow $window) {}
+
+    /**
+     * The patient's own full series — clinic and self-reported readings,
+     * every field plus `source` — oldest first, for their history screen.
+     * A plain array, not paginated, like the nutritionist's list: a
+     * client's readings are one row a day at most.
+     */
+    public function index(DateWindowRequest $request): AnonymousResourceCollection
+    {
+        $subscriber = Auth::user()->subscriberProfile;
+
+        abort_if($subscriber === null, 403, 'This account is not set up as a client.');
+
+        $readings = $subscriber->bodyCompositionReadings()
+            ->when(
+                $request->filled('from') && $request->filled('to'),
+                fn ($query) => $query->whereDate('recorded_at', '>=', $request->string('from')->toString())
+                    ->whereDate('recorded_at', '<=', $request->string('to')->toString()),
+            )
+            // The relation is newest-first by default; this list is oldest-first.
+            ->reorder('recorded_at')
+            ->orderBy('id')
+            ->get();
+
+        return BodyCompositionReadingResource::collection($readings);
+    }
+
+    /**
+     * BR-15: delete one of the patient's OWN self-reported readings while
+     * it is inside the edit window. A clinic reading is the nutritionist's
+     * record and is never the patient's to delete. Looked up among the
+     * caller's readings only, so another patient's id is a 404.
+     */
+    public function destroy(string $id): Response
+    {
+        $subscriber = Auth::user()->subscriberProfile;
+
+        abort_if($subscriber === null, 403, 'This account is not set up as a client.');
+
+        $reading = $subscriber->bodyCompositionReadings()->findOrFail($id);
+
+        if ($reading->source !== BodyCompositionReading::SOURCE_SELF) {
+            throw new ApiCodeException('A reading taken at the clinic can only be removed by your nutritionist.', 'reading_not_deletable', 403);
+        }
+
+        $this->window->assertReadingEditable($reading->recorded_at);
+
+        $reading->delete();
+
+        return response()->noContent();
+    }
+
     public function store(StoreMeasurementRequest $request): JsonResponse
     {
         $subscriber = Auth::user()->subscriberProfile;
@@ -54,12 +112,29 @@ class MeasurementController extends Controller
             ->first();
 
         if ($reading === null) {
+            // BR-19: a new reading can't be dated beyond the backdating
+            // limit. Only a NEW one — re-sending a day that is already
+            // saved is a replay and is handled below.
+            $this->window->assertDateNotTooOld($request->date('recorded_at') ?? now(), 'recorded_at');
+
             $reading = $subscriber->bodyCompositionReadings()->create($measurements + [
                 'recorded_at' => $recordedAt,
                 'source' => BodyCompositionReading::SOURCE_SELF,
             ]);
 
             return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
+        }
+
+        // BR-15: past the edit window the day's figures are locked, or
+        // deleting would be pointless (re-sending the day would rewrite it).
+        // Re-sending the SAME figures is a replay of an entry that was
+        // saved, and is answered like one instead of as an error.
+        if ($this->window->isReadingLocked($reading->recorded_at)) {
+            if ($this->sameFigures($reading, $measurements)) {
+                return (new BodyCompositionReadingResource($reading))->response();
+            }
+
+            $this->window->throwLocked();
         }
 
         // A client correcting their own entry keeps it self-reported. A
@@ -70,5 +145,17 @@ class MeasurementController extends Controller
         $reading->update($measurements);
 
         return (new BodyCompositionReadingResource($reading))->response();
+    }
+
+    /** @param  array<string, mixed>  $measurements */
+    private function sameFigures(BodyCompositionReading $reading, array $measurements): bool
+    {
+        foreach ($measurements as $field => $value) {
+            if ($value !== null && (float) $reading->{$field} !== (float) $value) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

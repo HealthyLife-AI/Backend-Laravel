@@ -57,8 +57,20 @@ error codes. The list grows with the batch; entries are grouped by change.
   so the app can hide the edit/delete actions once it has passed. See
   [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid).
 
+- `GET /me/measurements` (the patient's own full series, oldest first) and
+  `DELETE /me/measurements/{id}` (delete your own self-reported reading within
+  the edit window). See [Measurement history](#get-memeasurements-and-delete-memeasurementsid).
+- **`POST /me/measurements` got stricter about old data**: a **new** reading
+  dated more than 7 days back is `422 entry_too_old` (drop it from the queue),
+  and re-sending a day whose edit window has closed with *different* figures is
+  `403 log_locked` (re-sending the *same* figures still returns `200`, so a
+  replay of a saved entry is never an error).
+
 **New / changed response fields**
 
+- **Every reading returned to the patient carries `deletable_until`**
+  (ISO 8601, or `null` for a clinic reading, which the patient can never
+  delete). Hide the delete action once it has passed.
 - **Every meal log now carries `editable_until`** (ISO 8601): the moment the
   edit window closes (BR-15).
 
@@ -1290,6 +1302,49 @@ existing one. No `idempotency_key` — the date is the key.
 > A client editing a day the nutritionist already measured in clinic does
 > **not** downgrade that row to `self-reported`. The analyser figures on it
 > remain analyser figures, so `source` is left as-is on update.
+
+### `GET /me/measurements` and `DELETE /me/measurements/{id}`
+
+The patient's own measurement history, for the app's history screen.
+
+`GET /me/measurements?from=YYYY-MM-DD&to=YYYY-MM-DD` — **200**, a plain array
+(not paginated), **oldest first**, of every reading — clinic and
+self-reported — each with every field plus `source` (BR-13). `from`/`to` are
+optional and must be sent together (a half-open range is `422`).
+
+```json
+[
+  { "id": 3, "recorded_at": "2026-08-01", "source": "clinic-analyser", "weight_kg": 82, "body_fat_percent": 24.5,
+    "muscle_mass_kg": 33, "water_percent": 51, "waist_cm": 90, "hip_cm": null, "thigh_cm": null, "arm_cm": null,
+    "deletable_until": null },
+  { "id": 9, "recorded_at": "2026-09-14", "source": "self-reported", "weight_kg": 79.5, "body_fat_percent": null,
+    "muscle_mass_kg": null, "water_percent": null, "waist_cm": null, "hip_cm": 100, "thigh_cm": null, "arm_cm": null,
+    "deletable_until": "2026-09-16T00:00:00+00:00" }
+]
+```
+
+`deletable_until` (BR-15) is the end of the delete window — 48 hours counted
+from the **start of the reading's date** (a reading dated today stays deletable
+through the end of tomorrow) — and `null` on a clinic reading.
+
+`DELETE /me/measurements/{id}` — **204**. Only the patient's **own
+self-reported** readings, only inside that window. The id is looked up among
+the caller's readings, so another patient's id is `404`.
+
+| status | when |
+|---|---|
+| 204 | deleted |
+| 403 `reading_not_deletable` | a clinic reading — only the nutritionist can remove it |
+| 403 `log_locked` | past the edit window |
+| 403 | caller is a nutritionist, or `follow_up_ended` for an archived patient |
+| 404 | not this patient's reading, or already deleted |
+
+**BR-19 / BR-15 on `POST /me/measurements`.** A *new* reading dated more than 7
+days back is `422` with `code: entry_too_old` and `max_age_days` (same shape as
+on meal logs). Re-sending a day that already has a reading is an update; once
+that day's edit window has closed it is refused with `403 log_locked` — unless
+the figures sent are the ones already stored, which is treated as a replay and
+answered `200`.
 
 ### `GET /me/meal-logs` and nutritionist readings
 

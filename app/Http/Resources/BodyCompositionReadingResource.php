@@ -3,8 +3,10 @@
 namespace App\Http\Resources;
 
 use App\Models\BodyCompositionReading;
+use App\Services\Logs\LogWindow;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * @mixin BodyCompositionReading
@@ -31,6 +33,14 @@ class BodyCompositionReadingResource extends JsonResource
             'hip_cm' => $this->hip_cm !== null ? (float) $this->hip_cm : null,
             'thigh_cm' => $this->thigh_cm !== null ? (float) $this->thigh_cm : null,
             'arm_cm' => $this->arm_cm !== null ? (float) $this->arm_cm : null,
+            // BR-15, patient app only: until when the patient may delete
+            // (or re-send) this reading; null for a clinic reading, which
+            // is never theirs to delete. Not part of the nutritionist's view.
+            $this->mergeWhen(Auth::user()?->hasRole('client'), fn () => [
+                'deletable_until' => $this->source === BodyCompositionReading::SOURCE_SELF
+                    ? app(LogWindow::class)->readingEditableUntil($this->recorded_at)->toIso8601String()
+                    : null,
+            ]),
         ];
     }
 }
