@@ -18,7 +18,7 @@ use Tests\TestCase;
 
 /**
  * BR-15 (edit/delete window) and BR-19 (backdating limit): a patient can
- * correct or remove their own meal log for 48 hours after its `logged_at`,
+ * correct or remove their own meal log for 7 days after its `logged_at`,
  * and can't date a new one more than 7 days back.
  */
 class EditDeleteMealLogTest extends TestCase
@@ -159,9 +159,9 @@ class EditDeleteMealLogTest extends TestCase
 
         // Older than the window would lock the entry on the spot — and be a
         // way to backfill old history one edit at a time.
-        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subHours(49)->toIso8601String()], $this->auth())
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->subHour()->toIso8601String()], $this->auth())
             ->assertUnprocessable()->assertJsonValidationErrors('logged_at');
-        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subHours(47)->toIso8601String()], $this->auth())
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->addHour()->toIso8601String()], $this->auth())
             ->assertOk();
     }
 
@@ -179,11 +179,11 @@ class EditDeleteMealLogTest extends TestCase
 
     // ---- the 48h window ---------------------------------------------------
 
-    public function test_the_window_closes_48_hours_after_logged_at(): void
+    public function test_the_window_closes_seven_days_after_logged_at(): void
     {
         $this->travelTo(now()->startOfSecond());
-        $inside = $this->offPlanLog(['logged_at' => now()->subHours(48)->addMinute()]);
-        $outside = $this->offPlanLog(['logged_at' => now()->subHours(48)->subMinute()]);
+        $inside = $this->offPlanLog(['logged_at' => now()->subDays(7)->addMinute()]);
+        $outside = $this->offPlanLog(['logged_at' => now()->subDays(7)->subMinute()]);
 
         $this->patchJson("/api/v1/me/meal-logs/{$inside->id}", ['quantity_grams' => 150], $this->auth())->assertOk();
 
@@ -198,7 +198,7 @@ class EditDeleteMealLogTest extends TestCase
 
     public function test_a_locked_log_answers_403_before_its_body_is_validated(): void
     {
-        $locked = $this->offPlanLog(['logged_at' => now()->subDays(3)]);
+        $locked = $this->offPlanLog(['logged_at' => now()->subDays(9)]);
 
         $this->patchJson("/api/v1/me/meal-logs/{$locked->id}", ['quantity_grams' => -5], $this->auth())
             ->assertForbidden()->assertJsonPath('code', 'log_locked');
@@ -206,13 +206,13 @@ class EditDeleteMealLogTest extends TestCase
 
     public function test_the_window_length_comes_from_config(): void
     {
-        config(['patient_app.edit_window_hours' => 1]);
-        $log = $this->offPlanLog(['logged_at' => now()->subHours(2)]);
+        config(['patient_app.edit_window_days' => 1]);
+        $log = $this->offPlanLog(['logged_at' => now()->subDays(2)]);
 
         $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['quantity_grams' => 150], $this->auth())
             ->assertForbidden()->assertJsonPath('code', 'log_locked');
 
-        config(['patient_app.edit_window_hours' => 72]);
+        config(['patient_app.edit_window_days' => 3]);
         $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['quantity_grams' => 150], $this->auth())->assertOk();
     }
 
@@ -222,7 +222,7 @@ class EditDeleteMealLogTest extends TestCase
 
         $row = $this->getJson('/api/v1/me/meal-logs', $this->auth())->assertOk()->json('data.0');
 
-        $this->assertSame($log->logged_at->addHours(48)->toIso8601String(), $row['editable_until']);
+        $this->assertSame($log->logged_at->addDays(7)->toIso8601String(), $row['editable_until']);
     }
 
     // ---- delete -----------------------------------------------------------

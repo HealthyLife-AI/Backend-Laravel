@@ -39,6 +39,7 @@ class BodyCompositionReading extends Model
         return [
             'recorded_at' => 'date',
             'is_late' => 'boolean',
+            'edited_at' => 'datetime',
             'weight_kg' => 'decimal:2',
             'body_fat_percent' => 'decimal:1',
             'muscle_mass_kg' => 'decimal:2',

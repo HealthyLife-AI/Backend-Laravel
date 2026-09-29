@@ -37,6 +37,8 @@ class MealLogResource extends JsonResource
             // BR-19: the patient entered it more than the late threshold
             // after its date (e.g. an offline queue that synced late).
             'is_late' => (bool) $this->is_late,
+            // BR-15: when the patient last edited it; null if never.
+            'edited_at' => $this->edited_at?->toIso8601String(),
             // BR-15: until when the patient may still edit or delete this
             // log. Server time, so the app needn't know the window length.
             'editable_until' => $this->logged_at ? app(LogWindow::class)->editableUntil($this->logged_at)->toIso8601String() : null,

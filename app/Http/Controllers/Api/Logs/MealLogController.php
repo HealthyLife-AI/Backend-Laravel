@@ -119,6 +119,13 @@ class MealLogController extends Controller
                 $log->logged_at = $request->date('logged_at')->setTimezone(config('app.timezone'));
             }
 
+            // BR-15: shown to the nutritionist as "edited". Only when
+            // something actually changed, so re-sending the same values
+            // (a retried request) doesn't mark the log.
+            if ($log->isDirty()) {
+                $log->edited_at = now();
+            }
+
             $log->save();
             $this->syncSubscriber($log->subscriber);
         });

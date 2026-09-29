@@ -73,7 +73,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 
 | Endpoint | What it is for |
 |---|---|
-| `PATCH /me/meal-logs/{id}`, `DELETE /me/meal-logs/{id}` | Edit (quantity, time, and meal type of an off-plan log) or delete your own meal log for **48 hours** after its `logged_at` (config `LOG_EDIT_WINDOW_HOURS`). The food can't be changed. See [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid) |
+| `PATCH /me/meal-logs/{id}`, `DELETE /me/meal-logs/{id}` | Edit (quantity, time, and meal type of an off-plan log) or delete your own meal log for **7 days** after its `logged_at` (config `LOG_EDIT_WINDOW_DAYS`). The food can't be changed. An edit sets `edited_at`. See [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid) |
 | `GET /me/measurements`, `DELETE /me/measurements/{id}` | The patient's full measurement history (clinic + self-reported, oldest first); delete your own *self-reported* reading within the window. See [Measurement history](#get-memeasurements-and-delete-memeasurementsid) |
 | `GET /me/adherence`, `GET /me/progress` | The patient's own adherence and progress, same bodies the nutritionist sees. The old `/clients/{id}/adherence\|progress` routes never worked for a patient token (always `404`); do not call them. See [Adherence & Progress](#get-meadherence-and-get-meprogress) |
 | `GET /me/nutritionist` | Name, gender, clinic, specialty and WhatsApp number of the patient's nutritionist, for a "my nutritionist" screen. Everything but `name` can be `null` (hide what is missing). See [Nutritionist Profile](#get-menutritionist) |
@@ -95,6 +95,9 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 - **`is_late`** on every meal log and every reading (BR-19): `true` when the
   patient entered it more than 7 days after its date. Informational — the entry
   counts like any other. Clinic readings are always `false`.
+- **`edited_at`** on every meal log and every reading (BR-15): when the patient
+  last changed it — a `PATCH` to a log, or re-sending a reading's day with
+  different figures — or `null`. Re-sending the same values doesn't set it.
 - **`editable_until`** on every meal log (ISO 8601): when its edit window closes.
   Hide edit/delete once it has passed.
 - **`deletable_until`** on every reading returned to the patient (ISO 8601, or
@@ -115,7 +118,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 
 | Rule | What it says |
 |---|---|
-| **BR-15** | A patient can edit or delete their own meal log, and delete their own self-reported reading, for 48 hours after its date (`LOG_EDIT_WINDOW_HOURS`); then `403 log_locked`. The food of a log is never editable |
+| **BR-15** | A patient can edit or delete their own meal log, and correct or delete their own self-reported reading, for 7 days after its date (`LOG_EDIT_WINDOW_DAYS`); then `403 log_locked`. The food of a log is never editable. Every edit is recorded in `edited_at` (its own column, not `updated_at`) and the nutritionist sees a "معدّلة" marker |
 | **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set); for an off-plan one the patient's choice, or, when none is given, the meal whose time range holds the local time of `logged_at` (configurable, default breakfast 05:00–10:59, lunch 11:00–16:59, dinner 17:00–22:59, otherwise snack). A meal type is never a reason to refuse a log |
 | **BR-17** | A patient must accept the current privacy-policy version before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). The version is `CONSENT_VERSION`, or a default (`2026-10-01`) when that isn't set, so the gate is always on and a missing setting never blocks the app |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
@@ -220,7 +223,7 @@ the standard `errors` object pointing at the field.
 
 | status | `code` | meaning | extra keys |
 |---|---|---|---|
-| 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_hours` |
+| 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_days` |
 | 403 | `consent_required` | BR-17: the patient hasn't accepted the current privacy policy | `current_version`, `policy_url` |
 | 409 | `consent_version_mismatch` | `POST /me/consent` named a version that is not the current one | `current_version` |
 | 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated more than 90 days back — a wrong device clock (7–90 days old is accepted and marked late) | `max_age_days` |
@@ -1427,7 +1430,8 @@ matched the plan.
   "is_on_plan": true,
   "logged_at": "2026-09-13T12:30:00+00:00",
   "is_late": false,
-  "editable_until": "2026-09-15T12:30:00+00:00"
+  "edited_at": null,
+  "editable_until": "2026-09-20T12:30:00+00:00"
 }
 ```
 
@@ -1473,8 +1477,11 @@ falling back to the full history.
 ### `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`
 
 **BR-15 — the edit window.** A patient can correct or remove their own log
-for **48 hours after its `logged_at`** (config `LOG_EDIT_WINDOW_HOURS`; every
-log response carries `editable_until`). After that the log is locked. `{id}`
+for **7 days after its `logged_at`** (config `LOG_EDIT_WINDOW_DAYS`; every
+log response carries `editable_until`). After that the log is locked. A `PATCH`
+that changes something sets `edited_at` to the time of the edit (a `PATCH` that
+sends the values already stored changes nothing and leaves it as it was); the
+nutritionist's dashboard marks such an entry "معدّلة". `{id}`
 is looked up among the caller's own logs only: another patient's log — or one
 that doesn't exist, or was already deleted — is `404`. Checks run in a fixed
 order: `404`, then `403 log_locked`, then body validation (`422`).
@@ -1500,7 +1507,7 @@ the dashboard reflects the change straight away.
 | status | when |
 |---|---|
 | 200 / 204 | done |
-| 403 `log_locked` | past the edit window (`editable_hours` in the body) |
+| 403 `log_locked` | past the edit window (`editable_days` in the body) |
 | 403 | caller is not a patient (a nutritionist), or `follow_up_ended` for an archived patient |
 | 404 | not this patient's log, or no such log |
 | 422 | invalid or prohibited field, nothing to change, or a `logged_at` in the future / outside the edit window (plain validation error on `logged_at`) |
@@ -1563,18 +1570,20 @@ optional and must be sent together (a half-open range is `422`).
 
 ```json
 [
-  { "id": 3, "recorded_at": "2026-08-01", "source": "clinic-analyser", "is_late": false, "weight_kg": 82, "body_fat_percent": 24.5,
+  { "id": 3, "recorded_at": "2026-08-01", "source": "clinic-analyser", "is_late": false, "edited_at": null, "weight_kg": 82, "body_fat_percent": 24.5,
     "muscle_mass_kg": 33, "water_percent": 51, "waist_cm": 90, "hip_cm": null, "thigh_cm": null, "arm_cm": null,
     "deletable_until": null },
-  { "id": 9, "recorded_at": "2026-09-14", "source": "self-reported", "is_late": false, "weight_kg": 79.5, "body_fat_percent": null,
+  { "id": 9, "recorded_at": "2026-09-14", "source": "self-reported", "is_late": false, "edited_at": null, "weight_kg": 79.5, "body_fat_percent": null,
     "muscle_mass_kg": null, "water_percent": null, "waist_cm": null, "hip_cm": 100, "thigh_cm": null, "arm_cm": null,
-    "deletable_until": "2026-09-16T00:00:00+00:00" }
+    "deletable_until": "2026-09-21T00:00:00+00:00" }
 ]
 ```
 
-`deletable_until` (BR-15) is the end of the delete window — 48 hours counted
-from the **start of the reading's date** (a reading dated today stays deletable
-through the end of tomorrow) — and `null` on a clinic reading.
+`deletable_until` (BR-15) is the end of the edit/delete window — 7 days counted
+from the **start of the reading's date** (a reading dated Monday stays
+deletable, and can be corrected by re-sending its day, until the start of the
+next Monday) — and `null` on a clinic reading. `edited_at` is when the patient
+last changed the reading's figures (`null` if never).
 
 `DELETE /me/measurements/{id}` — **204**. Only the patient's **own
 self-reported** readings, only inside that window. The id is looked up among
@@ -1602,11 +1611,12 @@ answered `200`.
 `GET /clients/{id}/body-composition-readings` and
 `POST /clients/{id}/body-composition-readings` are unchanged except that
 they now also accept `hip_cm`, `thigh_cm`, `arm_cm`, and every response
-carries `source` and `is_late` (BR-19: a self-reported reading the patient
-entered more than 7 days after its date; always `false` on a clinic reading).
-The same `is_late` is on every `weight_trend` point and on the `latest` /
+carries `source`, `is_late` (BR-19: a self-reported reading the patient
+entered more than 7 days after its date; always `false` on a clinic reading)
+and `edited_at` (BR-15: when the patient last changed the reading's figures, or
+`null`). The same two are on every `weight_trend` point and on the `latest` /
 `previous` snapshots of `GET /clients/{id}/progress` and `GET /me/progress`, so
-the dashboard can mark those readings "تسجيل متأخر".
+the dashboard can mark those readings "تسجيل متأخر" and "معدّلة".
 
 ---
 
@@ -1716,8 +1726,8 @@ three round-trips to paint one screen is what NFR-01 is trying to avoid.
 ```json
 {
   "weight_trend": [
-    { "recorded_at": "2026-09-10", "weight_kg": 84, "source": "clinic-analyser", "is_late": false },
-    { "recorded_at": "2026-09-12", "weight_kg": 82, "source": "self-reported", "is_late": false }
+    { "recorded_at": "2026-09-10", "weight_kg": 84, "source": "clinic-analyser", "is_late": false, "edited_at": null },
+    { "recorded_at": "2026-09-12", "weight_kg": 82, "source": "self-reported", "is_late": false, "edited_at": null }
   ],
   "body_composition": {
     "latest":   { "recorded_at": "2026-09-12", "source": "self-reported",  "is_late": false, "weight_kg": 82, "waist_cm": 92.5, "hip_cm": 101, "thigh_cm": 58, "arm_cm": 31.5, "body_fat_percent": null },

@@ -145,7 +145,15 @@ class MeasurementController extends Controller
         // clinic must NOT downgrade that row's source to self-reported —
         // the analyser figures on it stay analyser figures, so `source`
         // is left as it is rather than re-stamped.
-        $reading->update($measurements);
+        $reading->fill($measurements);
+
+        // BR-15: the patient changed a saved reading — shown to the
+        // nutritionist as "edited". Same figures (a replay) change nothing.
+        if ($reading->isDirty()) {
+            $reading->edited_at = now();
+        }
+
+        $reading->save();
 
         return (new BodyCompositionReadingResource($reading))->response();
     }

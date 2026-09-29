@@ -83,7 +83,7 @@ class MeasurementHistoryTest extends TestCase
         $rows = $this->getJson('/api/v1/me/measurements', $this->auth())->assertOk()->json();
 
         $this->assertNull($rows[0]['deletable_until'], 'a clinic reading is never deletable');
-        $this->assertSame(now()->startOfDay()->addHours(48)->toIso8601String(), $rows[1]['deletable_until']);
+        $this->assertSame(now()->startOfDay()->addDays(7)->toIso8601String(), $rows[1]['deletable_until']);
         $this->assertSame($mine->id, $rows[1]['id']);
     }
 
@@ -138,14 +138,16 @@ class MeasurementHistoryTest extends TestCase
 
     public function test_the_delete_window_runs_from_the_readings_date(): void
     {
-        $yesterday = $this->reading(now()->subDay()->toDateString());
-        $twoDaysAgo = $this->reading(now()->subDays(2)->toDateString());
+        // 7 days from the START of the reading's date: one dated 6 days ago is
+        // deletable until tomorrow, one dated 7 days ago locked at midnight.
+        $sixDaysAgo = $this->reading(now()->subDays(6)->toDateString());
+        $sevenDaysAgo = $this->reading(now()->subDays(7)->toDateString());
 
-        $this->deleteJson("/api/v1/me/measurements/{$twoDaysAgo->id}", [], $this->auth())
-            ->assertForbidden()->assertJsonPath('code', 'log_locked');
-        $this->assertDatabaseHas('body_composition_readings', ['id' => $twoDaysAgo->id]);
+        $this->deleteJson("/api/v1/me/measurements/{$sevenDaysAgo->id}", [], $this->auth())
+            ->assertForbidden()->assertJsonPath('code', 'log_locked')->assertJsonPath('editable_days', 7);
+        $this->assertDatabaseHas('body_composition_readings', ['id' => $sevenDaysAgo->id]);
 
-        $this->deleteJson("/api/v1/me/measurements/{$yesterday->id}", [], $this->auth())->assertNoContent();
+        $this->deleteJson("/api/v1/me/measurements/{$sixDaysAgo->id}", [], $this->auth())->assertNoContent();
     }
 
     public function test_another_patients_reading_is_a_404(): void
@@ -174,7 +176,7 @@ class MeasurementHistoryTest extends TestCase
 
     public function test_re_sending_a_saved_day_after_its_window_is_a_replay_not_an_edit(): void
     {
-        $old = $this->reading(now()->subDays(4)->toDateString(), extra: ['weight_kg' => 81.2]);
+        $old = $this->reading(now()->subDays(8)->toDateString(), extra: ['weight_kg' => 81.2]);
 
         $this->postJson('/api/v1/me/measurements', ['weight_kg' => 81.2, 'recorded_at' => $old->recorded_at->toDateString()], $this->auth())
             ->assertOk()->assertJsonPath('id', $old->id);

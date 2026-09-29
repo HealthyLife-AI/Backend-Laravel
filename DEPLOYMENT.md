@@ -22,7 +22,7 @@ its own reasoning — this is just the checklist).
 | Scheduler | `SCHEDULE_TIMEZONE`, `SCHEDULE_SELF_TRIGGER` | See "Scheduler" below. |
 | Patient consent (BR-17) | `CONSENT_VERSION`, `CONSENT_POLICY_URL` | Set both explicitly. `CONSENT_VERSION` (e.g. `2026-10-01`) is the privacy-policy version patients must accept before the app's data endpoints open; change it when the policy text changes and every patient is asked again. `CONSENT_POLICY_URL` is the dashboard's public `/privacy` page, e.g. `https://<dashboard-domain>/privacy`. **If either is missing nothing breaks**: the version falls back to `2026-10-01` and the URL to `FRONTEND_URL` + `/privacy` (or none if `FRONTEND_URL` isn't set either), and the admin overview shows a warning until both are set. |
 | Meal times (optional, BR-16) | `MEAL_TIME_BREAKFAST` (`05:00-10:59`), `MEAL_TIME_LUNCH` (`11:00-16:59`), `MEAL_TIME_DINNER` (`17:00-22:59`) | Used to infer the meal type of an off-plan log sent without one; any other time is a snack. |
-| Patient log limits (optional) | `LOG_EDIT_WINDOW_HOURS` (48), `LOG_LATE_AFTER_DAYS` (7), `LOG_REJECT_AFTER_DAYS` (90) | How long a patient may edit/delete their own entry; after how many days a new entry is accepted but marked late; after how many it is refused (a wrong device clock). `LOG_BACKDATE_LIMIT_DAYS` is no longer read — remove it if you set it. |
+| Patient log limits (optional) | `LOG_EDIT_WINDOW_DAYS` (7), `LOG_LATE_AFTER_DAYS` (7), `LOG_REJECT_AFTER_DAYS` (90) | How long a patient may edit/delete their own entry; after how many days a new entry is accepted but marked late; after how many it is refused (a wrong device clock). `LOG_EDIT_WINDOW_HOURS` and `LOG_BACKDATE_LIMIT_DAYS` are no longer read — remove them if you set them. |
 | Push notifications (S5-06, optional) | `FIREBASE_CREDENTIALS_JSON_BASE64` | ⚠️ **Use this form, not `FIREBASE_CREDENTIALS_JSON`.** The raw-JSON form broke login/register outright on this project's own Taqat deployment — its unescaped `"` characters corrupted Taqat's env-var storage before the app could even log an exception. Base64's alphabet (`[A-Za-z0-9+/=]`) is immune to that class of failure. Verify with `GET /api/v1/system/ai-status` and `/system/fcm-status` after any redeploy — see below. |
 
 After any deploy that touches these, confirm the running container
@@ -321,7 +321,7 @@ changing deploy behavior blind is a worse risk than the status quo.
 
 ### Verifying the phase-1 migrations on MySQL
 
-The patient-app phase-1 batch adds six migrations (in this order):
+The patient-app phase-1 batch adds seven migrations (in this order):
 
 | Migration | What it does | Backfill |
 |---|---|---|
@@ -331,6 +331,7 @@ The patient-app phase-1 batch adds six migrations (in this order):
 | `2026_09_29_130000_create_patient_consents_table` | new table | none |
 | `2026_09_29_140000_create_patient_deletion_notices_table` | new table | none |
 | `2026_09_29_150000_add_is_late_to_patient_entries` | `meal_logs.is_late`, `body_composition_readings.is_late` (BR-19) | `true` where the row was created more than 7 days after its date (`logged_at`, or the end of `recorded_at`); clinic readings stay `false` |
+| `2026_09_29_160000_add_edited_at_to_patient_entries` | `meal_logs.edited_at`, `body_composition_readings.edited_at` (BR-15) | none (`NULL`: no past update is known to be a patient edit) |
 
 They were verified on SQLite and on MariaDB 10.11. Run this on **your local
 MySQL, in a scratch database, before deploying** to check the backfills and the
@@ -347,11 +348,11 @@ export DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=hl_verify 
        DB_USERNAME=<your-mysql-user> DB_PASSWORD=<your-mysql-password> DB_URL=
 M="mysql -u$DB_USERNAME -p$DB_PASSWORD -h$DB_HOST -P$DB_PORT $DB_DATABASE"
 
-# 1. Build the schema, then roll the six phase-1 migrations back so the database
+# 1. Build the schema, then roll the seven phase-1 migrations back so the database
 #    looks like production does today.
 php artisan migrate --force
-php artisan migrate:rollback --step=6 --force
-php artisan migrate:status | tail -8      # the six above must say "Pending", everything else "Ran"
+php artisan migrate:rollback --step=7 --force
+php artisan migrate:status | tail -9      # the seven above must say "Pending", everything else "Ran"
 
 # 2. Plant legacy rows: two nutritionists, patients PT-101 / PT-103 / PT-107 and one
 #    non-PT code, four meal logs (two on-plan against a dinner and a breakfast
@@ -409,12 +410,12 @@ id    source           is_late
 
 ```bash
 # 5. Roll the batch back and check it leaves nothing behind and loses no data.
-php artisan migrate:rollback --step=6 --force
+php artisan migrate:rollback --step=7 --force
 $M -e "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE()
        AND ((table_name = 'nutritionist_profiles' AND column_name IN ('gender','whatsapp_number'))
        OR (table_name = 'meal_logs' AND column_name = 'meal_type')
        OR (table_name = 'users' AND column_name = 'client_code_counter')
-       OR column_name = 'is_late')"   # expect: no rows
+       OR column_name IN ('is_late', 'edited_at'))"   # expect: no rows
 $M -e "SHOW TABLES LIKE 'patient_%'"                                         # expect: no rows
 $M -N -e "SELECT COUNT(*) FROM meal_logs; SELECT COUNT(*) FROM subscribers"   # expect: 4 and 4
 
@@ -444,9 +445,9 @@ that had already been issued to since-deleted patients; that is only a concern
 when rolling back on a database that is already in use.
 
 For the real deploy: take the backup from the "Backups" section first, then
-`php artisan migrate --force`. `migrate:rollback --step=6` undoes exactly this
+`php artisan migrate --force`. `migrate:rollback --step=7` undoes exactly this
 batch if it has to be undone (it loses the patient-consent records and deletion
-notices created since, `meal_type` and the late marks).
+notices created since, `meal_type`, and the late and edited marks).
 
 ## Backups
 

@@ -44,6 +44,8 @@ class ProgressReportService
                 'source' => $reading->source,
                 // BR-19: shown to the nutritionist as "entered late".
                 'is_late' => (bool) $reading->is_late,
+                // BR-15: shown as "edited".
+                'edited_at' => $reading->edited_at?->toIso8601String(),
             ])->values(),
             'body_composition' => [
                 'latest' => $this->snapshot($readings->last()),
@@ -71,6 +73,7 @@ class ProgressReportService
             // are analyser-grade and which are the client's own estimate.
             'source' => $reading->source,
             'is_late' => (bool) $reading->is_late,
+            'edited_at' => $reading->edited_at?->toIso8601String(),
             'weight_kg' => (float) $reading->weight_kg,
             'body_fat_percent' => $reading->body_fat_percent !== null ? (float) $reading->body_fat_percent : null,
             'muscle_mass_kg' => $reading->muscle_mass_kg !== null ? (float) $reading->muscle_mass_kg : null,

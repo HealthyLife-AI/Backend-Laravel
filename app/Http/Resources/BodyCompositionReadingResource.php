@@ -27,6 +27,8 @@ class BodyCompositionReadingResource extends JsonResource
             'source' => $this->source,
             // BR-19: a self-reported reading entered late (never a clinic one).
             'is_late' => (bool) $this->is_late,
+            // BR-15: when the patient last changed it; null if never.
+            'edited_at' => $this->edited_at?->toIso8601String(),
             'weight_kg' => (float) $this->weight_kg,
             'body_fat_percent' => $this->body_fat_percent !== null ? (float) $this->body_fat_percent : null,
             'muscle_mass_kg' => $this->muscle_mass_kg !== null ? (float) $this->muscle_mass_kg : null,

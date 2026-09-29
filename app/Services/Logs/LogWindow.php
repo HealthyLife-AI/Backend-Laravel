@@ -22,9 +22,9 @@ use Carbon\CarbonInterface;
  */
 class LogWindow
 {
-    public function editHours(): int
+    public function editDays(): int
     {
-        return (int) config('patient_app.edit_window_hours');
+        return (int) config('patient_app.edit_window_days');
     }
 
     public function lateAfterDays(): int
@@ -52,13 +52,13 @@ class LogWindow
     /** BR-15: when an entry dated `$at` stops being editable. */
     public function editableUntil(CarbonInterface $at): CarbonImmutable
     {
-        return CarbonImmutable::instance($at)->addHours($this->editHours());
+        return CarbonImmutable::instance($at)->addDays($this->editDays());
     }
 
     /**
      * BR-15 for a reading, which has a date and no time of day: the window
-     * runs from the start of its date, so a reading dated today stays
-     * editable through the end of tomorrow.
+     * runs from the start of its date, so with the default 7 days a reading
+     * dated Monday stays editable until the start of the next Monday.
      */
     public function readingEditableUntil(CarbonInterface $date): CarbonImmutable
     {
@@ -81,7 +81,7 @@ class LogWindow
     /** BR-15: the earliest date an edit may move an entry to without locking it on the spot. */
     public function earliestEditableTimestamp(): CarbonImmutable
     {
-        return CarbonImmutable::now()->subHours($this->editHours());
+        return CarbonImmutable::now()->subDays($this->editDays());
     }
 
     public function isLocked(CarbonInterface $at): bool
@@ -103,7 +103,7 @@ class LogWindow
             'This entry can no longer be changed.',
             'log_locked',
             403,
-            ['editable_hours' => $this->editHours()],
+            ['editable_days' => $this->editDays()],
         );
     }
 

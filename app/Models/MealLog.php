@@ -38,6 +38,7 @@ class MealLog extends Model
             'quantity_grams' => 'decimal:1',
             'logged_at' => 'datetime',
             'is_late' => 'boolean',
+            'edited_at' => 'datetime',
         ];
     }
 

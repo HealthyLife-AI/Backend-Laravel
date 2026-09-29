@@ -4,17 +4,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Log edit window (BR-15)
+    | Edit window (BR-15)
     |--------------------------------------------------------------------------
     |
-    | How long after a meal log's `logged_at` (or a self-reported reading's
-    | date) the patient may still edit or delete it. Past this the entry is
-    | locked (403 `log_locked`), so a patient can't quietly rewrite history
-    | their nutritionist has already reviewed.
+    | How many days after a meal log's `logged_at` (or the start of a
+    | self-reported reading's date) the patient may still edit or delete it.
+    | Past this the entry is locked (403 `log_locked`), so a patient can't
+    | quietly rewrite history their nutritionist has already reviewed. An
+    | edit is recorded in `edited_at` and shown to the nutritionist.
     |
     */
 
-    'edit_window_hours' => (int) env('LOG_EDIT_WINDOW_HOURS', 48),
+    'edit_window_days' => (int) env('LOG_EDIT_WINDOW_DAYS', 7),
 
     /*
     |--------------------------------------------------------------------------
