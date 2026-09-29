@@ -13,7 +13,7 @@ code ever disagree, the code wins; report the drift so this gets fixed.
 [Meal Plan Templates](#meal-plan-templates-sprint-3) ·
 [Food Submission & Approval](#food-submission--approval-sprint-3) ·
 [Client's Own Plan](#clients-own-plan-sprint-3) (Sprint 3) ·
-**[Patient Consent](#patient-consent-br-17)** ·
+**[Patient Consent](#patient-consent-br-17)** · **[Account deletion](#account-deletion-br-18)** ·
 **[Patient app changes](#patient-app-changes)** (phase 1 — what the Flutter app must adapt to)
 
 Base URL: `{APP_URL}/api/v1` (local dev default: `http://127.0.0.1:8000/api/v1`).
@@ -65,6 +65,14 @@ error codes. The list grows with the batch; entries are grouped by change.
   has passed: show the entry as read-only.
 
 **New endpoints**
+
+- `DELETE /me/account`: the patient deletes their own account and all their data
+  (Apple/Google in-app deletion requirement). Needs the current password in the
+  body; `204` on success, `422` on `password` if wrong or missing, `429` when
+  tried too often, `403 follow_up_ended` for a patient whose follow-up ended
+  (they ask their nutritionist or support). After a `204`, clear all local
+  data and tokens and go to the signed-out screen. See
+  [Account deletion](#account-deletion-br-18).
 
 - `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`: edit or delete
   your own meal log for 48 hours after its `logged_at` (config
@@ -544,6 +552,10 @@ cascades, their health profile, measurements, plans, logs, alerts, AI
 summaries and invites. Irreversible. Works on archived patients too.
 
 **204 No Content** · **404** — not your client.
+
+The patient can do the same to themselves from the app:
+[`DELETE /me/account`](#account-deletion-br-18) (same deletion; that route also
+leaves the nutritionist a notice, this one does not).
 
 ### `POST /clients/{id}/archive`
 
@@ -1256,6 +1268,60 @@ the gated endpoints and both consent endpoints answer `503
 consent_not_configured` rather than silently letting patients through with no
 consent on record. The admin overview shows a warning
 (`consent_configured: false` on `GET /admin/overview`) until it is set.
+
+## Account deletion (BR-18)
+
+### `DELETE /me/account`
+
+The patient deletes their own account from the app (in-app path:
+**ملفي ← حذف الحساب**). Role `client` only, no id in the URL; **not** behind the
+consent gate (a patient who hasn't accepted the policy can still leave).
+
+```json
+{ "password": "the patient's current password" }
+```
+
+| status | when |
+|---|---|
+| 204 | deleted. Nothing is returned |
+| 422 | `password` is missing, or is not the account's password (`errors.password`) |
+| 429 | too many attempts: the limit is 5 per minute per patient (`ACCOUNT_DELETION_ATTEMPTS_PER_MINUTE`), counted whether or not the password was right |
+| 403 | caller is a nutritionist; or `follow_up_ended` for an archived patient |
+| 401 | no / invalid / already-deleted-account token |
+
+**What is deleted** — the same deletion the nutritionist's
+[`DELETE /clients/{id}`](#delete-clientsid) performs, in one transaction: the
+login account and everything recorded about the patient — health profile,
+measurements, meal plans (with their meals and items), meal logs, alerts, AI
+summaries, invites, consent records, refresh tokens, device push token, and any
+password-reset token or session. It is irreversible. Every refresh token is gone
+with the account, and the access token in hand stops working at once (`401`), so
+the app should clear its local data and tokens and return to the signed-out
+screen. The patient's code is never issued again.
+
+**What the nutritionist sees** — a notice on their dashboard with only the
+patient's **code** and the **date**; no name, phone or any other detail
+(`GET /notices` below). A deletion the nutritionist performs themselves leaves no
+notice.
+
+**Archived patients.** A patient whose follow-up has ended gets
+`403 follow_up_ended` on every route, this one included, so they can't delete
+from the app; the public page `/account-deletion` on the dashboard site tells them to ask
+their nutritionist (who can delete them) or support.
+
+### `GET /notices` and `DELETE /notices/{id}`
+
+For the **nutritionist** (permission `alerts.view`): notices that a patient
+deleted their own account, newest first, own notices only.
+
+```json
+[
+  { "id": 4, "patient_code": "PT-104", "deleted_at": "2026-10-03T09:20:00+00:00" }
+]
+```
+
+`DELETE /notices/{id}` dismisses (permanently removes) one: **204**, or **404**
+for a notice that isn't yours or is already gone. A patient token gets `403`.
 
 ## Meal & Weight Logging (Sprint 4)
 

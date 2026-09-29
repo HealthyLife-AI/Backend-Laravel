@@ -104,6 +104,13 @@ class AppServiceProvider extends ServiceProvider
         // `$request->user()` is never null here, and a named limiter
         // avoids the bare numeric form's own key-resolution quirks
         // stacking unpredictably with the general 'api' limiter above.
+        // BR-18: DELETE /me/account takes the password, so cap attempts per
+        // patient so it can't be used to guess it. Behind `jwt`, so the
+        // user is always set.
+        RateLimiter::for('account-deletion', function (Request $request) {
+            return Limit::perMinute((int) config('patient_app.account_deletion.attempts_per_minute'))->by($request->user()->id);
+        });
+
         RateLimiter::for('ai-draft', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()->id);
         });

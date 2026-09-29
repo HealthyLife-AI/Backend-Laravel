@@ -9,6 +9,7 @@ use App\Http\Resources\SubscriberResource;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Clients\ClientCodeAllocator;
+use App\Services\Clients\ClientDeletionService;
 use App\Services\Clients\ClientInviteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -29,6 +30,7 @@ class ClientController extends Controller
     public function __construct(
         private readonly ClientInviteService $invites,
         private readonly ClientCodeAllocator $codes,
+        private readonly ClientDeletionService $deletion,
     ) {}
 
     /**
@@ -137,7 +139,7 @@ class ClientController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        DB::transaction(fn () => $subscriber->user()->first()?->delete() ?? $subscriber->delete());
+        $this->deletion->delete($subscriber);
 
         return response()->json(null, 204);
     }

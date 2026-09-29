@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Account\AccountController;
 use App\Http\Controllers\Api\Admin\AdminFoodController;
 use App\Http\Controllers\Api\Admin\AdminNutritionistController;
 use App\Http\Controllers\Api\Admin\AdminOverviewController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Api\Logs\MeasurementController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
+use App\Http\Controllers\Api\Notices\DeletionNoticeController;
 use App\Http\Controllers\Api\Notifications\FcmTokenController;
 use App\Http\Controllers\Api\Nutritionists\MyNutritionistController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
@@ -182,6 +184,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/consent', [ConsentController::class, 'show'])->name('me.consent.show');
         Route::post('me/consent', [ConsentController::class, 'store'])->name('me.consent.store');
 
+        // BR-18: delete my own account (password required, rate-limited,
+        // not behind the consent gate).
+        Route::delete('me/account', [AccountController::class, 'destroy'])
+            ->middleware('throttle:account-deletion')
+            ->name('me.account.destroy');
+
         // The patient's own nutritionist: name, gender, clinic, specialty,
         // WhatsApp number — for the app's "my nutritionist" card.
         Route::get('me/nutritionist', [MyNutritionistController::class, 'show'])->name('me.nutritionist.show');
@@ -204,6 +212,10 @@ Route::prefix('v1')->name('api.')->group(function () {
     // alerts and mark one read. Isolation via whereHas('subscriber') —
     // see AlertController's docblock.
     Route::middleware(['jwt', 'permission:alerts.view'])->group(function () {
+        // BR-18: notices that a patient deleted their own account.
+        Route::get('notices', [DeletionNoticeController::class, 'index'])->name('notices.index');
+        Route::delete('notices/{id}', [DeletionNoticeController::class, 'destroy'])->whereNumber('id')->name('notices.destroy');
+
         Route::get('alerts', [AlertController::class, 'index'])->name('alerts.index');
         Route::patch('alerts/{alert}/read', [AlertController::class, 'markRead'])->name('alerts.mark-read');
     });

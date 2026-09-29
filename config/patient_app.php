@@ -55,4 +55,19 @@ return [
         'policy_url' => env('CONSENT_POLICY_URL') ?: null,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Account deletion (BR-18)
+    |--------------------------------------------------------------------------
+    |
+    | `DELETE /me/account` needs the current password, so a stolen access
+    | token alone can't wipe a patient's record. This caps attempts per
+    | minute per patient so the password can't be guessed through it.
+    |
+    */
+
+    'account_deletion' => [
+        'attempts_per_minute' => (int) env('ACCOUNT_DELETION_ATTEMPTS_PER_MINUTE', 5),
+    ],
+
 ];
