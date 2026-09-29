@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Food;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Consent\ConsentService;
 use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Http\JsonResponse;
 
@@ -29,6 +30,10 @@ class AdminOverviewController extends Controller
             'foods_pending' => (int) $foods->where('status', 'pending')->sum('total'),
             // Proof the 06:00 job (adherence refresh + alerts) ran: when, and what it did.
             'last_daily_run' => app(SelfScheduler::class)->lastResult('alerts'),
+            // BR-17: whether CONSENT_VERSION is set. While it isn't, patient
+            // data endpoints refuse (503) in production, so the admin panel
+            // warns about it like it does for the scheduler.
+            'consent_configured' => app(ConsentService::class)->isConfigured(),
             'foods_by_source' => [
                 'usda' => (int) $approved->where('source', 'usda')->sum('total'),
                 'admin' => (int) $approved->where('source', 'admin')->sum('total'),

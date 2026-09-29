@@ -13,6 +13,7 @@ code ever disagree, the code wins; report the drift so this gets fixed.
 [Meal Plan Templates](#meal-plan-templates-sprint-3) ·
 [Food Submission & Approval](#food-submission--approval-sprint-3) ·
 [Client's Own Plan](#clients-own-plan-sprint-3) (Sprint 3) ·
+**[Patient Consent](#patient-consent-br-17)** ·
 **[Patient app changes](#patient-app-changes)** (phase 1 — what the Flutter app must adapt to)
 
 Base URL: `{APP_URL}/api/v1` (local dev default: `http://127.0.0.1:8000/api/v1`).
@@ -32,6 +33,21 @@ entry links to the endpoint's own section for the exact request, response and
 error codes. The list grows with the batch; entries are grouped by change.
 
 **Breaking (the app must change before it works against this backend)**
+
+- **Consent gate (BR-17).** Until the patient has accepted the current privacy
+  policy, **every patient data endpoint answers `403 consent_required`**
+  (meal plan, meal logs, measurements, adherence, progress, food search).
+  After login the app must call [`GET /me/consent`](#patient-consent-br-17);
+  if `required` is `true`, show the policy (`policy_url`) and a consent screen,
+  and call `POST /me/consent` when the patient accepts. Also handle
+  `403 consent_required` coming from any data endpoint (the policy version can
+  change while the app is open): send the patient to the same screen. **Not
+  gated**: login/refresh/logout, invite activation, `GET /auth/me`,
+  `GET|POST /me/consent`, `GET /me/nutritionist`, `PUT /me/fcm-token`, and
+  account deletion. `403 follow_up_ended` still wins over `consent_required`.
+  If a deployment has no policy version configured, data endpoints answer
+  `503 consent_not_configured` (fail closed) — show a "service unavailable"
+  message; nothing the app can fix.
 
 - **`meal_type` is required on an off-plan meal log** (`POST /me/meal-logs`
   without `meal_item_id`). One of `breakfast`, `lunch`, `dinner`, `snack`.
@@ -191,6 +207,10 @@ the standard `errors` object pointing at the field.
 | status | `code` | meaning | extra keys |
 |---|---|---|---|
 | 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_hours` |
+| 403 | `consent_required` | BR-17: the patient hasn't accepted the current privacy policy | `current_version`, `policy_url` |
+| 409 | `consent_version_mismatch` | `POST /me/consent` named a version that is not the current one | `current_version` |
+| 409 | `consent_not_required` | `POST /me/consent` on a server with no policy version (development only) | — |
+| 503 | `consent_not_configured` | the server has no policy version set (misconfiguration; fail closed outside local/testing) | — |
 | 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated further back than allowed | `max_age_days` |
 
 **Rate limiting** (`429`, register/login: 10 req/min, refresh: 20 req/min, per IP):
@@ -495,8 +515,27 @@ envelope).
 
 ### `GET /clients/{id}`
 
-Single client, same shape as the `client` object above. Works for archived
-patients too.
+Single client, same shape as the `client` object above, plus a `consent`
+object (BR-17) — what the patient last accepted, so the nutritionist can see it
+on the patient page. Works for archived patients too.
+
+```json
+{
+  "id": 12, "code": "PT-101", "...": "...",
+  "consent": {
+    "accepted_version": "2026-10-01",
+    "accepted_at": "2026-10-02T09:15:00+00:00",
+    "current_version": "2026-10-01",
+    "up_to_date": true
+  }
+}
+```
+
+`accepted_version` / `accepted_at` are `null` if the patient never accepted.
+`up_to_date` is `false` when the current version differs from what they
+accepted (or they never did), and `null` when no version is configured. The IP
+and user agent that were recorded are never sent to the dashboard. The roster
+(`GET /clients`) does not carry `consent`.
 
 ### `DELETE /clients/{id}`
 
@@ -1137,6 +1176,86 @@ Times are UTC; 06:00 Riyadh is 03:00 UTC. `last_result` is `null` until the
 active clients after that run's adherence refresh.
 
 ---
+
+## Patient Consent (BR-17)
+
+Before the patient app can read or write anything about the patient, the
+patient must accept the **current version** of the privacy policy. The version
+and the URL of the policy come from the server's configuration
+(`CONSENT_VERSION`, `CONSENT_POLICY_URL`); the policy text itself is not part of
+the API.
+
+Role `client` only (a nutritionist token gets `403`), no id in the URL;
+`follow_up_ended` (`403`) for an archived patient.
+
+### `GET /me/consent`
+
+```json
+{
+  "required": true,
+  "current_version": "2026-10-01",
+  "accepted_version": null,
+  "accepted_at": null,
+  "policy_url": "https://dashboard.example/privacy"
+}
+```
+
+| field | meaning |
+|---|---|
+| `required` | `true` while the patient has not accepted `current_version` — show the consent screen |
+| `current_version` | the version in force (`null` only on a development server with none configured; then `required` is `false`) |
+| `accepted_version`, `accepted_at` | the patient's most recent acceptance, of **any** version (`null` if none). Differs from `current_version` after the policy changes |
+| `policy_url` | where the patient reads the policy (`null` if not configured) |
+
+### `POST /me/consent`
+
+Records that the patient accepts the current version, with the time, IP address
+and user agent the request came from. Body is optional:
+
+```json
+{ "version": "2026-10-01" }
+```
+
+Send `version` (the value the app showed) so a patient can never accept a
+policy version other than the one on their screen: if it is not the current
+version the answer is `409 consent_version_mismatch` (with `current_version`) —
+fetch `GET /me/consent` again and re-show.
+
+Idempotent per version: **201** the first time this version is accepted, **200**
+if it already was (the first record stands). Both return the same body as
+`GET /me/consent` (now `required: false`). When the policy version changes,
+`required` becomes `true` again for everyone, the old acceptance is kept as
+history, and accepting adds a new record.
+
+### The gate: `403 consent_required`
+
+Every patient data endpoint refuses until consent is accepted:
+
+```json
+{
+  "message": "You must accept the privacy policy to continue.",
+  "code": "consent_required",
+  "current_version": "2026-10-01",
+  "policy_url": "https://dashboard.example/privacy"
+}
+```
+
+Gated: `GET /me/meal-plan`, all of `/me/meal-logs*`, all of `/me/measurements*`,
+`GET /me/adherence`, `GET /me/progress`, `GET /foods/search` (for a patient).
+**Not gated**: `POST /auth/login|refresh|logout`, invite activation,
+`GET /auth/me`, `GET|POST /me/consent`, `GET /me/nutritionist`,
+`PUT /me/fcm-token`, `DELETE /me/account`. Precedence when several apply:
+`401` → `403 follow_up_ended` → `503 consent_not_configured` →
+`403 consent_required`.
+
+### `503 consent_not_configured` (fail closed)
+
+If the server has **no** `CONSENT_VERSION` set, then in `local` and `testing`
+environments the gate is simply off, but everywhere else (production, staging)
+the gated endpoints and both consent endpoints answer `503
+consent_not_configured` rather than silently letting patients through with no
+consent on record. The admin overview shows a warning
+(`consent_configured: false` on `GET /admin/overview`) until it is set.
 
 ## Meal & Weight Logging (Sprint 4)
 

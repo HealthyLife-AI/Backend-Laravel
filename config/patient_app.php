@@ -30,4 +30,29 @@ return [
 
     'backdate_limit_days' => (int) env('LOG_BACKDATE_LIMIT_DAYS', 7),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Patient consent (BR-17)
+    |--------------------------------------------------------------------------
+    |
+    | `version` is the CURRENT privacy-policy version. Until a patient has
+    | accepted it, their data endpoints answer 403 `consent_required`. Bump
+    | it (e.g. 2026-10-01 -> 2027-02-01) when the policy text changes and
+    | every patient is asked again.
+    |
+    | Blank means "not configured", and the gate must not be silently off
+    | in a real deployment: outside `local` and `testing` a blank version
+    | makes patient data endpoints refuse with 503 `consent_not_configured`
+    | (fail closed), and the admin overview shows a warning.
+    |
+    | `policy_url` is where the app sends the patient to read the policy.
+    | The policy text itself is not stored or written by this code.
+    |
+    */
+
+    'consent' => [
+        'version' => env('CONSENT_VERSION') ?: null,
+        'policy_url' => env('CONSENT_POLICY_URL') ?: null,
+    ],
+
 ];

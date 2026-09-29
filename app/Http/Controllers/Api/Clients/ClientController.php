@@ -123,7 +123,7 @@ class ClientController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        return new SubscriberResource($subscriber->load('user'));
+        return (new SubscriberResource($subscriber->load('user')))->withConsent();
     }
 
     /**

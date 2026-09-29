@@ -45,6 +45,8 @@
              a test makes first would run every overdue job. Tests covering
              it opt in with config(['scheduling.self_trigger' => true]). -->
         <env name="SCHEDULE_SELF_TRIGGER" value="false"/>
+        <env name="CONSENT_VERSION" value=""/>
+        <env name="CONSENT_POLICY_URL" value=""/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientFollowUpController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
 use App\Http\Controllers\Api\Clients\DashboardController;
+use App\Http\Controllers\Api\Consent\ConsentController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
@@ -99,7 +100,7 @@ Route::prefix('v1')->name('api.')->group(function () {
     // FR-25: read-only reference data — no permission gate beyond being
     // authenticated (see FoodController docblock).
     Route::get('foods/search', [FoodController::class, 'search'])
-        ->middleware('jwt')
+        ->middleware(['jwt', 'consent'])
         ->name('foods.search');
 
     // Operational read-only check: whether this environment has an AI
@@ -146,13 +147,13 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     // FR-16 / plans.view.own: the CLIENT role's own current plan — no
     // route-bound subscriber id (see ClientPlanController docblock).
-    Route::middleware(['jwt', 'permission:plans.view.own'])->group(function () {
+    Route::middleware(['jwt', 'consent', 'permission:plans.view.own'])->group(function () {
         Route::get('me/meal-plan', [ClientPlanController::class, 'show'])->name('me.meal-plan.show');
     });
 
     // S4-01 / FR-17, BR-9 / logs.manage.own: the CLIENT logging what they
     // actually ate. Same no-route-bound-id shape as me/meal-plan above.
-    Route::middleware(['jwt', 'permission:logs.manage.own'])->group(function () {
+    Route::middleware(['jwt', 'consent', 'permission:logs.manage.own'])->group(function () {
         Route::get('me/meal-logs', [MealLogController::class, 'index'])->name('me.meal-logs.index');
         Route::post('me/meal-logs', [MealLogController::class, 'store'])->name('me.meal-logs.store');
         // BR-15: edit or delete one's own log within the edit window.
@@ -175,6 +176,11 @@ Route::prefix('v1')->name('api.')->group(function () {
     // gate used (see routes above).
     Route::middleware(['jwt', 'role:client'])->group(function () {
         Route::put('me/fcm-token', [FcmTokenController::class, 'store'])->name('me.fcm-token.store');
+
+        // BR-17: the consent screen. Exempt from the `consent` gate — it is
+        // how a patient gets through it.
+        Route::get('me/consent', [ConsentController::class, 'show'])->name('me.consent.show');
+        Route::post('me/consent', [ConsentController::class, 'store'])->name('me.consent.store');
 
         // The patient's own nutritionist: name, gender, clinic, specialty,
         // WhatsApp number — for the app's "my nutritionist" card.
@@ -204,7 +210,7 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     // FR-18/FR-19: the same two views for the PATIENT'S OWN data. The
     // routes below can't serve a patient (see OwnProgressController).
-    Route::middleware(['jwt', 'role:client', 'permission:progress.view'])->group(function () {
+    Route::middleware(['jwt', 'consent', 'role:client', 'permission:progress.view'])->group(function () {
         Route::get('me/adherence', [OwnProgressController::class, 'adherence'])->name('me.adherence.show');
         Route::get('me/progress', [OwnProgressController::class, 'progress'])->name('me.progress.show');
     });
