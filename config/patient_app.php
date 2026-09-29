@@ -18,21 +18,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Backdating limit (BR-19)
+    | Late entries (BR-19)
     |--------------------------------------------------------------------------
     |
-    | How far in the past a new meal log or self-reported reading made by the
-    | PATIENT may be dated. It does not apply to the nutritionist's clinic
-    | readings (POST /clients/{id}/body-composition-readings), who may enter
-    | paper records of any past date when onboarding a patient.
-    |
-    | Long enough that the app's offline queue still syncs after a week
-    | without signal; short enough that old history can't be filled in after
-    | the fact (422 `entry_too_old`).
+    | Applies to meal logs and self-reported readings made by the PATIENT
+    | (never to the nutritionist's clinic readings, which may be any past
+    | date). An entry dated more than `late_after_days` back is accepted and
+    | marked `is_late`, so an offline queue that syncs late never loses data
+    | and the nutritionist can see it came in late. Only an entry dated more
+    | than `reject_after_days` back is refused (422 `entry_too_old`): at that
+    | age it is almost certainly a wrong device clock, not a real meal.
     |
     */
 
-    'backdate_limit_days' => (int) env('LOG_BACKDATE_LIMIT_DAYS', 7),
+    'late_after_days' => (int) env('LOG_LATE_AFTER_DAYS', 7),
+
+    'reject_after_days' => (int) env('LOG_REJECT_AFTER_DAYS', 90),
 
     /*
     |--------------------------------------------------------------------------

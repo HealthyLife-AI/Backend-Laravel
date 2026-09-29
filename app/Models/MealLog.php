@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'meal_type',
     'quantity_grams',
     'logged_at',
+    'is_late',
 ])]
 class MealLog extends Model
 {
@@ -36,6 +37,7 @@ class MealLog extends Model
         return [
             'quantity_grams' => 'decimal:1',
             'logged_at' => 'datetime',
+            'is_late' => 'boolean',
         ];
     }
 

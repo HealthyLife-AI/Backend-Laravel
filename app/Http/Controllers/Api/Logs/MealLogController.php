@@ -82,9 +82,10 @@ class MealLogController extends Controller
             }
         }
 
-        // BR-19: a new entry can't be dated beyond the backdating limit.
-        // After the replay check above, so a queued entry that was already
-        // saved still gets its 200 however old it has become.
+        // BR-19: an entry dated beyond the late threshold is accepted and
+        // marked late; only one beyond the rejection limit (a wrong device
+        // clock) is refused. After the replay check above, so a queued entry
+        // that was already saved still gets its 200 however old it is.
         $loggedAt = $request->date('logged_at') ?? now();
         $this->window->assertNotTooOld($loggedAt, 'logged_at');
 
@@ -94,6 +95,7 @@ class MealLogController extends Controller
         // offset left on it would be saved as if it were app time.
         $log->meal_type = $request->mealType($loggedAt);
         $log->subscriber_id = $subscriber->id;
+        $log->is_late = $this->window->isLate($loggedAt);
         $log->logged_at = $loggedAt->copy()->setTimezone(config('app.timezone'));
         $log->save();
 

@@ -17,7 +17,7 @@ INSERT INTO subscribers (id, user_id, nutritionist_id, code, goal, status, creat
   (1003, 913, 901, 'PT-103', 'weight_loss', 'active', NOW(), NOW()),
   (1004, 914, 901, 'OLD-9',  'weight_loss', 'active', NOW(), NOW());
 
--- One plan with a breakfast and a dinner meal, and three logs: two on-plan, one off-plan.
+-- One plan with a breakfast and a dinner meal, and four logs: two on-plan, two off-plan.
 INSERT INTO foods (id, name_en, source, status, calories_per_100g, protein_g_per_100g, carbs_g_per_100g, fat_g_per_100g, created_at, updated_at)
   VALUES (4001, 'Verify food', 'admin', 'approved', 100, 10, 10, 5, NOW(), NOW());
 INSERT INTO meal_plans (id, subscriber_id, created_by, status, created_at, updated_at) VALUES (2001, 1001, 901, 'active', NOW(), NOW());
@@ -28,4 +28,13 @@ INSERT INTO meal_items (id, meal_id, food_id, quantity_grams, sort_order, create
 INSERT INTO meal_logs (id, subscriber_id, food_id, meal_item_id, quantity_grams, logged_at, created_at, updated_at) VALUES
   (6001, 1001, 4001, 5001, 100, NOW(), NOW(), NOW()),
   (6002, 1001, 4001, 5002, 100, NOW(), NOW(), NOW()),
-  (6003, 1001, 4001, NULL, 100, NOW(), NOW(), NOW());
+  (6003, 1001, 4001, NULL, 100, NOW(), NOW(), NOW()),
+  -- entered today for a meal 10 days ago: late
+  (6004, 1001, 4001, NULL, 100, NOW() - INTERVAL 10 DAY, NOW(), NOW());
+
+-- Readings: self-reported today for 10 days ago (late), self-reported on time,
+-- and a clinic reading from paper records 40 days ago (never late).
+INSERT INTO body_composition_readings (id, subscriber_id, recorded_at, source, weight_kg, created_at, updated_at) VALUES
+  (7001, 1001, CURDATE() - INTERVAL 10 DAY, 'self-reported', 84, NOW(), NOW()),
+  (7002, 1001, CURDATE() - INTERVAL 2 DAY, 'self-reported', 83, NOW(), NOW()),
+  (7003, 1001, CURDATE() - INTERVAL 40 DAY, 'clinic-analyser', 86, NOW(), NOW());

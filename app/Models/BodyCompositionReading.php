@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'subscriber_id',
     'recorded_at',
     'source',
+    'is_late',
     'weight_kg',
     'body_fat_percent',
     'muscle_mass_kg',
@@ -37,6 +38,7 @@ class BodyCompositionReading extends Model
     {
         return [
             'recorded_at' => 'date',
+            'is_late' => 'boolean',
             'weight_kg' => 'decimal:2',
             'body_fat_percent' => 'decimal:1',
             'muscle_mass_kg' => 'decimal:2',

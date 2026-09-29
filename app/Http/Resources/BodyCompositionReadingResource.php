@@ -25,6 +25,8 @@ class BodyCompositionReadingResource extends JsonResource
             // analyser reading from the client's own estimate, so the
             // flag travels with every reading rather than being inferred.
             'source' => $this->source,
+            // BR-19: a self-reported reading entered late (never a clinic one).
+            'is_late' => (bool) $this->is_late,
             'weight_kg' => (float) $this->weight_kg,
             'body_fat_percent' => $this->body_fat_percent !== null ? (float) $this->body_fat_percent : null,
             'muscle_mass_kg' => $this->muscle_mass_kg !== null ? (float) $this->muscle_mass_kg : null,

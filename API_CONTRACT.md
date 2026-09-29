@@ -52,11 +52,12 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 - **New refusal codes to handle** (match on `code`, see
   [Coded refusals](#common-shapes)):
   - `422 entry_too_old` on `POST /me/meal-logs` (`logged_at`) and
-    `POST /me/measurements` (`recorded_at`) when the entry is dated more than
-    **7 days** back (config `LOG_BACKDATE_LIMIT_DAYS`). The offline queue must
-    **drop** such an entry and tell the patient it was too old to save —
-    retrying can never succeed. A replay of an entry the server *already saved*
-    still returns `200`, however old it is.
+    `POST /me/measurements` (`recorded_at`) only when the entry is dated more
+    than **90 days** back (`LOG_REJECT_AFTER_DAYS`): at that age the device
+    clock is wrong. The offline queue must **drop** such an entry and tell the
+    patient — retrying can never succeed. An entry between 7 and 90 days old is
+    **accepted** and comes back with `is_late: true` (below). A replay of an
+    entry the server *already saved* still returns `200`, however old it is.
   - `403 log_locked` on editing/deleting a log or reading past its window
     (below): show the entry as read-only.
   - `403 consent_required` (above).
@@ -91,6 +92,9 @@ error codes. New business rules are numbered from BR-15 (table at the end).
   (`2026-10-02T08:15:00+03:00`): without one the time is read in the server's
   timezone (UTC), which files a patient's morning meal by UTC hours. The patient
   can change an off-plan log's meal type within the edit window.
+- **`is_late`** on every meal log and every reading (BR-19): `true` when the
+  patient entered it more than 7 days after its date. Informational — the entry
+  counts like any other. Clinic readings are always `false`.
 - **`editable_until`** on every meal log (ISO 8601): when its edit window closes.
   Hide edit/delete once it has passed.
 - **`deletable_until`** on every reading returned to the patient (ISO 8601, or
@@ -115,7 +119,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 | **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set); for an off-plan one the patient's choice, or, when none is given, the meal whose time range holds the local time of `logged_at` (configurable, default breakfast 05:00–10:59, lunch 11:00–16:59, dinner 17:00–22:59, otherwise snack). A meal type is never a reason to refuse a log |
 | **BR-17** | A patient must accept the current privacy-policy version before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). The version is `CONSENT_VERSION`, or a default (`2026-10-01`) when that isn't set, so the gate is always on and a missing setting never blocks the app |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
-| **BR-19** | A new meal log or self-reported reading **made by the patient** can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old`. It does not apply to the nutritionist's clinic readings, which can be any past date |
+| **BR-19** | A new meal log or self-reported reading **made by the patient** dated more than 7 days back (`LOG_LATE_AFTER_DAYS`) is accepted and marked late (`is_late`), and counts like any other entry in adherence, alerts and progress; the nutritionist sees a "تسجيل متأخر" marker. Only one dated more than 90 days back (`LOG_REJECT_AFTER_DAYS`) is refused, `422 entry_too_old`, as a wrong device clock. None of this applies to the nutritionist's clinic readings, which can be any past date and are never late |
 | **BR-20** | The system diagnostics (`/system/*`) are for the admin only |
 | **BR-21** | A patient code (`PT-<n>`) is never issued twice: each nutritionist has a counter that only goes up, even after the highest-numbered patient is deleted |
 
@@ -219,7 +223,7 @@ the standard `errors` object pointing at the field.
 | 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_hours` |
 | 403 | `consent_required` | BR-17: the patient hasn't accepted the current privacy policy | `current_version`, `policy_url` |
 | 409 | `consent_version_mismatch` | `POST /me/consent` named a version that is not the current one | `current_version` |
-| 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated further back than allowed | `max_age_days` |
+| 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated more than 90 days back — a wrong device clock (7–90 days old is accepted and marked late) | `max_age_days` |
 
 **Rate limiting** (`429`, register/login: 10 req/min, refresh: 20 req/min, per IP):
 
@@ -722,9 +726,9 @@ whatever the device/visit actually captured:
 ```
 
 `recorded_at` must not be in the future, but may be **any past date**: the
-7-day backdating limit (BR-19) applies only to entries the *patient* makes, so a
+late/too-old rules (BR-19) apply only to entries the *patient* makes, so a
 nutritionist can enter clinic readings from paper records when onboarding a
-patient. Missing `weight_kg` is `422`. **201 Created** with the saved reading.
+patient, and they are never marked late. Missing `weight_kg` is `422`. **201 Created** with the saved reading.
 
 ---
 
@@ -1397,7 +1401,7 @@ choosing a listed alternative counts as on-plan, not as a deviation.
 | `meal_item_id` | no | omit when the food was outside the plan |
 | `meal_type` | no | `breakfast` \| `lunch` \| `dinner` \| `snack` (case-insensitive). Ignored when `meal_item_id` is present — the server uses the plan meal's name. Off-plan without it (or with an unrecognised value): inferred from the local time of `logged_at` (BR-16). Never a `422` |
 | `quantity_grams` | yes | 1–5000 |
-| `logged_at` | no | defaults to now; must not be in the future, and not more than **7 days** in the past (BR-19, config `LOG_BACKDATE_LIMIT_DAYS`) — older is `422` with `code: entry_too_old`. Send the real time an offline entry was made, not the sync time |
+| `logged_at` | no | defaults to now; must not be in the future. Send it **with its UTC offset** (e.g. `+03:00`). More than 7 days back: accepted and marked `is_late` (BR-19). More than 90 days back: `422` with `code: entry_too_old`. Send the real time an offline entry was made, not the sync time |
 | `idempotency_key` | no | UUID; see retry semantics below |
 
 `meal_item_id` is validated by **ownership**, not existence: it must belong
@@ -1422,6 +1426,7 @@ matched the plan.
   "meal_type": "lunch",
   "is_on_plan": true,
   "logged_at": "2026-09-13T12:30:00+00:00",
+  "is_late": false,
   "editable_until": "2026-09-15T12:30:00+00:00"
 }
 ```
@@ -1431,16 +1436,20 @@ matched the plan.
 `is_on_plan` is returned so the web and mobile clients do not each
 re-derive BR-9 from `meal_item_id` being null.
 
-**Too old (BR-19).** A `logged_at` more than 7 days in the past is refused
-(the offline queue still works for a week, but old history can't be filled
-in):
+**Late and too old (BR-19).** A `logged_at` more than **7 days** in the past
+(`LOG_LATE_AFTER_DAYS`) is still saved, and the log comes back with
+`is_late: true`: an offline queue that syncs late never loses data, and the
+nutritionist's dashboard marks the entry "تسجيل متأخر". It counts like any other
+log in adherence, alerts and progress. Only a `logged_at` more than **90 days**
+back (`LOG_REJECT_AFTER_DAYS`) is refused — at that age the device clock is
+wrong:
 
 ```json
 {
   "message": "The logged_at is older than entries may be dated.",
   "code": "entry_too_old",
-  "max_age_days": 7,
-  "errors": { "logged_at": ["The logged_at may not be more than 7 days in the past."] }
+  "max_age_days": 90,
+  "errors": { "logged_at": ["The logged_at may not be more than 90 days in the past."] }
 }
 ```
 
@@ -1549,15 +1558,15 @@ The patient's own measurement history, for the app's history screen.
 
 `GET /me/measurements?from=YYYY-MM-DD&to=YYYY-MM-DD` — **200**, a plain array
 (not paginated), **oldest first**, of every reading — clinic and
-self-reported — each with every field plus `source` (BR-13). `from`/`to` are
+self-reported — each with every field plus `source` (BR-13) and `is_late` (BR-19). `from`/`to` are
 optional and must be sent together (a half-open range is `422`).
 
 ```json
 [
-  { "id": 3, "recorded_at": "2026-08-01", "source": "clinic-analyser", "weight_kg": 82, "body_fat_percent": 24.5,
+  { "id": 3, "recorded_at": "2026-08-01", "source": "clinic-analyser", "is_late": false, "weight_kg": 82, "body_fat_percent": 24.5,
     "muscle_mass_kg": 33, "water_percent": 51, "waist_cm": 90, "hip_cm": null, "thigh_cm": null, "arm_cm": null,
     "deletable_until": null },
-  { "id": 9, "recorded_at": "2026-09-14", "source": "self-reported", "weight_kg": 79.5, "body_fat_percent": null,
+  { "id": 9, "recorded_at": "2026-09-14", "source": "self-reported", "is_late": false, "weight_kg": 79.5, "body_fat_percent": null,
     "muscle_mass_kg": null, "water_percent": null, "waist_cm": null, "hip_cm": 100, "thigh_cm": null, "arm_cm": null,
     "deletable_until": "2026-09-16T00:00:00+00:00" }
 ]
@@ -1580,8 +1589,10 @@ the caller's readings, so another patient's id is `404`.
 | 404 | not this patient's reading, or already deleted |
 
 **BR-19 / BR-15 on `POST /me/measurements`.** A *new* reading dated more than 7
-days back is `422` with `code: entry_too_old` and `max_age_days` (same shape as
-on meal logs). Re-sending a day that already has a reading is an update; once
+days back is saved and marked `is_late: true`; only one dated more than 90 days
+back is `422` with `code: entry_too_old` and `max_age_days` (same shape as on
+meal logs). The day counts: a reading dated exactly 7 days ago is on time, 8
+days ago is late. Re-sending a day that already has a reading is an update; once
 that day's edit window has closed it is refused with `403 log_locked` — unless
 the figures sent are the ones already stored, which is treated as a replay and
 answered `200`.
@@ -1591,7 +1602,11 @@ answered `200`.
 `GET /clients/{id}/body-composition-readings` and
 `POST /clients/{id}/body-composition-readings` are unchanged except that
 they now also accept `hip_cm`, `thigh_cm`, `arm_cm`, and every response
-carries `source`.
+carries `source` and `is_late` (BR-19: a self-reported reading the patient
+entered more than 7 days after its date; always `false` on a clinic reading).
+The same `is_late` is on every `weight_trend` point and on the `latest` /
+`previous` snapshots of `GET /clients/{id}/progress` and `GET /me/progress`, so
+the dashboard can mark those readings "تسجيل متأخر".
 
 ---
 
@@ -1701,12 +1716,12 @@ three round-trips to paint one screen is what NFR-01 is trying to avoid.
 ```json
 {
   "weight_trend": [
-    { "recorded_at": "2026-09-10", "weight_kg": 84, "source": "clinic-analyser" },
-    { "recorded_at": "2026-09-12", "weight_kg": 82, "source": "self-reported" }
+    { "recorded_at": "2026-09-10", "weight_kg": 84, "source": "clinic-analyser", "is_late": false },
+    { "recorded_at": "2026-09-12", "weight_kg": 82, "source": "self-reported", "is_late": false }
   ],
   "body_composition": {
-    "latest":   { "recorded_at": "2026-09-12", "source": "self-reported",  "weight_kg": 82, "waist_cm": 92.5, "hip_cm": 101, "thigh_cm": 58, "arm_cm": 31.5, "body_fat_percent": null },
-    "previous": { "recorded_at": "2026-09-10", "source": "clinic-analyser", "weight_kg": 84, "body_fat_percent": 24 },
+    "latest":   { "recorded_at": "2026-09-12", "source": "self-reported",  "is_late": false, "weight_kg": 82, "waist_cm": 92.5, "hip_cm": 101, "thigh_cm": 58, "arm_cm": 31.5, "body_fat_percent": null },
+    "previous": { "recorded_at": "2026-09-10", "source": "clinic-analyser", "is_late": false, "weight_kg": 84, "body_fat_percent": 24 },
     "change":   { "weight_kg": -2 }
   },
   "adherence": { "...": "same shape as the adherence endpoint" },

@@ -303,36 +303,13 @@ class EditDeleteMealLogTest extends TestCase
         $this->assertNotNull($log->fresh());
     }
 
-    // ---- BR-19: backdating limit on POST ----------------------------------
+    // ---- POST: replays and last_logged_at (BR-19 itself: LateEntryTest) ---
 
     private function post7(string $loggedAt, array $extra = [])
     {
         return $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => Food::factory()->create()->id, 'quantity_grams' => 100, 'meal_type' => 'lunch', 'logged_at' => $loggedAt,
         ] + $extra, $this->auth());
-    }
-
-    public function test_a_new_log_can_be_dated_up_to_seven_days_back(): void
-    {
-        $this->post7(now()->subDays(7)->addHour()->toIso8601String())->assertCreated();
-    }
-
-    public function test_a_log_dated_more_than_seven_days_back_is_refused_with_entry_too_old(): void
-    {
-        $this->post7(now()->subDays(7)->subHour()->toIso8601String())
-            ->assertUnprocessable()
-            ->assertJsonPath('code', 'entry_too_old')
-            ->assertJsonPath('max_age_days', 7)
-            ->assertJsonValidationErrors('logged_at');
-        $this->assertDatabaseCount('meal_logs', 0);
-    }
-
-    public function test_the_backdating_limit_comes_from_config(): void
-    {
-        config(['patient_app.backdate_limit_days' => 2]);
-
-        $this->post7(now()->subDays(3)->toIso8601String())->assertUnprocessable()->assertJsonPath('code', 'entry_too_old')->assertJsonPath('max_age_days', 2);
-        $this->post7(now()->subDay()->toIso8601String())->assertCreated();
     }
 
     public function test_a_replayed_entry_that_is_now_too_old_still_returns_the_saved_log(): void

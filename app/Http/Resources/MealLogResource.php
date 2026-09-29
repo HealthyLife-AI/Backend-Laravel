@@ -34,6 +34,9 @@ class MealLogResource extends JsonResource
             // reimplement what "on-plan" means.
             'is_on_plan' => $this->meal_item_id !== null,
             'logged_at' => $this->logged_at?->toIso8601String(),
+            // BR-19: the patient entered it more than the late threshold
+            // after its date (e.g. an offline queue that synced late).
+            'is_late' => (bool) $this->is_late,
             // BR-15: until when the patient may still edit or delete this
             // log. Server time, so the app needn't know the window length.
             'editable_until' => $this->logged_at ? app(LogWindow::class)->editableUntil($this->logged_at)->toIso8601String() : null,

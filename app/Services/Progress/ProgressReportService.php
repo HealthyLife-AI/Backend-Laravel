@@ -30,7 +30,10 @@ class ProgressReportService
     public function build(Subscriber $subscriber, ?string $from, ?string $to): array
     {
         $readings = $subscriber->bodyCompositionReadings()
-            ->when($from && $to, fn ($query) => $query->whereBetween('recorded_at', [$from, $to]))
+            // whereDate, not whereBetween on the raw column: SQLite stores the
+            // date cast as "Y-m-d 00:00:00", which sorts after a bare "Y-m-d"
+            // `to` and silently dropped a reading dated on the last day.
+            ->when($from && $to, fn ($query) => $query->whereDate('recorded_at', '>=', $from)->whereDate('recorded_at', '<=', $to))
             ->reorder('recorded_at')
             ->get();
 
@@ -39,6 +42,8 @@ class ProgressReportService
                 'recorded_at' => $reading->recorded_at->toDateString(),
                 'weight_kg' => (float) $reading->weight_kg,
                 'source' => $reading->source,
+                // BR-19: shown to the nutritionist as "entered late".
+                'is_late' => (bool) $reading->is_late,
             ])->values(),
             'body_composition' => [
                 'latest' => $this->snapshot($readings->last()),
@@ -65,6 +70,7 @@ class ProgressReportService
             // BR-13: carried so the charts (S4-18) can mark which figures
             // are analyser-grade and which are the client's own estimate.
             'source' => $reading->source,
+            'is_late' => (bool) $reading->is_late,
             'weight_kg' => (float) $reading->weight_kg,
             'body_fat_percent' => $reading->body_fat_percent !== null ? (float) $reading->body_fat_percent : null,
             'muscle_mass_kg' => $reading->muscle_mass_kg !== null ? (float) $reading->muscle_mass_kg : null,

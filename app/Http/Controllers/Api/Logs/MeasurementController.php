@@ -112,14 +112,17 @@ class MeasurementController extends Controller
             ->first();
 
         if ($reading === null) {
-            // BR-19: a new reading can't be dated beyond the backdating
-            // limit. Only a NEW one — re-sending a day that is already
+            // BR-19: a new reading dated beyond the late threshold is
+            // accepted and marked late; only one beyond the rejection limit
+            // is refused. Only a NEW one — re-sending a day that is already
             // saved is a replay and is handled below.
-            $this->window->assertDateNotTooOld($request->date('recorded_at') ?? now(), 'recorded_at');
+            $date = $request->date('recorded_at') ?? now();
+            $this->window->assertDateNotTooOld($date, 'recorded_at');
 
             $reading = $subscriber->bodyCompositionReadings()->create($measurements + [
                 'recorded_at' => $recordedAt,
                 'source' => BodyCompositionReading::SOURCE_SELF,
+                'is_late' => $this->window->isDateLate($date),
             ]);
 
             return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);

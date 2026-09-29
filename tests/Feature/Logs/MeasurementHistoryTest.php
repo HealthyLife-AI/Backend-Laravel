@@ -172,18 +172,6 @@ class MeasurementHistoryTest extends TestCase
 
     // ---- POST: BR-19 and BR-15 on a re-sent day ----------------------------
 
-    public function test_a_new_reading_can_be_dated_seven_days_back_but_not_eight(): void
-    {
-        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 80, 'recorded_at' => now()->subDays(7)->toDateString()], $this->auth())->assertCreated();
-
-        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 80, 'recorded_at' => now()->subDays(8)->toDateString()], $this->auth())
-            ->assertUnprocessable()
-            ->assertJsonPath('code', 'entry_too_old')
-            ->assertJsonPath('max_age_days', 7)
-            ->assertJsonValidationErrors('recorded_at');
-        $this->assertSame(1, $this->subscriber->bodyCompositionReadings()->count());
-    }
-
     public function test_re_sending_a_saved_day_after_its_window_is_a_replay_not_an_edit(): void
     {
         $old = $this->reading(now()->subDays(4)->toDateString(), extra: ['weight_kg' => 81.2]);

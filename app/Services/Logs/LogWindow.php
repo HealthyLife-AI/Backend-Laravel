@@ -12,8 +12,9 @@ use Carbon\CarbonInterface;
  *
  *  - BR-15, the edit window: an entry can be edited or deleted for a
  *    while after its own date, then it is locked.
- *  - BR-19, the backdating limit: a new entry made by the PATIENT can't be
- *    dated further back than a set number of days (the nutritionist's clinic
+ *  - BR-19, late entries: a new entry made by the PATIENT dated more than
+ *    `late_after_days` back is accepted and marked late; only one dated more
+ *    than `reject_after_days` back is refused (the nutritionist's clinic
  *    readings are not limited).
  *
  * Shared by meal logs and self-reported measurements so both follow the
@@ -26,9 +27,26 @@ class LogWindow
         return (int) config('patient_app.edit_window_hours');
     }
 
-    public function backdateDays(): int
+    public function lateAfterDays(): int
     {
-        return (int) config('patient_app.backdate_limit_days');
+        return (int) config('patient_app.late_after_days');
+    }
+
+    public function rejectAfterDays(): int
+    {
+        return (int) config('patient_app.reject_after_days');
+    }
+
+    /** BR-19: an entry dated `$at` arriving now is late. */
+    public function isLate(CarbonInterface $at): bool
+    {
+        return $at->lessThan(CarbonImmutable::now()->subDays($this->lateAfterDays()));
+    }
+
+    /** BR-19 for a date-only entry: today minus the limit is on time, a day earlier is late. */
+    public function isDateLate(CarbonInterface $date): bool
+    {
+        return $this->isLate(CarbonImmutable::instance($date)->endOfDay());
     }
 
     /** BR-15: when an entry dated `$at` stops being editable. */
@@ -91,25 +109,25 @@ class LogWindow
 
     /**
      * BR-19: 422 `entry_too_old` when a new entry is dated beyond the
-     * backdating limit. `$field` names the request field the date came in
+     * rejection limit (a wrong device clock, not a late sync). `$field` names the request field the date came in
      * under so the standard `errors` shape points at it.
      */
     public function assertNotTooOld(CarbonInterface $at, string $field): void
     {
-        if ($at->lessThan(CarbonImmutable::now()->subDays($this->backdateDays()))) {
+        if ($at->lessThan(CarbonImmutable::now()->subDays($this->rejectAfterDays()))) {
             throw new ApiCodeException(
                 "The {$field} is older than entries may be dated.",
                 'entry_too_old',
                 422,
-                ['max_age_days' => $this->backdateDays()],
-                [$field => ["The {$field} may not be more than {$this->backdateDays()} days in the past."]],
+                ['max_age_days' => $this->rejectAfterDays()],
+                [$field => ["The {$field} may not be more than {$this->rejectAfterDays()} days in the past."]],
             );
         }
     }
 
     /**
-     * BR-19 for a date-only entry: today minus the limit is still allowed,
-     * a day earlier is not.
+     * BR-19 for a date-only entry: today minus the rejection limit is still
+     * accepted, a day earlier is not.
      */
     public function assertDateNotTooOld(CarbonInterface $date, string $field): void
     {
