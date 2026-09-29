@@ -324,7 +324,7 @@ The patient-app phase-1 batch adds five migrations (in this order):
 
 | Migration | What it does | Backfill |
 |---|---|---|
-| `2026_09_29_100000_add_client_code_counter_to_users_table` | `users.client_code_counter` (last patient code issued) | each nutritionist starts at the highest `PT-<n>` they already have |
+| `2026_09_29_100000_add_client_code_counter_to_users_table` | `users.client_code_counter` (last patient code issued) | each nutritionist's counter starts at the highest `PT-<n>` they already have (default 100 for none), so their next patient continues after it |
 | `2026_09_29_110000_add_meal_type_to_meal_logs_table` | `meal_logs.meal_type` | on-plan logs get their plan meal's name; off-plan logs stay `NULL` |
 | `2026_09_29_120000_add_gender_and_whatsapp_to_nutritionist_profiles_table` | `gender`, `whatsapp_number` | none (both `NULL`) |
 | `2026_09_29_130000_create_patient_consents_table` | new table | none |
@@ -406,10 +406,25 @@ php artisan migrate --force
 $M -e "SELECT id, client_code_counter FROM users WHERE id IN (901, 902) ORDER BY id"
 $M -e "SELECT id, meal_type FROM meal_logs ORDER BY id"
 
-# 7. Clean up, and unset the variables so this terminal stops pointing at the scratch database.
+# 7. Add patients to a nutritionist who ALREADY has patients (901 has PT-101, PT-103, PT-107).
+#    This calls the same allocator POST /clients uses, inside a transaction, the way the app does.
+next_code() { php artisan tinker --execute="echo DB::transaction(fn () => app(App\\Services\\Clients\\ClientCodeAllocator::class)->next(App\\Models\\User::find($1))), PHP_EOL;"; }
+next_code 901     # expect PT-108 (continues after their highest, PT-107)
+next_code 901     # expect PT-109
+next_code 902     # expect PT-101 (nobody yet: starts at the beginning)
+$M -e "DELETE FROM users WHERE id = 913"   # delete a lower-numbered patient (PT-103)...
+next_code 901     # expect PT-110, never PT-103 or a repeat
+$M -e "SELECT id, client_code_counter FROM users WHERE id IN (901, 902) ORDER BY id"   # expect 901 -> 110, 902 -> 101
+
+# 8. Clean up, and unset the variables so this terminal stops pointing at the scratch database.
 mysql -u root -p -e "DROP DATABASE hl_verify"
 unset DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD DB_URL M
 ```
+
+Note: the counter is initialised from the patients that exist *when the migration
+runs*. Rolling back and re-applying recomputes it from them, so it forgets numbers
+that had already been issued to since-deleted patients; that is only a concern
+when rolling back on a database that is already in use.
 
 For the real deploy: take the backup from the "Backups" section first, then
 `php artisan migrate --force`. `migrate:rollback --step=5` undoes exactly this
