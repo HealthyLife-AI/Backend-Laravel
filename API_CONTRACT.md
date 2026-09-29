@@ -364,6 +364,11 @@ single-use invite in the same call.
 `phone` unique **per nutritionist**, not globally (BR-1) — two different
 nutritionists can each have a client with the same phone number.
 
+`code` (`PT-101`, `PT-102`, …) comes from a per-nutritionist counter that only
+goes up, allocated under a row lock: a code is **never reused**, not even after
+the highest-numbered client is deleted, and two clients added at the same
+instant cannot collide.
+
 **201 Created**
 
 ```json
