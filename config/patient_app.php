@@ -36,6 +36,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Meal times (BR-16)
+    |--------------------------------------------------------------------------
+    |
+    | An off-plan meal log sent without a meal_type is filed under the meal
+    | whose time range contains the LOCAL time of its logged_at: the offset
+    | sent with logged_at, or the app timezone (config app.timezone) when it
+    | carries none. Anything outside these ranges is a snack. Each range is
+    | "HH:MM-HH:MM", both ends inclusive, within one day.
+    |
+    */
+
+    'meal_times' => [
+        'breakfast' => env('MEAL_TIME_BREAKFAST', '05:00-10:59'),
+        'lunch' => env('MEAL_TIME_LUNCH', '11:00-16:59'),
+        'dinner' => env('MEAL_TIME_DINNER', '17:00-22:59'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Patient consent (BR-17)
     |--------------------------------------------------------------------------
     |

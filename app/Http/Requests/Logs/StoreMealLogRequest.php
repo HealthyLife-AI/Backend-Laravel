@@ -3,7 +3,8 @@
 namespace App\Http\Requests\Logs;
 
 use App\Models\MealItem;
-use App\Models\MealLog;
+use App\Services\Logs\MealTypeInference;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -44,16 +45,12 @@ class StoreMealLogRequest extends FormRequest
             // check that would let one client reference another's item.
             'meal_item_id' => ['nullable', 'integer'],
 
-            // BR-16: which meal this was. Required for an off-plan log,
-            // where nothing else says. For an on-plan log the server sets
-            // it from the plan meal and anything sent here is ignored, so
-            // it is not validated (a stale app version can't get a 422 for
-            // a value we are going to discard anyway).
-            'meal_type' => [
-                Rule::excludeIf(fn () => $this->input('meal_item_id') !== null),
-                Rule::requiredIf(fn () => $this->input('meal_item_id') === null),
-                Rule::in(MealLog::MEAL_TYPES),
-            ],
+            // BR-16: which meal this was. Optional: for an on-plan log the
+            // server takes the plan meal, and for an off-plan one without a
+            // recognisable value it infers the meal from the time of day
+            // (mealType()). Never refused, so an entry queued offline by an
+            // app that didn't send one, or sent "Lunch", is still saved.
+            'meal_type' => ['nullable'],
 
             'quantity_grams' => ['required', 'numeric', 'min:1', 'max:5000'],
 
@@ -69,10 +66,20 @@ class StoreMealLogRequest extends FormRequest
         ];
     }
 
-    /** BR-16: the meal the log belongs to — the plan meal's name when on-plan, else what the client sent. */
-    public function mealType(): string
+    /**
+     * BR-16: the meal the log belongs to — the plan meal when on-plan, else
+     * the meal type sent (case-insensitive), else the meal whose time range
+     * holds `$at` in its own timezone (see MealTypeInference).
+     */
+    public function mealType(CarbonInterface $at): string
     {
-        return $this->planItem?->meal->name ?? $this->validated('meal_type');
+        if ($this->planItem !== null) {
+            return $this->planItem->meal->name;
+        }
+
+        $inference = app(MealTypeInference::class);
+
+        return $inference->normalise($this->input('meal_type')) ?? $inference->infer($at);
     }
 
     /**

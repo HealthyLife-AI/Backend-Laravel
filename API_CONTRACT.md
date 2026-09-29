@@ -49,12 +49,6 @@ error codes. New business rules are numbered from BR-15 (table at the end).
   version if none is configured), so there is no "consent not configured"
   state to handle. `policy_url` can be `null` if the server has no URL for the
   policy: accept consent anyway, and show the policy screen without a link.
-- **`meal_type` is required on an off-plan meal log** (`POST /me/meal-logs`
-  without `meal_item_id`): `breakfast` | `lunch` | `dinner` | `snack`, else `422`
-  on `meal_type`. For an on-plan log it is ignored — the server uses the plan
-  meal. Entries already in the offline queue from before this change have no
-  meal type: ask the patient (or default it from the entry's time) before
-  replaying them. See [`POST /me/meal-logs`](#post-memeal-logs).
 - **New refusal codes to handle** (match on `code`, see
   [Coded refusals](#common-shapes)):
   - `422 entry_too_old` on `POST /me/meal-logs` (`logged_at`) and
@@ -88,7 +82,15 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 ### 3. New or changed response fields
 
 - **`meal_type`** on every meal log (`breakfast` | `lunch` | `dinner` | `snack`;
-  `null` only on an off-plan log recorded before this field existed).
+  `null` only on an off-plan log recorded before this field existed). Sending it
+  is **optional**: an on-plan log takes the plan meal; an off-plan log takes the
+  value sent (case-insensitive), and without one — or with one the server
+  doesn't recognise — the meal is inferred from the local time of `logged_at`
+  (breakfast 05:00–10:59, lunch 11:00–16:59, dinner 17:00–22:59, otherwise
+  snack). Never a `422`. **Send `logged_at` with its UTC offset**
+  (`2026-10-02T08:15:00+03:00`): without one the time is read in the server's
+  timezone (UTC), which files a patient's morning meal by UTC hours. The patient
+  can change an off-plan log's meal type within the edit window.
 - **`editable_until`** on every meal log (ISO 8601): when its edit window closes.
   Hide edit/delete once it has passed.
 - **`deletable_until`** on every reading returned to the patient (ISO 8601, or
@@ -110,7 +112,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 | Rule | What it says |
 |---|---|
 | **BR-15** | A patient can edit or delete their own meal log, and delete their own self-reported reading, for 48 hours after its date (`LOG_EDIT_WINDOW_HOURS`); then `403 log_locked`. The food of a log is never editable |
-| **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set), the client's choice for an off-plan one |
+| **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set); for an off-plan one the patient's choice, or, when none is given, the meal whose time range holds the local time of `logged_at` (configurable, default breakfast 05:00–10:59, lunch 11:00–16:59, dinner 17:00–22:59, otherwise snack). A meal type is never a reason to refuse a log |
 | **BR-17** | A patient must accept the current privacy-policy version before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). The version is `CONSENT_VERSION`, or a default (`2026-10-01`) when that isn't set, so the gate is always on and a missing setting never blocks the app |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
 | **BR-19** | A new meal log or self-reported reading **made by the patient** can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old`. It does not apply to the nutritionist's clinic readings, which can be any past date |
@@ -1353,7 +1355,22 @@ Permission: `logs.manage.own` (client role).
 (`breakfast`, `lunch`, `dinner` or `snack`). For an on-plan log the server
 sets it from the plan meal the `meal_item_id` sits in — anything sent is
 ignored, so the client cannot log a planned dinner item as breakfast. For an
-off-plan log the client must send it. Logs created before this field existed
+off-plan log the client's value is used (case-insensitive). When it sends none,
+or one that isn't one of the four, the server infers the meal from the **local
+time** of `logged_at` — the offset sent with it, or the server's timezone (UTC)
+when it has none; with no `logged_at`, the current time in UTC:
+
+| local time | meal |
+|---|---|
+| 05:00–10:59 | `breakfast` |
+| 11:00–16:59 | `lunch` |
+| 17:00–22:59 | `dinner` |
+| any other time | `snack` |
+
+The ranges are configurable (`MEAL_TIME_BREAKFAST`, `MEAL_TIME_LUNCH`,
+`MEAL_TIME_DINNER`, each `HH:MM-HH:MM`). The patient can correct an off-plan
+log's meal type with `PATCH` within the edit window. A `logged_at` sent with an
+offset is stored as that instant (returned in UTC). Logs created before this field existed
 were backfilled the same way: on-plan rows from their plan meal, off-plan
 rows left `null`.
 
@@ -1378,7 +1395,7 @@ choosing a listed alternative counts as on-plan, not as a deviation.
 |---|---|---|
 | `food_id` | yes | must be an **approved** food |
 | `meal_item_id` | no | omit when the food was outside the plan |
-| `meal_type` | **yes when `meal_item_id` is absent** | `breakfast` \| `lunch` \| `dinner` \| `snack`. Ignored (and not validated) when `meal_item_id` is present — the server uses the plan meal's name (BR-16) |
+| `meal_type` | no | `breakfast` \| `lunch` \| `dinner` \| `snack` (case-insensitive). Ignored when `meal_item_id` is present — the server uses the plan meal's name. Off-plan without it (or with an unrecognised value): inferred from the local time of `logged_at` (BR-16). Never a `422` |
 | `quantity_grams` | yes | 1–5000 |
 | `logged_at` | no | defaults to now; must not be in the future, and not more than **7 days** in the past (BR-19, config `LOG_BACKDATE_LIMIT_DAYS`) — older is `422` with `code: entry_too_old`. Send the real time an offline entry was made, not the sync time |
 | `idempotency_key` | no | UUID; see retry semantics below |

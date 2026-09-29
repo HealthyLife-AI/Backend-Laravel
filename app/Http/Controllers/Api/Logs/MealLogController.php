@@ -89,9 +89,12 @@ class MealLogController extends Controller
         $this->window->assertNotTooOld($loggedAt, 'logged_at');
 
         $log = new MealLog($request->safe()->except(['logged_at', 'meal_type']));
-        $log->meal_type = $request->mealType();
+        // Inferred from the time as sent (its own offset), then stored in the
+        // app timezone: Eloquent writes a datetime's wall clock as-is, so an
+        // offset left on it would be saved as if it were app time.
+        $log->meal_type = $request->mealType($loggedAt);
         $log->subscriber_id = $subscriber->id;
-        $log->logged_at = $loggedAt;
+        $log->logged_at = $loggedAt->copy()->setTimezone(config('app.timezone'));
         $log->save();
 
         $this->syncSubscriber($subscriber);
@@ -111,7 +114,7 @@ class MealLogController extends Controller
             $log->fill($request->safe()->only(['quantity_grams', 'meal_type']));
 
             if ($request->filled('logged_at')) {
-                $log->logged_at = $request->date('logged_at');
+                $log->logged_at = $request->date('logged_at')->setTimezone(config('app.timezone'));
             }
 
             $log->save();
