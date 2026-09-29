@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\MealPlans\ClientPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
 use App\Http\Controllers\Api\Notifications\FcmTokenController;
+use App\Http\Controllers\Api\Nutritionists\MyNutritionistController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\OwnProgressController;
@@ -174,6 +175,10 @@ Route::prefix('v1')->name('api.')->group(function () {
     // gate used (see routes above).
     Route::middleware(['jwt', 'role:client'])->group(function () {
         Route::put('me/fcm-token', [FcmTokenController::class, 'store'])->name('me.fcm-token.store');
+
+        // The patient's own nutritionist: name, gender, clinic, specialty,
+        // WhatsApp number — for the app's "my nutritionist" card.
+        Route::get('me/nutritionist', [MyNutritionistController::class, 'show'])->name('me.nutritionist.show');
     });
 
     // S4-00 / PRD Section 5.2: the nutritionist's own professional

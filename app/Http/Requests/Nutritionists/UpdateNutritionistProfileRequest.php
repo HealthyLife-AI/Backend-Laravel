@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Nutritionists;
 
+use App\Models\NutritionistProfile;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * S4-00: the nutritionist editing their own professional details.
@@ -27,6 +29,12 @@ class UpdateNutritionistProfileRequest extends FormRequest
         return [
             'specialty' => ['nullable', 'string', 'max:255'],
             'clinic_name' => ['nullable', 'string', 'max:255'],
+
+            // Shown to the nutritionist's own patients in the app (how to
+            // address them, and how to reach them). Both optional: null
+            // clears the value.
+            'gender' => ['nullable', Rule::in(NutritionistProfile::GENDERS)],
+            'whatsapp_number' => ['nullable', 'string', 'regex:'.NutritionistProfile::WHATSAPP_PATTERN],
             'bio' => ['nullable', 'string', 'max:1000'],
         ];
     }

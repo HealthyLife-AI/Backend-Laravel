@@ -72,7 +72,15 @@ error codes. The list grows with the batch; entries are grouped by change.
   `404`); do not call them. See
   [Adherence & Progress](#get-meadherence-and-get-meprogress).
 
+- `GET /me/nutritionist`: name, gender, clinic, specialty and WhatsApp number
+  of the patient's nutritionist for a "my nutritionist" screen. Every field but
+  `name` can be `null`. See [Nutritionist Profile](#get-menutritionist).
+
 **New / changed response fields**
+
+- **`gender` on the client's user object** (`GET /auth/me`, and the `user` in
+  login/refresh responses): `"male"` | `"female"` | `null`. Use it for
+  Arabic grammar; fall back to a neutral form when `null`.
 
 - **Every reading returned to the patient carries `deletable_until`**
   (ISO 8601, or `null` for a clinic reading, which the patient can never
@@ -101,7 +109,11 @@ error codes. The list grows with the batch; entries are grouped by change.
 }
 ```
 
-`role` is one of `nutritionist` / `client` / `admin`. `nutritionist_id` is only
+`role` is one of `nutritionist` / `client` / `admin`. For a `client` the object
+also carries **`gender`** (`"male"` | `"female"`, or `null`): the patient's own
+gender from their health profile, `null` until one has been filled in. The key
+is absent for nutritionists and admins.
+ `nutritionist_id` is only
 non-null for a `client`-role user (the nutritionist that owns them — BR-1).
 `subscriber_id` is only non-null for a `client`-role user too — it's this
 client's own row in `subscribers`. A patient does **not** need it to read their
@@ -1561,6 +1573,8 @@ one would put a permission in the seeder that no document describes.
   "id": 1,
   "specialty": "Clinical nutrition",
   "clinic_name": "Gaza Nutrition Center",
+  "gender": "female",
+  "whatsapp_number": "+970599123456",
   "bio": "Ten years of practice.",
   "plan_tier": "basic",
   "updated_at": "2026-09-13T11:40:00+00:00"
@@ -1575,7 +1589,18 @@ the row is an implementation detail of reading it.
 
 ### `PUT /me/nutritionist-profile`
 
-Accepts `specialty`, `clinic_name`, `bio` only.
+Accepts `specialty`, `clinic_name`, `gender`, `whatsapp_number`, `bio` only.
+
+| field | rules |
+|---|---|
+| `gender` | optional, `male` \| `female`; `null` clears it |
+| `whatsapp_number` | optional, **E.164**: a leading `+`, then 8–15 digits, the first not `0`, no spaces or dashes (`^\+[1-9]\d{7,14}$`); `null` clears it. Anything else is `422` |
+
+Both are shown to the nutritionist's own patients in the app
+([`GET /me/nutritionist`](#get-menutritionist)). They are `null` until the
+nutritionist sets them (nothing is guessed or backfilled), and the dashboard
+shows a banner asking for them while either is missing. An omitted field is
+left as it is.
 
 > ⚠️ **`plan_tier` is read-only.** It is billing state, not profile
 > content. It is returned so the dashboard can display the current tier,
@@ -1587,6 +1612,29 @@ Accepts `specialty`, `clinic_name`, `bio` only.
 names live in PRD §8 "Open Decisions" and the PRD itself says they are
 worth re-examining. Allowed values are enforced at
 `NutritionistProfile::TIERS`, where changing them costs no migration.
+
+### `GET /me/nutritionist`
+
+For the **patient app**: the patient's own nutritionist — how to address them
+and how to reach them. Role `client` only (a nutritionist token gets `403`;
+`follow_up_ended` `403` for an archived patient). Resolved from the token, so
+a patient can only ever see their own nutritionist. Not affected by the consent
+gate.
+
+```json
+{
+  "name": "Dr. Amal",
+  "gender": "female",
+  "clinic_name": "Gaza Nutrition Center",
+  "specialty": "Clinical nutrition",
+  "whatsapp_number": "+970599123456"
+}
+```
+
+Exactly these five keys and nothing else (no e-mail, phone, id or plan tier).
+`gender`, `clinic_name`, `specialty` and `whatsapp_number` are `null` until the
+nutritionist fills them in — the app must cope with each being missing (e.g.
+hide the WhatsApp button). Reading it never creates a profile row.
 
 ---
 

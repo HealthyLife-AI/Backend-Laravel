@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'user_id',
     'specialty',
     'clinic_name',
+    'gender',
+    'whatsapp_number',
     'bio',
 ])]
 class NutritionistProfile extends Model
@@ -29,6 +31,11 @@ class NutritionistProfile extends Model
      * must be changeable without a migration (see the migration docblock).
      */
     public const TIERS = ['basic', 'professional'];
+
+    public const GENDERS = ['male', 'female'];
+
+    /** E.164: a leading +, then 8 to 15 digits, the first not 0. */
+    public const WHATSAPP_PATTERN = '/^\+[1-9]\d{7,14}$/';
 
     /**
      * Mirrors the column default. The database default alone applies at

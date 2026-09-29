@@ -34,6 +34,13 @@ class UserResource extends JsonResource
             // reach either endpoint. null for a nutritionist (no
             // Subscriber row of their own).
             'subscriber_id' => $this->subscriberProfile?->id,
+            // Patient app only: the patient's own gender (from their health
+            // profile), which decides how the app addresses them. null when
+            // no health profile has been filled in yet. Absent for
+            // nutritionists and admins.
+            $this->mergeWhen($this->hasRole('client'), fn () => [
+                'gender' => $this->subscriberProfile?->healthProfile?->gender,
+            ]),
         ];
     }
 }

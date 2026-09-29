@@ -20,6 +20,8 @@ class NutritionistProfileResource extends JsonResource
             'id' => $this->id,
             'specialty' => $this->specialty,
             'clinic_name' => $this->clinic_name,
+            'gender' => $this->gender,
+            'whatsapp_number' => $this->whatsapp_number,
             'bio' => $this->bio,
             // Readable but not writable (see UpdateNutritionistProfileRequest):
             // the dashboard shows the current tier, billing sets it.
