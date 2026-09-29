@@ -48,10 +48,16 @@ class AdminPanelTest extends TestCase
         $nutritionist = User::factory()->nutritionist()->create(['name' => 'Dr. Amal']);
         Subscriber::factory()->active()->count(3)->create(['nutritionist_id' => $nutritionist->id]);
 
-        $this->getJson('/api/v1/admin/nutritionists', $this->bearerFor($this->admin()))
+        $rows = $this->getJson('/api/v1/admin/nutritionists', $this->bearerFor($this->admin()))
             ->assertOk()
-            ->assertJsonPath('data.0.name', 'Dr. Amal')
-            ->assertJsonPath('data.0.clients_count', 3);
+            ->json('data');
+
+        // The subscriber factory also makes a throwaway nutritionist per
+        // row, created in the same second, so find ours rather than
+        // relying on where it lands in the list.
+        $row = collect($rows)->firstWhere('id', $nutritionist->id);
+        $this->assertSame('Dr. Amal', $row['name']);
+        $this->assertSame(3, $row['clients_count']);
     }
 
     public function test_nutritionists_cannot_reach_the_admin_api(): void

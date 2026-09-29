@@ -23,7 +23,10 @@ class AdminNutritionistController extends Controller
             ->when($term !== '', fn ($q) => $q->where(
                 fn ($w) => $w->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%")
             ))
+            // id breaks created_at ties (rows made in the same second), so
+            // paging is stable instead of depending on the engine's order.
             ->latest()
+            ->latest('id')
             ->paginate(20);
 
         return response()->json([
