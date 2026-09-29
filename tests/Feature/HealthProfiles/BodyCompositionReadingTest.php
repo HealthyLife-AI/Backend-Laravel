@@ -65,4 +65,17 @@ class BodyCompositionReadingTest extends TestCase
             'recorded_at' => now()->addDay()->toDateString(), 'weight_kg' => 80,
         ], $this->bearerFor($nutritionist))->assertUnprocessable();
     }
+
+    /** weight_kg is NOT NULL in the table, so it must be required, not fail in the database. */
+    public function test_a_reading_without_weight_is_a_422_not_a_500(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $subscriber = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]);
+
+        $this->postJson("/api/v1/clients/{$subscriber->id}/body-composition-readings", [
+            'recorded_at' => now()->toDateString(), 'waist_cm' => 88,
+        ], $this->bearerFor($nutritionist))->assertUnprocessable()->assertJsonValidationErrors('weight_kg');
+
+        $this->assertSame(0, $subscriber->bodyCompositionReadings()->count());
+    }
 }

@@ -174,6 +174,21 @@ class ProgressAndWeightLogTest extends TestCase
         $this->assertEquals(22, $reading->body_fat_percent);
     }
 
+    /** A tape-only entry used to pass validation and then fail on the NOT NULL weight column (500). */
+    public function test_a_measurement_without_weight_is_a_422_not_a_500(): void
+    {
+        [$client, $subscriber] = $this->makeClient();
+
+        foreach ([['waist_cm' => 90], ['hip_cm' => 100, 'thigh_cm' => 55, 'arm_cm' => 30], ['waist_cm' => 90, 'weight_kg' => null]] as $body) {
+            $this->postJson('/api/v1/me/measurements', $body, $this->bearerFor($client))
+                ->assertUnprocessable()->assertJsonValidationErrors('weight_kg');
+        }
+        $this->assertSame(0, $subscriber->bodyCompositionReadings()->count());
+
+        // With the weight, the same tape figures are accepted.
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 80, 'waist_cm' => 90], $this->bearerFor($client))->assertCreated();
+    }
+
     /** An empty body would otherwise create a reading holding nothing. */
     public function test_a_measurement_with_no_values_is_rejected(): void
     {

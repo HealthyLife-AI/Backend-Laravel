@@ -30,9 +30,13 @@ class StoreMeasurementRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // At least one measurement must be present — an empty body
-            // would otherwise create (or touch) a reading holding nothing.
-            'weight_kg' => ['nullable', 'numeric', 'between:1,500', 'required_without_all:waist_cm,hip_cm,thigh_cm,arm_cm'],
+            // Weight is required: every reading is a row in
+            // `body_composition_readings`, where `weight_kg` is NOT NULL and
+            // the progress chart is a weight series. A tape-only entry
+            // (waist, hip, thigh, arm) has to say what the patient weighed
+            // that day too; without this it passed validation and failed in
+            // the database with a 500.
+            'weight_kg' => ['required', 'numeric', 'between:1,500'],
             'waist_cm' => ['nullable', 'numeric', 'between:20,300'],
             'hip_cm' => ['nullable', 'numeric', 'between:20,300'],
             'thigh_cm' => ['nullable', 'numeric', 'between:10,200'],

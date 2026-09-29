@@ -65,6 +65,9 @@ error codes. New business rules are numbered from BR-15 (table at the end).
   - `403 log_locked` on editing/deleting a log or reading past its window
     (below): show the entry as read-only.
   - `403 consent_required`, `503 consent_not_configured` (above).
+- **`weight_kg` is required on `POST /me/measurements`** (`422` on `weight_kg`
+  without it, tape-only entries included; it used to be a `500`). Queue tape-only
+  entries together with a weight, or ask the patient for one.
 - **`POST /me/measurements` on a day that already has a reading**: once that
   day's edit window has closed, re-sending it with *different* figures is
   `403 log_locked` (the same figures still return `200`, so a replay of a saved
@@ -717,7 +720,8 @@ whatever the device/visit actually captured:
 { "recorded_at": "2026-09-06", "weight_kg": 82, "body_fat_percent": 30.5, "waist_cm": 85 }
 ```
 
-`recorded_at` must not be in the future. **201 Created** with the saved reading.
+`recorded_at` must not be in the future. Missing `weight_kg` is `422`.
+**201 Created** with the saved reading.
 
 ---
 
@@ -1491,7 +1495,11 @@ trust: a scale and a tape measure are all a remote client needs, so
 bio-impedance analyser and are **silently dropped** if sent here — they are
 entered only through the nutritionist's own endpoint.
 
-At least one measurement is required; an empty body returns `422`.
+**`weight_kg` is required** (1–500): every reading is stored with a weight, which is
+also the series the weight-trend chart plots. The tape figures (`waist_cm`,
+`hip_cm`, `thigh_cm`, `arm_cm`) are optional extras on top of it. A body without
+`weight_kg` — including a tape-only entry — returns `422` on `weight_kg`. (It
+used to pass validation and answer `500`.)
 
 **BR-13 — `source`.** A client's entry is stamped `self-reported`; the
 nutritionist's endpoint stamps `clinic-analyser`. Every reading carries the
