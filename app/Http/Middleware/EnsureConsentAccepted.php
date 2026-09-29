@@ -32,9 +32,7 @@ class EnsureConsentAccepted
             return $next($request);
         }
 
-        $this->consent->assertConfigured();
-
-        if ($this->consent->isConfigured() && ! $this->consent->hasAcceptedCurrent($user)) {
+        if (! $this->consent->hasAcceptedCurrent($user)) {
             throw new ApiCodeException(
                 'You must accept the privacy policy to continue.',
                 'consent_required',

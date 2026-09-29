@@ -30,10 +30,11 @@ class AdminOverviewController extends Controller
             'foods_pending' => (int) $foods->where('status', 'pending')->sum('total'),
             // Proof the 06:00 job (adherence refresh + alerts) ran: when, and what it did.
             'last_daily_run' => app(SelfScheduler::class)->lastResult('alerts'),
-            // BR-17: whether CONSENT_VERSION is set. While it isn't, patient
-            // data endpoints refuse (503) in production, so the admin panel
-            // warns about it like it does for the scheduler.
-            'consent_configured' => app(ConsentService::class)->isConfigured(),
+            // BR-17: the consent version and policy URL in force, and whether
+            // each was set in the environment. The gate always works (a
+            // default is used), but the admin panel warns while either is a
+            // default, like it does for the scheduler.
+            'consent' => app(ConsentService::class)->configuration(),
             'foods_by_source' => [
                 'usda' => (int) $approved->where('source', 'usda')->sum('total'),
                 'admin' => (int) $approved->where('source', 'admin')->sum('total'),

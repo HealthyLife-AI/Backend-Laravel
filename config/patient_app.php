@@ -41,22 +41,29 @@ return [
     |
     | `version` is the CURRENT privacy-policy version. Until a patient has
     | accepted it, their data endpoints answer 403 `consent_required`. Bump
-    | it (e.g. 2026-10-01 -> 2027-02-01) when the policy text changes and
+    | CONSENT_VERSION (e.g. to 2027-02-01) when the policy text changes and
     | every patient is asked again.
     |
-    | Blank means "not configured", and the gate must not be silently off
-    | in a real deployment: outside `local` and `testing` a blank version
-    | makes patient data endpoints refuse with 503 `consent_not_configured`
-    | (fail closed), and the admin overview shows a warning.
+    | It always has a value: a blank or missing CONSENT_VERSION falls back to
+    | the version below, so the gate is always on and one missing variable
+    | can't lock patients out of the app. The admin overview warns while
+    | either value comes from a default rather than the environment.
     |
-    | `policy_url` is where the app sends the patient to read the policy.
-    | The policy text itself is not stored or written by this code.
+    | `policy_url` is where the app sends the patient to read the policy (the
+    | text itself is not stored or written by this code). Without
+    | CONSENT_POLICY_URL it is the dashboard's /privacy page on FRONTEND_URL;
+    | with neither set it is null, and the gate still works.
     |
     */
 
     'consent' => [
-        'version' => env('CONSENT_VERSION') ?: null,
-        'policy_url' => env('CONSENT_POLICY_URL') ?: null,
+        'version' => env('CONSENT_VERSION') ?: '2026-10-01',
+        'policy_url' => env('CONSENT_POLICY_URL')
+            ?: (env('FRONTEND_URL') ? rtrim((string) env('FRONTEND_URL'), '/').'/privacy' : null),
+        // Whether each came from the environment rather than a default;
+        // read only by the admin overview's warning.
+        'version_from_env' => filled(env('CONSENT_VERSION')),
+        'policy_url_from_env' => filled(env('CONSENT_POLICY_URL')),
     ],
 
     /*

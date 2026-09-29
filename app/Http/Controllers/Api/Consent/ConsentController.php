@@ -20,8 +20,6 @@ class ConsentController extends Controller
 
     public function show(): JsonResponse
     {
-        $this->consent->assertConfigured();
-
         return response()->json($this->consent->status(Auth::user()));
     }
 

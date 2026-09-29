@@ -45,6 +45,12 @@ class ConsentTest extends TestCase
         $this->subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id, 'user_id' => $this->client->id]);
     }
 
+    /** This test is about consent itself: patients start without it. */
+    protected function acceptsConsentForPatients(): bool
+    {
+        return false;
+    }
+
     private function auth(?User $as = null): array
     {
         return $this->bearerFor($as ?? $this->client);
@@ -230,70 +236,123 @@ class ConsentTest extends TestCase
         $this->postJson('/api/v1/me/consent')->assertUnauthorized();
     }
 
-    // ---- when no version is configured ------------------------------------
+    // ---- configuration: never unconfigured ----------------------------------
 
-    public function test_a_blank_version_leaves_the_gate_open_in_local_and_testing(): void
+    /** @var array<string, array{0: string|false, 1: mixed, 2: mixed}> */
+    private array $savedEnv = [];
+
+    /**
+     * Re-reads config/patient_app.php with the given environment, the way a
+     * deployment would boot with it. Variables not listed are unset.
+     *
+     * @param  array<string, string>  $env
+     */
+    private function bootConsentConfigWith(array $env): void
     {
-        config(['patient_app.consent.version' => null]);
+        foreach (['CONSENT_VERSION', 'CONSENT_POLICY_URL', 'FRONTEND_URL'] as $key) {
+            $this->savedEnv[$key] ??= [getenv($key), $_ENV[$key] ?? null, $_SERVER[$key] ?? null];
 
-        $this->getJson('/api/v1/me/meal-logs', $this->auth())->assertOk();
-        $this->getJson('/api/v1/me/consent', $this->auth())->assertOk()->assertJsonPath('required', false)->assertJsonPath('current_version', null);
-        $this->postJson('/api/v1/me/consent', [], $this->auth())->assertStatus(409)->assertJsonPath('code', 'consent_not_required');
+            if (array_key_exists($key, $env)) {
+                putenv("{$key}={$env[$key]}");
+                $_ENV[$key] = $_SERVER[$key] = $env[$key];
+            } else {
+                putenv($key);
+                unset($_ENV[$key], $_SERVER[$key]);
+            }
+        }
 
-        $this->app['env'] = 'local';
-        $this->getJson('/api/v1/me/meal-logs', $this->auth())->assertOk();
+        config(['patient_app.consent' => (require config_path('patient_app.php'))['consent']]);
     }
 
-    public function test_a_blank_version_fails_closed_in_production(): void
+    protected function tearDown(): void
     {
-        config(['patient_app.consent.version' => null]);
+        foreach ($this->savedEnv as $key => [$getenv, $env, $server]) {
+            $getenv === false ? putenv($key) : putenv("{$key}={$getenv}");
+            if ($env === null) {
+                unset($_ENV[$key]);
+            } else {
+                $_ENV[$key] = $env;
+            }
+            if ($server === null) {
+                unset($_SERVER[$key]);
+            } else {
+                $_SERVER[$key] = $server;
+            }
+        }
+
+        parent::tearDown();
+    }
+
+    public function test_with_no_env_values_at_all_the_gate_still_works_on_a_default_version(): void
+    {
+        $this->bootConsentConfigWith([]);
         $this->app['env'] = 'production';
         $token = $this->auth();
 
+        $this->getJson('/api/v1/me/consent', $token)->assertOk()->assertExactJson([
+            'required' => true,
+            'current_version' => '2026-10-01',
+            'accepted_version' => null,
+            'accepted_at' => null,
+            'policy_url' => null,
+        ]);
         foreach ($this->gatedRequests() as [$method, $uri]) {
-            $this->json($method, $uri, [], $token)->assertStatus(503)->assertJsonPath('code', 'consent_not_configured');
+            $this->json($method, $uri, [], $token)
+                ->assertForbidden()
+                ->assertJsonPath('code', 'consent_required')
+                ->assertJsonPath('current_version', '2026-10-01')
+                ->assertJsonPath('policy_url', null);
         }
-        $this->getJson('/api/v1/me/consent', $token)->assertStatus(503)->assertJsonPath('code', 'consent_not_configured');
-        $this->postJson('/api/v1/me/consent', [], $token)->assertStatus(503)->assertJsonPath('code', 'consent_not_configured');
 
-        // What is not patient data stays reachable.
-        $this->getJson('/api/v1/auth/me', $token)->assertOk();
-        $this->getJson('/api/v1/me/nutritionist', $token)->assertOk();
-
-        // Nutritionists are not affected.
-        $this->getJson('/api/v1/clients', $this->auth($this->nutritionist))->assertOk();
+        $this->postJson('/api/v1/me/consent', ['version' => '2026-10-01'], $token)->assertCreated()->assertJsonPath('required', false);
+        $this->getJson('/api/v1/me/meal-logs', $token)->assertOk();
     }
 
-    public function test_staging_also_fails_closed(): void
+    public function test_a_blank_version_uses_the_default_and_never_answers_503(): void
     {
-        config(['patient_app.consent.version' => null]);
-        $this->app['env'] = 'staging';
+        $this->bootConsentConfigWith(['CONSENT_VERSION' => '', 'CONSENT_POLICY_URL' => '']);
 
-        $this->getJson('/api/v1/me/meal-logs', $this->auth())->assertStatus(503);
+        foreach (['production', 'staging', 'local'] as $env) {
+            $this->app['env'] = $env;
+            $this->getJson('/api/v1/me/meal-logs', $this->auth())
+                ->assertForbidden()->assertJsonPath('code', 'consent_required')->assertJsonPath('current_version', '2026-10-01');
+        }
     }
 
-    public function test_the_config_treats_a_blank_env_value_as_not_configured(): void
+    public function test_the_policy_url_defaults_to_the_privacy_page_on_the_frontend_url(): void
     {
-        putenv('CONSENT_VERSION=');
-        $_ENV['CONSENT_VERSION'] = '';
-        $config = require config_path('patient_app.php');
+        $this->bootConsentConfigWith(['FRONTEND_URL' => 'https://dashboard.example/']);
+        $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('policy_url', 'https://dashboard.example/privacy');
 
-        $this->assertNull($config['consent']['version']);
-        putenv('CONSENT_VERSION');
-        unset($_ENV['CONSENT_VERSION']);
+        $this->bootConsentConfigWith(['FRONTEND_URL' => 'https://dashboard.example', 'CONSENT_POLICY_URL' => 'https://legal.example/p']);
+        $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('policy_url', 'https://legal.example/p');
+    }
+
+    public function test_explicit_env_values_are_used_as_given(): void
+    {
+        $this->bootConsentConfigWith(['CONSENT_VERSION' => '2027-02-01', 'CONSENT_POLICY_URL' => 'https://legal.example/p']);
+
+        $this->getJson('/api/v1/me/consent', $this->auth())
+            ->assertJsonPath('current_version', '2027-02-01')
+            ->assertJsonPath('policy_url', 'https://legal.example/p');
     }
 
     // ---- what the admin and the nutritionist see ---------------------------
 
-    public function test_the_admin_overview_reports_whether_consent_is_configured(): void
+    public function test_the_admin_overview_says_which_consent_values_are_defaults(): void
     {
         $admin = User::factory()->create();
         $admin->assignRole('admin');
+        $overview = fn () => $this->getJson('/api/v1/admin/overview', $this->auth($admin))->assertOk()->json('consent');
 
-        $this->getJson('/api/v1/admin/overview', $this->auth($admin))->assertOk()->assertJsonPath('consent_configured', true);
+        $this->bootConsentConfigWith([]);
+        $this->assertSame(['version' => '2026-10-01', 'version_set' => false, 'policy_url' => null, 'policy_url_set' => false], $overview());
 
-        config(['patient_app.consent.version' => null]);
-        $this->getJson('/api/v1/admin/overview', $this->auth($admin))->assertOk()->assertJsonPath('consent_configured', false);
+        $this->bootConsentConfigWith(['FRONTEND_URL' => 'https://dashboard.example']);
+        $this->assertSame(['version' => '2026-10-01', 'version_set' => false, 'policy_url' => 'https://dashboard.example/privacy', 'policy_url_set' => false], $overview());
+
+        $this->bootConsentConfigWith(['CONSENT_VERSION' => '2026-10-01', 'CONSENT_POLICY_URL' => 'https://dashboard.example/privacy']);
+        $this->assertSame(['version' => '2026-10-01', 'version_set' => true, 'policy_url' => 'https://dashboard.example/privacy', 'policy_url_set' => true], $overview());
     }
 
     public function test_the_nutritionist_sees_the_patients_consent_status_on_the_patient_only(): void

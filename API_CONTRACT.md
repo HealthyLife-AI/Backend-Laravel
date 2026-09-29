@@ -45,9 +45,10 @@ error codes. New business rules are numbered from BR-15 (table at the end).
   **Not gated**: login/refresh/logout, invite activation, `GET /auth/me`,
   `GET|POST /me/consent`, `GET /me/nutritionist`, `PUT /me/fcm-token`,
   `DELETE /me/account`. `403 follow_up_ended` still wins over
-  `consent_required`. If a deployment has no policy version configured, the
-  gated endpoints answer `503 consent_not_configured` (fail closed): show a
-  "service unavailable" message — nothing the app can fix.
+  `consent_required`. The gate is always on (the server falls back to a default
+  version if none is configured), so there is no "consent not configured"
+  state to handle. `policy_url` can be `null` if the server has no URL for the
+  policy: accept consent anyway, and show the policy screen without a link.
 - **`meal_type` is required on an off-plan meal log** (`POST /me/meal-logs`
   without `meal_item_id`): `breakfast` | `lunch` | `dinner` | `snack`, else `422`
   on `meal_type`. For an on-plan log it is ignored — the server uses the plan
@@ -64,7 +65,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
     still returns `200`, however old it is.
   - `403 log_locked` on editing/deleting a log or reading past its window
     (below): show the entry as read-only.
-  - `403 consent_required`, `503 consent_not_configured` (above).
+  - `403 consent_required` (above).
 - **`weight_kg` is required on `POST /me/measurements`** (`422` on `weight_kg`
   without it, tape-only entries included; it used to be a `500`). Queue tape-only
   entries together with a weight, or ask the patient for one.
@@ -110,7 +111,7 @@ error codes. New business rules are numbered from BR-15 (table at the end).
 |---|---|
 | **BR-15** | A patient can edit or delete their own meal log, and delete their own self-reported reading, for 48 hours after its date (`LOG_EDIT_WINDOW_HOURS`); then `403 log_locked`. The food of a log is never editable |
 | **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set), the client's choice for an off-plan one |
-| **BR-17** | A patient must accept the current privacy-policy version (`CONSENT_VERSION`) before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). A blank version fails closed outside local/testing |
+| **BR-17** | A patient must accept the current privacy-policy version before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). The version is `CONSENT_VERSION`, or a default (`2026-10-01`) when that isn't set, so the gate is always on and a missing setting never blocks the app |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
 | **BR-19** | A new meal log or self-reported reading **made by the patient** can't be dated more than 7 days back (`LOG_BACKDATE_LIMIT_DAYS`): `422 entry_too_old`. It does not apply to the nutritionist's clinic readings, which can be any past date |
 | **BR-20** | The system diagnostics (`/system/*`) are for the admin only |
@@ -216,8 +217,6 @@ the standard `errors` object pointing at the field.
 | 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_hours` |
 | 403 | `consent_required` | BR-17: the patient hasn't accepted the current privacy policy | `current_version`, `policy_url` |
 | 409 | `consent_version_mismatch` | `POST /me/consent` named a version that is not the current one | `current_version` |
-| 409 | `consent_not_required` | `POST /me/consent` on a server with no policy version (development only) | — |
-| 503 | `consent_not_configured` | the server has no policy version set (misconfiguration; fail closed outside local/testing) | — |
 | 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated further back than allowed | `max_age_days` |
 
 **Rate limiting** (`429`, register/login: 10 req/min, refresh: 20 req/min, per IP):
@@ -540,7 +539,7 @@ on the patient page. Works for archived patients too.
 
 `accepted_version` / `accepted_at` are `null` if the patient never accepted.
 `up_to_date` is `false` when the current version differs from what they
-accepted (or they never did), and `null` when no version is configured. The IP
+accepted (or they never did). The IP
 and user agent that were recorded are never sent to the dashboard. The roster
 (`GET /clients`) does not carry `consent`.
 
@@ -1201,7 +1200,11 @@ Before the patient app can read or write anything about the patient, the
 patient must accept the **current version** of the privacy policy. The version
 and the URL of the policy come from the server's configuration
 (`CONSENT_VERSION`, `CONSENT_POLICY_URL`); the policy text itself is not part of
-the API.
+the API. **The gate is always on**: without `CONSENT_VERSION` the server uses a
+default version (`2026-10-01`), and without `CONSENT_POLICY_URL` the URL is the
+dashboard's `/privacy` page on `FRONTEND_URL`, or `null` if that isn't set
+either. A missing setting never switches the gate off and never blocks the app;
+the admin overview warns about it instead.
 
 Role `client` only (a nutritionist token gets `403`), no id in the URL;
 `follow_up_ended` (`403`) for an archived patient.
@@ -1221,9 +1224,9 @@ Role `client` only (a nutritionist token gets `403`), no id in the URL;
 | field | meaning |
 |---|---|
 | `required` | `true` while the patient has not accepted `current_version` — show the consent screen |
-| `current_version` | the version in force (`null` only on a development server with none configured; then `required` is `false`) |
+| `current_version` | the version in force (always set) |
 | `accepted_version`, `accepted_at` | the patient's most recent acceptance, of **any** version (`null` if none). Differs from `current_version` after the policy changes |
-| `policy_url` | where the patient reads the policy (`null` if not configured) |
+| `policy_url` | where the patient reads the policy; `null` if the server has no URL for it (show the consent screen without a link) |
 
 ### `POST /me/consent`
 
@@ -1263,17 +1266,24 @@ Gated: `GET /me/meal-plan`, all of `/me/meal-logs*`, all of `/me/measurements*`,
 **Not gated**: `POST /auth/login|refresh|logout`, invite activation,
 `GET /auth/me`, `GET|POST /me/consent`, `GET /me/nutritionist`,
 `PUT /me/fcm-token`, `DELETE /me/account`. Precedence when several apply:
-`401` → `403 follow_up_ended` → `503 consent_not_configured` →
-`403 consent_required`.
+`401` → `403 follow_up_ended` → `403 consent_required`.
 
-### `503 consent_not_configured` (fail closed)
+### Configuration warnings (admin)
 
-If the server has **no** `CONSENT_VERSION` set, then in `local` and `testing`
-environments the gate is simply off, but everywhere else (production, staging)
-the gated endpoints and both consent endpoints answer `503
-consent_not_configured` rather than silently letting patients through with no
-consent on record. The admin overview shows a warning
-(`consent_configured: false` on `GET /admin/overview`) until it is set.
+`GET /admin/overview` carries the values in force and whether each was set in
+the environment:
+
+```json
+"consent": {
+  "version": "2026-10-01",
+  "version_set": false,
+  "policy_url": "https://dashboard.example/privacy",
+  "policy_url_set": false
+}
+```
+
+The admin panel shows a warning while `version_set` or `policy_url_set` is
+`false`. Nothing is refused because of it.
 
 ## Account deletion (BR-18)
 

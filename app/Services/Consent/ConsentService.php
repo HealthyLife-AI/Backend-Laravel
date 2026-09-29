@@ -10,20 +10,17 @@ use Illuminate\Http\Request;
 /**
  * BR-17: patient consent to the privacy policy.
  *
- * The gate has three states, decided by config('patient_app.consent.version'):
- *  - a version is set: enforced — a patient who hasn't accepted THAT version
- *    is refused (403 `consent_required`);
- *  - blank in `local` / `testing`: the gate is off, so development and the
- *    test suite work without a policy;
- *  - blank anywhere else: misconfigured — refused (503
- *    `consent_not_configured`) rather than silently letting every patient
- *    through with no consent on record.
+ * Always enforced: config('patient_app.consent.version') always has a value
+ * (CONSENT_VERSION, or the default in config/patient_app.php), and a patient
+ * who hasn't accepted THAT version is refused (403 `consent_required`). A
+ * missing variable therefore never turns the gate off and never locks the
+ * app; the admin overview warns about it instead (`configuration()`).
  */
 class ConsentService
 {
-    public function currentVersion(): ?string
+    public function currentVersion(): string
     {
-        return config('patient_app.consent.version');
+        return (string) config('patient_app.consent.version');
     }
 
     public function policyUrl(): ?string
@@ -31,35 +28,25 @@ class ConsentService
         return config('patient_app.consent.policy_url');
     }
 
-    public function isConfigured(): bool
+    /**
+     * For the admin overview: the values in force and whether each was set
+     * explicitly in the environment (a default is in use otherwise).
+     *
+     * @return array{version: string, version_set: bool, policy_url: string|null, policy_url_set: bool}
+     */
+    public function configuration(): array
     {
-        return $this->currentVersion() !== null;
-    }
-
-    /** Blank version outside local/testing: fail closed. */
-    public function isMisconfigured(): bool
-    {
-        return ! $this->isConfigured() && ! app()->environment(['local', 'testing']);
-    }
-
-    /** 503 `consent_not_configured` when the deployment has no policy version set. */
-    public function assertConfigured(): void
-    {
-        if ($this->isMisconfigured()) {
-            throw new ApiCodeException(
-                'Patient consent is not configured on this server.',
-                'consent_not_configured',
-                503,
-            );
-        }
+        return [
+            'version' => $this->currentVersion(),
+            'version_set' => (bool) config('patient_app.consent.version_from_env'),
+            'policy_url' => $this->policyUrl(),
+            'policy_url_set' => (bool) config('patient_app.consent.policy_url_from_env'),
+        ];
     }
 
     public function hasAcceptedCurrent(User $user): bool
     {
-        $version = $this->currentVersion();
-
-        return $version !== null
-            && PatientConsent::query()->where('user_id', $user->id)->where('version', $version)->exists();
+        return PatientConsent::query()->where('user_id', $user->id)->where('version', $this->currentVersion())->exists();
     }
 
     /** The patient's most recent acceptance, of any version. */
@@ -83,7 +70,7 @@ class ConsentService
         $latest = $this->latest($user);
 
         return [
-            'required' => $this->isConfigured() && ! $this->hasAcceptedCurrent($user),
+            'required' => ! $this->hasAcceptedCurrent($user),
             'current_version' => $this->currentVersion(),
             'accepted_version' => $latest?->version,
             'accepted_at' => $latest?->accepted_at?->toIso8601String(),
@@ -94,7 +81,6 @@ class ConsentService
     /**
      * What the nutritionist sees on the patient's page: the version the
      * patient last accepted and when, and whether that is the current one.
-     * `up_to_date` is null when no version is configured.
      *
      * @return array<string, mixed>
      */
@@ -107,7 +93,7 @@ class ConsentService
             'accepted_version' => $latest?->version,
             'accepted_at' => $latest?->accepted_at?->toIso8601String(),
             'current_version' => $current,
-            'up_to_date' => $current === null ? null : $this->hasAcceptedCurrent($user),
+            'up_to_date' => $this->hasAcceptedCurrent($user),
         ];
     }
 
@@ -121,14 +107,7 @@ class ConsentService
      */
     public function accept(User $user, Request $request, ?string $version = null): PatientConsent
     {
-        $this->assertConfigured();
-
         $current = $this->currentVersion();
-
-        if ($current === null) {
-            // Local/testing with no version: nothing to accept.
-            throw new ApiCodeException('There is no policy version to accept.', 'consent_not_required', 409);
-        }
 
         if ($version !== null && $version !== $current) {
             throw new ApiCodeException(
