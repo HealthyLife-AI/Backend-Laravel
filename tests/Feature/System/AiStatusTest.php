@@ -18,6 +18,12 @@ class AiStatusTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
     }
 
+    /** The system diagnostics are admin-only. */
+    private function adminToken(): array
+    {
+        return $this->bearerFor(tap(User::factory()->create())->assignRole('admin'));
+    }
+
     public function test_it_reports_a_configured_provider_without_revealing_the_key(): void
     {
         config([
@@ -27,7 +33,7 @@ class AiStatusTest extends TestCase
             'ai.timeout' => 12,
         ]);
 
-        $response = $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+        $response = $this->getJson('/api/v1/system/ai-status', $this->adminToken());
 
         $response->assertOk()
             ->assertJson([
@@ -48,7 +54,7 @@ class AiStatusTest extends TestCase
     {
         config(['ai.base_url' => null, 'ai.api_key' => null, 'ai.model' => null]);
 
-        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/ai-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['configured' => false, 'provider_host' => null, 'model' => null]);
     }
@@ -57,7 +63,7 @@ class AiStatusTest extends TestCase
     {
         config(['ai.base_url' => null, 'ai.api_key' => 'gsk_key_but_nowhere_to_send_it']);
 
-        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/ai-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['configured' => false]);
     }
@@ -78,7 +84,7 @@ class AiStatusTest extends TestCase
             'ai.summary.model' => 'openai/gpt-oss-120b',
         ]);
 
-        $response = $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+        $response = $this->getJson('/api/v1/system/ai-status', $this->adminToken());
 
         $response->assertOk()->assertJson([
             'summary' => [
@@ -105,7 +111,7 @@ class AiStatusTest extends TestCase
         // reads true — this is the "still sharing one quota" case.
         config(['ai.summary.api_key' => config('ai.api_key')]);
 
-        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/ai-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['summary' => ['shares_draft_key' => true]]);
     }
@@ -121,7 +127,7 @@ class AiStatusTest extends TestCase
             'ai.summary.model' => null,
         ]);
 
-        $this->getJson('/api/v1/system/ai-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/ai-status', $this->adminToken())
             ->assertOk()
             ->assertJson([
                 'configured' => true,

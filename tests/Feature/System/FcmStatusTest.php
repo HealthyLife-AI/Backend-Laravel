@@ -18,11 +18,17 @@ class FcmStatusTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
     }
 
+    /** The system diagnostics are admin-only. */
+    private function adminToken(): array
+    {
+        return $this->bearerFor(tap(User::factory()->create())->assignRole('admin'));
+    }
+
     public function test_it_reports_configured_via_inline_json_without_revealing_it(): void
     {
         config(['firebase.credentials_json_base64' => null, 'firebase.credentials_path' => null, 'firebase.credentials_json' => '{"client_email":"super-secret@x.iam.gserviceaccount.com"}']);
 
-        $response = $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+        $response = $this->getJson('/api/v1/system/fcm-status', $this->adminToken());
 
         $response->assertOk()->assertJson(['configured' => true, 'source' => 'credentials_json']);
         $this->assertStringNotContainsString('super-secret', $response->getContent());
@@ -34,7 +40,7 @@ class FcmStatusTest extends TestCase
         config(['firebase.credentials_json' => null, 'firebase.credentials_path' => null]);
         config(['firebase.credentials_json_base64' => base64_encode('{"client_email":"super-secret@x.iam.gserviceaccount.com"}')]);
 
-        $response = $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()));
+        $response = $this->getJson('/api/v1/system/fcm-status', $this->adminToken());
 
         $response->assertOk()->assertJson(['configured' => true, 'source' => 'credentials_json_base64']);
         $this->assertStringNotContainsString('super-secret', $response->getContent());
@@ -51,7 +57,7 @@ class FcmStatusTest extends TestCase
             'firebase.credentials_path' => $path,
         ]);
 
-        $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/fcm-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['source' => 'credentials_json_base64']);
 
@@ -64,7 +70,7 @@ class FcmStatusTest extends TestCase
         file_put_contents($path, '{}');
         config(['firebase.credentials_json' => null, 'firebase.credentials_path' => $path]);
 
-        $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/fcm-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['configured' => true, 'source' => 'credentials_path']);
 
@@ -76,7 +82,7 @@ class FcmStatusTest extends TestCase
     {
         config(['firebase.credentials_json' => '{}', 'firebase.credentials_path' => '/some/path.json']);
 
-        $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/fcm-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['source' => 'credentials_json']);
     }
@@ -85,7 +91,7 @@ class FcmStatusTest extends TestCase
     {
         config(['firebase.credentials_json' => null, 'firebase.credentials_path' => null]);
 
-        $this->getJson('/api/v1/system/fcm-status', $this->bearerFor(User::factory()->nutritionist()->create()))
+        $this->getJson('/api/v1/system/fcm-status', $this->adminToken())
             ->assertOk()
             ->assertJson(['configured' => false, 'source' => null]);
     }

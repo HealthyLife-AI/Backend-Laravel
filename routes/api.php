@@ -105,26 +105,27 @@ Route::prefix('v1')->name('api.')->group(function () {
         ->middleware(['jwt', 'consent'])
         ->name('foods.search');
 
-    // Operational read-only check: whether this environment has an AI
-    // provider configured at all (see AiStatusController). Authenticated
-    // but ungated — it reports no client data and no credential.
-    Route::get('system/ai-status', AiStatusController::class)
-        ->middleware('jwt')
-        ->name('system.ai-status');
+    // Operational diagnostics — admin only. They report which credentials
+    // and jobs are configured on this deployment (never the secrets, never
+    // client data), which is the operator's business: a nutritionist or a
+    // patient has no use for them, and "is a provider configured, from which
+    // host, is cron running" is not something to hand every account.
+    Route::middleware(['jwt', 'role:admin'])->group(function () {
+        // Whether this environment has an AI provider configured at all
+        // (see AiStatusController).
+        Route::get('system/ai-status', AiStatusController::class)->name('system.ai-status');
 
-    // S5-06 follow-up: the FCM twin of the check above — see
-    // FcmStatusController for why this exists (fails closed by design,
-    // so "not configured" and "configured but no pushes due yet" look
-    // identical from outside without this).
-    // When each scheduled job last ran, and what the 06:00 run did — the way
-    // to confirm on Taqat that cron (or the self-trigger) actually runs them.
-    Route::get('system/scheduler-status', SchedulerStatusController::class)
-        ->middleware('jwt')
-        ->name('system.scheduler-status');
+        // When each scheduled job last ran, and what the 06:00 run did — the
+        // way to confirm on Taqat that cron (or the self-trigger) actually
+        // runs them.
+        Route::get('system/scheduler-status', SchedulerStatusController::class)->name('system.scheduler-status');
 
-    Route::get('system/fcm-status', FcmStatusController::class)
-        ->middleware('jwt')
-        ->name('system.fcm-status');
+        // S5-06 follow-up: the FCM twin of ai-status — see FcmStatusController
+        // for why this exists (fails closed by design, so "not configured"
+        // and "configured but no pushes due yet" look identical from outside
+        // without this).
+        Route::get('system/fcm-status', FcmStatusController::class)->name('system.fcm-status');
+    });
 
     Route::middleware(['jwt', 'permission:plans.manage'])->group(function () {
         Route::get('clients/{subscriber}/meal-plans', [MealPlanController::class, 'index'])->name('meal-plans.index');

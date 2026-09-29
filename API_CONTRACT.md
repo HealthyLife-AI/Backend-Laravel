@@ -100,6 +100,13 @@ error codes. The list grows with the batch; entries are grouped by change.
   of the patient's nutritionist for a "my nutritionist" screen. Every field but
   `name` can be `null`. See [Nutritionist Profile](#get-menutritionist).
 
+**Nothing to call, but note**
+
+- `GET /system/ai-status`, `/system/scheduler-status` and `/system/fcm-status`
+  are now **admin-only** (`403` for a patient). They were readable by any
+  logged-in account, a patient's included. The app never needed them; make sure
+  it doesn't call them.
+
 **New / changed response fields**
 
 - **`gender` on the client's user object** (`GET /auth/me`, and the `user` in
@@ -1080,8 +1087,12 @@ Plans](#meal-plans-sprint-3). **204 No Content** — no active plan yet.
 
 ## System (Operational)
 
-Read-only operational checks. Authenticated, but no permission gate — they
-report no client data.
+Read-only operational checks for the **deployment's operator**: **admin role
+only** (`403` for a nutritionist or a patient, `401` without a token). They
+report which credentials and scheduled jobs a deployment has configured — never
+the secrets, never client data. The patient app and the nutritionist dashboard
+must not call them (the dashboard's admin overview already shows what it needs).
+Get an admin token with `POST /auth/login` using the admin account.
 
 ### `GET /system/ai-status`
 
@@ -1158,7 +1169,7 @@ Never returns the JSON/key content, and makes no call to Firebase.
 When each scheduled job last ran, and what the 06:00 run did. The jobs fail
 silently by design, and on Taqat each cron run happens in a one-off
 container whose output is gone afterwards, so this is the way to confirm
-from outside that the morning job ran. Any authenticated user (`jwt`).
+from outside that the morning job ran. Admin only.
 
 **200 OK**
 

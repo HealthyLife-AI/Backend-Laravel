@@ -169,7 +169,8 @@ class DailyAdherenceRefreshTest extends TestCase
     public function test_the_run_is_visible_through_scheduler_status_and_the_admin_overview(): void
     {
         $this->patient(['last_logged_at' => now()->subDays(4)]);
-        $auth = $this->bearerFor($this->nutritionist);
+        // The scheduler diagnostics are admin-only.
+        $auth = $this->bearerFor(tap(User::factory()->create())->assignRole('admin'));
 
         $this->getJson('/api/v1/system/scheduler-status', $auth)->assertOk()->assertJsonPath('jobs.alerts.last_result', null);
 
@@ -182,8 +183,7 @@ class DailyAdherenceRefreshTest extends TestCase
             ->assertJsonPath('jobs.alerts.last_result.status_changes', 1)
             ->assertJsonPath('jobs.alerts.last_result.stopped_logging', 1);
 
-        $admin = tap(User::factory()->create())->assignRole('admin');
-        $this->getJson('/api/v1/admin/overview', $this->bearerFor($admin))
+        $this->getJson('/api/v1/admin/overview', $auth)
             ->assertOk()
             ->assertJsonPath('last_daily_run.patients', 1);
     }

@@ -29,9 +29,26 @@ actually received them — setting a var in a dashboard does not prove the
 process picked it up:
 
 ```
-GET /api/v1/system/ai-status   # draft + summary LLM config, never the key
-GET /api/v1/system/fcm-status  # which Firebase credential source is active
+GET /api/v1/system/ai-status         # draft + summary LLM config, never the key
+GET /api/v1/system/fcm-status        # which Firebase credential source is active
+GET /api/v1/system/scheduler-status  # when the scheduled jobs last ran
 ```
+
+**These three are admin-only** (a nutritionist or patient token gets `403`).
+Get an admin access token by logging in with the `ADMIN_EMAIL` / `ADMIN_PASSWORD`
+you set for the seed (see "Seeding" below), then pass it as a bearer token:
+
+```
+TOKEN=$(curl -s -X POST https://healthylife.apps.taqat.academy/api/v1/auth/login \
+  -H 'Content-Type: application/json' -H 'Accept: application/json' \
+  -d '{"email":"<ADMIN_EMAIL>","password":"<ADMIN_PASSWORD>"}' | jq -r .access_token)
+
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Accept: application/json' \
+  https://healthylife.apps.taqat.academy/api/v1/system/ai-status
+```
+
+The token lasts `JWT_TTL` (minutes); log in again when it expires. Don't paste a
+real password into a shell that keeps history, or use `read -s` to prompt for it.
 
 ## Performance
 
@@ -139,14 +156,15 @@ to the Dokku host itself, not the app container):
      "آخر فحص يومي" shows today's date and time, how many patients were
      checked and how many statuses changed. A warning appears instead if
      the last run is older than a day or never happened.
-   - **API**: `GET /api/v1/system/scheduler-status` with any logged-in
-     user's token. `jobs.alerts.last_ran_at` should be today at about
+   - **API**: `GET /api/v1/system/scheduler-status` with an **admin**
+     token (log in with `ADMIN_EMAIL`, see "Required environment variables"
+     above; any other role gets `403`). `jobs.alerts.last_ran_at` should be today at about
      03:00 UTC, `overdue` should be `false`, and `last_result` shows the
      counts (`patients`, `status_changes`, `stable`, `declining`,
      `stopped_logging`, `failures`).
 
    ```
-   curl -s -H "Authorization: Bearer <access_token>" \
+   curl -s -H "Authorization: Bearer <admin_access_token>" -H 'Accept: application/json' \
      https://healthylife.apps.taqat.academy/api/v1/system/scheduler-status
    ```
 
