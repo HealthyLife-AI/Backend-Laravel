@@ -195,7 +195,7 @@ class MealLogTest extends TestCase
         $food = Food::factory()->create();
         $header = $this->bearerFor($client);
 
-        foreach ([now()->subDays(10), now()->subDay()] as $when) {
+        foreach ([now()->subDays(6), now()->subDay()] as $when) {
             $this->postJson('/api/v1/me/meal-logs', [
                 'food_id' => $food->id,
                 'quantity_grams' => 100,

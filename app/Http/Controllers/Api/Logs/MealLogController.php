@@ -5,12 +5,17 @@ namespace App\Http\Controllers\Api\Logs;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logs\IndexMealLogRequest;
 use App\Http\Requests\Logs\StoreMealLogRequest;
+use App\Http\Requests\Logs\UpdateMealLogRequest;
 use App\Http\Resources\MealLogResource;
 use App\Models\MealLog;
+use App\Models\Subscriber;
 use App\Services\Adherence\AdherenceService;
+use App\Services\Logs\LogWindow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 /**
  * S4-01 / FR-17, BR-9, logs.manage.own: the client logging what they
@@ -25,7 +30,10 @@ class MealLogController extends Controller
 {
     private const EAGER_LOAD = ['food'];
 
-    public function __construct(private readonly AdherenceService $adherence) {}
+    public function __construct(
+        private readonly AdherenceService $adherence,
+        private readonly LogWindow $window,
+    ) {}
 
     /**
      * Paginated, and date-filterable via `from`/`to` (Y-m-d). A log
@@ -74,22 +82,73 @@ class MealLogController extends Controller
             }
         }
 
+        // BR-19: a new entry can't be dated beyond the backdating limit.
+        // After the replay check above, so a queued entry that was already
+        // saved still gets its 200 however old it has become.
+        $loggedAt = $request->date('logged_at') ?? now();
+        $this->window->assertNotTooOld($loggedAt, 'logged_at');
+
         $log = new MealLog($request->safe()->except(['logged_at', 'meal_type']));
         $log->meal_type = $request->mealType();
         $log->subscriber_id = $subscriber->id;
-        $log->logged_at = $request->date('logged_at') ?? now();
+        $log->logged_at = $loggedAt;
         $log->save();
 
-        // Feeds the nutritionist dashboard's "hasn't logged today" count
-        // and the client-list adherence filter, both of which have been
-        // reading these two columns since Sprint 2 with nothing writing
-        // them (see DashboardController). S4-03 sets adherence_status.
-        $subscriber->forceFill(['last_logged_at' => $log->logged_at])->save();
-
-        // S4-03: recompute the column the dashboard counts and the client
-        // list filters on, now that this client's on-plan ratio has moved.
-        $this->adherence->refreshStatus($subscriber);
+        $this->syncSubscriber($subscriber);
 
         return (new MealLogResource($log->load(self::EAGER_LOAD)))->response()->setStatusCode(201);
+    }
+
+    /**
+     * BR-15: correct one of the patient's own logs — quantity, time, or the
+     * meal type of an off-plan one. Never the food.
+     */
+    public function update(UpdateMealLogRequest $request): MealLogResource
+    {
+        $log = $request->mealLog();
+
+        DB::transaction(function () use ($request, $log) {
+            $log->fill($request->safe()->only(['quantity_grams', 'meal_type']));
+
+            if ($request->filled('logged_at')) {
+                $log->logged_at = $request->date('logged_at');
+            }
+
+            $log->save();
+            $this->syncSubscriber($log->subscriber);
+        });
+
+        return new MealLogResource($log->load(self::EAGER_LOAD));
+    }
+
+    /** BR-15: delete one of the patient's own logs while it is still inside the edit window. */
+    public function destroy(string $id): Response
+    {
+        $subscriber = Auth::user()->subscriberProfile;
+        abort_if($subscriber === null, 403, 'This account is not set up as a client.');
+
+        $log = $subscriber->mealLogs()->findOrFail($id);
+        $this->window->assertEditable($log->logged_at);
+
+        DB::transaction(function () use ($log, $subscriber) {
+            $log->delete();
+            $this->syncSubscriber($subscriber);
+        });
+
+        return response()->noContent();
+    }
+
+    /**
+     * Brings the two columns the dashboard reads back in line with the
+     * logs that exist now: `last_logged_at` (the "hasn't logged today"
+     * count) and `adherence_status` (BR-9/BR-14). Recomputed from the logs
+     * rather than set from the one just written, so an older offline entry
+     * synced late, an edit, or a delete all leave the right value.
+     */
+    private function syncSubscriber(Subscriber $subscriber): void
+    {
+        $subscriber->forceFill(['last_logged_at' => $subscriber->mealLogs()->max('logged_at')])->save();
+
+        $this->adherence->refreshStatus($subscriber);
     }
 }

@@ -40,7 +40,27 @@ error codes. The list grows with the batch; entries are grouped by change.
   app must ask the patient (or default it from the entry's time) before
   replaying them. See [`POST /me/meal-logs`](#post-memeal-logs).
 
+- **New refusal codes to handle.** `422 entry_too_old` on `POST /me/meal-logs`
+  when `logged_at` is more than 7 days in the past (config
+  `LOG_BACKDATE_LIMIT_DAYS`): the app's offline queue must **drop** such an
+  entry and tell the patient it was too old to save, not retry it. A replay of
+  an entry the server already saved still returns `200` however old it is.
+  `403 log_locked` on `PATCH`/`DELETE /me/meal-logs/{id}` once the edit window
+  has passed: show the entry as read-only.
+
+**New endpoints**
+
+- `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`: edit or delete
+  your own meal log for 48 hours after its `logged_at` (config
+  `LOG_EDIT_WINDOW_HOURS`). Quantity, time and (off-plan only) meal type are
+  editable; the food is not. Every log response now carries `editable_until`,
+  so the app can hide the edit/delete actions once it has passed. See
+  [Editing and deleting a log](#patch-memeal-logsid-and-delete-memeal-logsid).
+
 **New / changed response fields**
+
+- **Every meal log now carries `editable_until`** (ISO 8601): the moment the
+  edit window closes (BR-15).
 
 - **Every meal log now carries `meal_type`** (`breakfast` | `lunch` |
   `dinner` | `snack`, or `null` for off-plan logs recorded before this
@@ -132,6 +152,16 @@ generic error. Do **not** retry and do **not** call `/auth/refresh`: every
 refresh token was revoked on archive, so `/auth/refresh` answers `401`. Once the
 nutritionist resumes follow-up, the patient logs in again with the same
 password.
+
+**Coded refusals** (patient app). Some refusals share an HTTP status with
+ordinary errors, so the body carries a stable `code` to match on (never match
+on `message`). Extra top-level keys are listed per code; a `422` also carries
+the standard `errors` object pointing at the field.
+
+| status | `code` | meaning | extra keys |
+|---|---|---|---|
+| 403 | `log_locked` | BR-15: the entry is past its edit window and can no longer be edited or deleted | `editable_hours` |
+| 422 | `entry_too_old` | BR-19: a new entry (`POST /me/meal-logs`, `POST /me/measurements`) is dated further back than allowed | `max_age_days` |
 
 **Rate limiting** (`429`, register/login: 10 req/min, refresh: 20 req/min, per IP):
 
@@ -1119,7 +1149,7 @@ choosing a listed alternative counts as on-plan, not as a deviation.
 | `meal_item_id` | no | omit when the food was outside the plan |
 | `meal_type` | **yes when `meal_item_id` is absent** | `breakfast` \| `lunch` \| `dinner` \| `snack`. Ignored (and not validated) when `meal_item_id` is present — the server uses the plan meal's name (BR-16) |
 | `quantity_grams` | yes | 1–5000 |
-| `logged_at` | no | defaults to now; must not be in the future. Send the real time an offline entry was made, not the sync time |
+| `logged_at` | no | defaults to now; must not be in the future, and not more than **7 days** in the past (BR-19, config `LOG_BACKDATE_LIMIT_DAYS`) — older is `422` with `code: entry_too_old`. Send the real time an offline entry was made, not the sync time |
 | `idempotency_key` | no | UUID; see retry semantics below |
 
 `meal_item_id` is validated by **ownership**, not existence: it must belong
@@ -1143,13 +1173,32 @@ matched the plan.
   "meal_item_id": 17,
   "meal_type": "lunch",
   "is_on_plan": true,
-  "logged_at": "2026-09-13T12:30:00+00:00"
+  "logged_at": "2026-09-13T12:30:00+00:00",
+  "editable_until": "2026-09-15T12:30:00+00:00"
 }
 ```
 
 `meal_type` is `null` only on an off-plan log recorded before BR-16.
+`editable_until` is `logged_at` plus the edit window (BR-15, below).
 `is_on_plan` is returned so the web and mobile clients do not each
 re-derive BR-9 from `meal_item_id` being null.
+
+**Too old (BR-19).** A `logged_at` more than 7 days in the past is refused
+(the offline queue still works for a week, but old history can't be filled
+in):
+
+```json
+{
+  "message": "The logged_at is older than entries may be dated.",
+  "code": "entry_too_old",
+  "max_age_days": 7,
+  "errors": { "logged_at": ["The logged_at may not be more than 7 days in the past."] }
+}
+```
+
+The app should drop such a queued entry and tell the patient; retrying can
+never succeed. The check runs **after** the retry check below, so replaying an
+entry the server already saved returns `200` regardless of its age.
 
 **Retry semantics (S4-05).** Send an `idempotency_key` when replaying a
 queued offline entry. If a log with that key already exists for this
@@ -1163,6 +1212,41 @@ helping is a different entry — give it a different key.
 Paginated, newest first. `from`/`to` are optional but must be sent
 **together** — a half-open range returns `422`, rather than silently
 falling back to the full history.
+
+### `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`
+
+**BR-15 — the edit window.** A patient can correct or remove their own log
+for **48 hours after its `logged_at`** (config `LOG_EDIT_WINDOW_HOURS`; every
+log response carries `editable_until`). After that the log is locked. `{id}`
+is looked up among the caller's own logs only: another patient's log — or one
+that doesn't exist, or was already deleted — is `404`. Checks run in a fixed
+order: `404`, then `403 log_locked`, then body validation (`422`).
+
+`PATCH` body — send at least one:
+
+| field | notes |
+|---|---|
+| `quantity_grams` | 1–5000 |
+| `logged_at` | not in the future, and not older than the edit window (an older date would lock the entry at once, `422`) |
+| `meal_type` | `breakfast` \| `lunch` \| `dinner` \| `snack`. **Off-plan logs only** — an on-plan log's meal comes from the plan (BR-16), so sending it for one is `422` on `meal_type` |
+
+`food_id`, `meal_item_id` and `idempotency_key` are **not editable** and are
+refused with `422` if sent (the food can't change: delete the log and log the
+right one). `200` returns the log in the same shape as `POST` (with macros
+recomputed for the new quantity).
+
+`DELETE` returns `204` with no body.
+
+Both recompute the patient's `last_logged_at`, adherence status and alerts, so
+the dashboard reflects the change straight away.
+
+| status | when |
+|---|---|
+| 200 / 204 | done |
+| 403 `log_locked` | past the edit window (`editable_hours` in the body) |
+| 403 | caller is not a patient (a nutritionist), or `follow_up_ended` for an archived patient |
+| 404 | not this patient's log, or no such log |
+| 422 | invalid or prohibited field, nothing to change, or a `logged_at` in the future / outside the edit window (plain validation error on `logged_at`) |
 
 ### `POST /me/measurements`
 

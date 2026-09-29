@@ -153,6 +153,9 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['jwt', 'permission:logs.manage.own'])->group(function () {
         Route::get('me/meal-logs', [MealLogController::class, 'index'])->name('me.meal-logs.index');
         Route::post('me/meal-logs', [MealLogController::class, 'store'])->name('me.meal-logs.store');
+        // BR-15: edit or delete one's own log within the edit window.
+        Route::patch('me/meal-logs/{id}', [MealLogController::class, 'update'])->whereNumber('id')->name('me.meal-logs.update');
+        Route::delete('me/meal-logs/{id}', [MealLogController::class, 'destroy'])->whereNumber('id')->name('me.meal-logs.destroy');
 
         // S4-02/S4-16 / FR-17, FR-29, BR-11: the client's own weight and
         // circumferences. Named `measurements`, not `weight-logs` — it

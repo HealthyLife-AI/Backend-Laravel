@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ApiCodeException;
 use App\Exceptions\Auth\AccountLockedException;
 use App\Exceptions\Auth\FollowUpEndedException;
 use App\Http\Middleware\EnsureFollowUpActive;
@@ -80,6 +81,13 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => $e->getMessage(),
                 'locked_until' => $e->lockedUntil->toIso8601String(),
             ], 423);
+        });
+
+        $exceptions->render(function (ApiCodeException $e, Request $request) {
+            return response()->json(
+                ['message' => $e->getMessage(), 'code' => $e->errorCode, ...$e->extra] + ($e->errors ? ['errors' => $e->errors] : []),
+                $e->status,
+            );
         });
 
         $exceptions->render(function (FollowUpEndedException $e, Request $request) {
