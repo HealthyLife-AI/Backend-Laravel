@@ -240,7 +240,7 @@ class FollowUpTest extends TestCase
         $this->assertContains($this->patient->id, collect($this->getJson('/api/v1/clients', $this->auth())->json('data'))->pluck('id'));
         $this->postJson("/api/v1/clients/{$this->patient->id}/body-composition-readings", ['recorded_at' => now()->toDateString(), 'weight_kg' => 79], $this->auth())
             ->assertCreated();
-        $this->postJson('/api/v1/me/meal-logs', ['food_id' => Food::factory()->create()->id, 'quantity_grams' => 100], $this->bearerFor($this->patient->user))
+        $this->postJson('/api/v1/me/meal-logs', ['food_id' => Food::factory()->create()->id, 'quantity_grams' => 100, 'meal_type' => 'lunch'], $this->bearerFor($this->patient->user))
             ->assertCreated();
 
         $seen = [];

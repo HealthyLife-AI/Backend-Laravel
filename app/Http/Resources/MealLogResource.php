@@ -23,6 +23,9 @@ class MealLogResource extends JsonResource
             'quantity_grams' => (float) $this->quantity_grams,
             'macros' => app(MealPlanCalculatorService::class)->macrosFor($this->food, (float) $this->quantity_grams),
             'meal_item_id' => $this->meal_item_id,
+            // BR-16: null only on logs that predate the field and were
+            // off-plan (nothing recorded what meal they were).
+            'meal_type' => $this->meal_type,
             // BR-9 stated in the response rather than left for each
             // consumer to re-derive from meal_item_id being null — the
             // web dashboard (S4-07) and the mobile progress tab (S4-13)

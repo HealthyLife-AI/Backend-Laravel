@@ -203,6 +203,7 @@ class ProgressAndWeightLogTest extends TestCase
         $payload = [
             'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 150,
+            'meal_type' => 'lunch',
             'idempotency_key' => (string) Str::uuid(),
         ];
 
@@ -228,6 +229,7 @@ class ProgressAndWeightLogTest extends TestCase
             $this->postJson('/api/v1/me/meal-logs', [
                 'food_id' => $food->id,
                 'quantity_grams' => 150,
+                'meal_type' => 'lunch',
                 'idempotency_key' => (string) $key,
             ], $header)->assertCreated();
         }

@@ -289,7 +289,7 @@ class ReleaseSafeguardsTest extends TestCase
                 'meals' => [['name' => 'lunch', 'items' => [['food_id' => $approved->id, 'quantity_grams' => 100, 'alternatives' => [['food_id' => $food->id, 'quantity_grams' => 100]]]]]],
             ], $auth)->assertUnprocessable()->assertJsonValidationErrors('meals.0.items.0.alternatives.0.food_id');
 
-            $this->postJson('/api/v1/me/meal-logs', ['food_id' => $food->id, 'quantity_grams' => 100], $clientAuth)
+            $this->postJson('/api/v1/me/meal-logs', ['food_id' => $food->id, 'quantity_grams' => 100, 'meal_type' => 'lunch'], $clientAuth)
                 ->assertUnprocessable()->assertJsonValidationErrors('food_id');
         }
 

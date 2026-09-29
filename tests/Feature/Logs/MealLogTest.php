@@ -114,6 +114,7 @@ class MealLogTest extends TestCase
         $response = $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => $cake->id,
             'quantity_grams' => 120,
+            'meal_type' => 'lunch',
         ], $this->bearerFor($client));
 
         $response->assertCreated();
@@ -165,6 +166,7 @@ class MealLogTest extends TestCase
         $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 100,
+            'meal_type' => 'lunch',
         ], $this->bearerFor($client))->assertCreated();
 
         $this->assertNotNull($subscriber->fresh()->last_logged_at);
@@ -178,6 +180,7 @@ class MealLogTest extends TestCase
         $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 100,
+            'meal_type' => 'lunch',
         ], $this->bearerFor($otherClient))->assertCreated();
 
         $response = $this->getJson('/api/v1/me/meal-logs', $this->bearerFor($client));
@@ -196,6 +199,7 @@ class MealLogTest extends TestCase
             $this->postJson('/api/v1/me/meal-logs', [
                 'food_id' => $food->id,
                 'quantity_grams' => 100,
+                'meal_type' => 'lunch',
                 'logged_at' => $when->toIso8601String(),
             ], $header)->assertCreated();
         }
@@ -239,6 +243,7 @@ class MealLogTest extends TestCase
         $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 100,
+            'meal_type' => 'lunch',
             'logged_at' => now()->addDay()->toIso8601String(),
         ], $this->bearerFor($client))
             ->assertStatus(422)
@@ -254,6 +259,7 @@ class MealLogTest extends TestCase
         $response = $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 100,
+            'meal_type' => 'lunch',
             'logged_at' => $eatenAt->toIso8601String(),
         ], $this->bearerFor($client));
 

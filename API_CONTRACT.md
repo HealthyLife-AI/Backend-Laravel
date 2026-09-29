@@ -12,7 +12,8 @@ code ever disagree, the code wins; report the drift so this gets fixed.
 (Sprint 2) · [Meal Plans](#meal-plans-sprint-3) ·
 [Meal Plan Templates](#meal-plan-templates-sprint-3) ·
 [Food Submission & Approval](#food-submission--approval-sprint-3) ·
-[Client's Own Plan](#clients-own-plan-sprint-3) (Sprint 3)
+[Client's Own Plan](#clients-own-plan-sprint-3) (Sprint 3) ·
+**[Patient app changes](#patient-app-changes)** (phase 1 — what the Flutter app must adapt to)
 
 Base URL: `{APP_URL}/api/v1` (local dev default: `http://127.0.0.1:8000/api/v1`).
 All requests/responses are JSON (`Content-Type: application/json`, `Accept: application/json`).
@@ -23,6 +24,28 @@ refresh token in an HttpOnly cookie. Desktop and Mobile have no such layer and c
 these endpoints directly, so they own storing the refresh token themselves —
 store it in the OS keychain / Electron `safeStorage` / Flutter secure storage,
 never in plain prefs/localStorage.
+
+## Patient app changes
+
+Everything the Flutter app must adapt to in the phase-1 backend batch. Each
+entry links to the endpoint's own section for the exact request, response and
+error codes. The list grows with the batch; entries are grouped by change.
+
+**Breaking (the app must change before it works against this backend)**
+
+- **`meal_type` is required on an off-plan meal log** (`POST /me/meal-logs`
+  without `meal_item_id`). One of `breakfast`, `lunch`, `dinner`, `snack`.
+  Without it the request now fails `422` on `meal_type`. Entries already
+  sitting in the offline queue from before this change have no meal type: the
+  app must ask the patient (or default it from the entry's time) before
+  replaying them. See [`POST /me/meal-logs`](#post-memeal-logs).
+
+**New / changed response fields**
+
+- **Every meal log now carries `meal_type`** (`breakfast` | `lunch` |
+  `dinner` | `snack`, or `null` for off-plan logs recorded before this
+  field existed). On-plan logs get it from the plan meal, so the app can group
+  a day's history by meal without joining against the plan.
 
 ## Common shapes
 
@@ -1065,6 +1088,14 @@ here to point at another client's records with (same shape as
 
 Permission: `logs.manage.own` (client role).
 
+**BR-16 — every log belongs to a meal.** Each log carries a `meal_type`
+(`breakfast`, `lunch`, `dinner` or `snack`). For an on-plan log the server
+sets it from the plan meal the `meal_item_id` sits in — anything sent is
+ignored, so the client cannot log a planned dinner item as breakfast. For an
+off-plan log the client must send it. Logs created before this field existed
+were backfilled the same way: on-plan rows from their plan meal, off-plan
+rows left `null`.
+
 **BR-9 — what "on-plan" means.** A log carrying a `meal_item_id` is
 on-plan; a log without one was eaten outside the plan. Both the planned
 item and any of its permitted alternatives are rows in `meal_items`, so
@@ -1086,6 +1117,7 @@ choosing a listed alternative counts as on-plan, not as a deviation.
 |---|---|---|
 | `food_id` | yes | must be an **approved** food |
 | `meal_item_id` | no | omit when the food was outside the plan |
+| `meal_type` | **yes when `meal_item_id` is absent** | `breakfast` \| `lunch` \| `dinner` \| `snack`. Ignored (and not validated) when `meal_item_id` is present — the server uses the plan meal's name (BR-16) |
 | `quantity_grams` | yes | 1–5000 |
 | `logged_at` | no | defaults to now; must not be in the future. Send the real time an offline entry was made, not the sync time |
 | `idempotency_key` | no | UUID; see retry semantics below |
@@ -1109,11 +1141,13 @@ matched the plan.
   "quantity_grams": 300,
   "macros": { "calories": 495, "protein_g": 30, "carbs_g": 54, "fat_g": 18 },
   "meal_item_id": 17,
+  "meal_type": "lunch",
   "is_on_plan": true,
   "logged_at": "2026-09-13T12:30:00+00:00"
 }
 ```
 
+`meal_type` is `null` only on an off-plan log recorded before BR-16.
 `is_on_plan` is returned so the web and mobile clients do not each
 re-derive BR-9 from `meal_item_id` being null.
 

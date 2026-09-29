@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Logs;
 
 use App\Models\MealItem;
+use App\Models\MealLog;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -17,6 +18,9 @@ use Illuminate\Validation\Rule;
  */
 class StoreMealLogRequest extends FormRequest
 {
+    /** The plan item the log is against, once it has passed the ownership check. */
+    private ?MealItem $planItem = null;
+
     public function authorize(): bool
     {
         return true;
@@ -40,6 +44,17 @@ class StoreMealLogRequest extends FormRequest
             // check that would let one client reference another's item.
             'meal_item_id' => ['nullable', 'integer'],
 
+            // BR-16: which meal this was. Required for an off-plan log,
+            // where nothing else says. For an on-plan log the server sets
+            // it from the plan meal and anything sent here is ignored, so
+            // it is not validated (a stale app version can't get a 422 for
+            // a value we are going to discard anyway).
+            'meal_type' => [
+                Rule::excludeIf(fn () => $this->input('meal_item_id') !== null),
+                Rule::requiredIf(fn () => $this->input('meal_item_id') === null),
+                Rule::in(MealLog::MEAL_TYPES),
+            ],
+
             'quantity_grams' => ['required', 'numeric', 'min:1', 'max:5000'],
 
             // S4-05: supplied by the mobile app so a replayed offline
@@ -52,6 +67,12 @@ class StoreMealLogRequest extends FormRequest
             // was made while offline, rather than the time it synced.
             'logged_at' => ['nullable', 'date', 'before_or_equal:now'],
         ];
+    }
+
+    /** BR-16: the meal the log belongs to — the plan meal's name when on-plan, else what the client sent. */
+    public function mealType(): string
+    {
+        return $this->planItem?->meal->name ?? $this->validated('meal_type');
     }
 
     /**
@@ -80,6 +101,7 @@ class StoreMealLogRequest extends FormRequest
             $mealItem = MealItem::query()
                 ->whereKey($mealItemId)
                 ->whereHas('meal.mealPlan', fn ($query) => $query->where('subscriber_id', $subscriber?->id))
+                ->with('meal')
                 ->first();
 
             if ($mealItem === null) {
@@ -90,7 +112,11 @@ class StoreMealLogRequest extends FormRequest
 
             if ((int) $this->input('food_id') !== (int) $mealItem->food_id) {
                 $validator->errors()->add('food_id', 'The food does not match the plan item it is logged against.');
+
+                return;
             }
+
+            $this->planItem = $mealItem;
         });
     }
 }

@@ -74,7 +74,8 @@ class MealLogController extends Controller
             }
         }
 
-        $log = new MealLog($request->safe()->except('logged_at'));
+        $log = new MealLog($request->safe()->except(['logged_at', 'meal_type']));
+        $log->meal_type = $request->mealType();
         $log->subscriber_id = $subscriber->id;
         $log->logged_at = $request->date('logged_at') ?? now();
         $log->save();

@@ -22,11 +22,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'idempotency_key',
     'food_id',
     'meal_item_id',
+    'meal_type',
     'quantity_grams',
     'logged_at',
 ])]
 class MealLog extends Model
 {
+    /** BR-16: the four meals a log can belong to; the same set as `meals.name`. */
+    public const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+
     protected function casts(): array
     {
         return [
