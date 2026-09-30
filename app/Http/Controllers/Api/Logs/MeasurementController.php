@@ -9,6 +9,7 @@ use App\Http\Requests\Progress\DateWindowRequest;
 use App\Http\Resources\BodyCompositionReadingResource;
 use App\Models\BodyCompositionReading;
 use App\Services\Logs\LogWindow;
+use App\Services\Logs\PatientEntryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -36,7 +37,10 @@ use Illuminate\Support\Facades\Auth;
  */
 class MeasurementController extends Controller
 {
-    public function __construct(private readonly LogWindow $window) {}
+    public function __construct(
+        private readonly LogWindow $window,
+        private readonly PatientEntryService $entries,
+    ) {}
 
     /**
      * The patient's own full series — clinic and self-reported readings,
@@ -116,14 +120,7 @@ class MeasurementController extends Controller
             // accepted and marked late; only one beyond the rejection limit
             // is refused. Only a NEW one — re-sending a day that is already
             // saved is a replay and is handled below.
-            $date = $request->date('recorded_at') ?? now();
-            $this->window->assertDateNotTooOld($date, 'recorded_at');
-
-            $reading = $subscriber->bodyCompositionReadings()->create($measurements + [
-                'recorded_at' => $recordedAt,
-                'source' => BodyCompositionReading::SOURCE_SELF,
-                'is_late' => $this->window->isDateLate($date),
-            ]);
+            $reading = $this->entries->recordNewReading($subscriber, $request->date('recorded_at') ?? now(), $measurements);
 
             return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
         }

@@ -8,9 +8,8 @@ use App\Http\Requests\Logs\StoreMealLogRequest;
 use App\Http\Requests\Logs\UpdateMealLogRequest;
 use App\Http\Resources\MealLogResource;
 use App\Models\MealLog;
-use App\Models\Subscriber;
-use App\Services\Adherence\AdherenceService;
 use App\Services\Logs\LogWindow;
+use App\Services\Logs\PatientEntryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -31,7 +30,7 @@ class MealLogController extends Controller
     private const EAGER_LOAD = ['food'];
 
     public function __construct(
-        private readonly AdherenceService $adherence,
+        private readonly PatientEntryService $entries,
         private readonly LogWindow $window,
     ) {}
 
@@ -82,24 +81,17 @@ class MealLogController extends Controller
             }
         }
 
-        // BR-19: an entry dated beyond the late threshold is accepted and
-        // marked late; only one beyond the rejection limit (a wrong device
-        // clock) is refused. After the replay check above, so a queued entry
-        // that was already saved still gets its 200 however old it is.
+        // After the replay check above, so a queued entry that was already
+        // saved still gets its 200 however old it is.
         $loggedAt = $request->date('logged_at') ?? now();
-        $this->window->assertNotTooOld($loggedAt, 'logged_at');
 
-        $log = new MealLog($request->safe()->except(['logged_at', 'meal_type']));
-        // Inferred from the time as sent (its own offset), then stored in the
-        // app timezone: Eloquent writes a datetime's wall clock as-is, so an
-        // offset left on it would be saved as if it were app time.
-        $log->meal_type = $request->mealType($loggedAt);
-        $log->subscriber_id = $subscriber->id;
-        $log->is_late = $this->window->isLate($loggedAt);
-        $log->logged_at = $loggedAt->copy()->setTimezone(config('app.timezone'));
-        $log->save();
-
-        $this->syncSubscriber($subscriber);
+        $log = $this->entries->logMeal(
+            $subscriber,
+            $request->safe()->except(['logged_at', 'meal_type']),
+            $loggedAt,
+            // Inferred from the time as sent (its own offset).
+            $request->mealType($loggedAt),
+        );
 
         return (new MealLogResource($log->load(self::EAGER_LOAD)))->response()->setStatusCode(201);
     }
@@ -127,7 +119,7 @@ class MealLogController extends Controller
             }
 
             $log->save();
-            $this->syncSubscriber($log->subscriber);
+            $this->entries->syncSubscriber($log->subscriber);
         });
 
         return new MealLogResource($log->load(self::EAGER_LOAD));
@@ -144,23 +136,9 @@ class MealLogController extends Controller
 
         DB::transaction(function () use ($log, $subscriber) {
             $log->delete();
-            $this->syncSubscriber($subscriber);
+            $this->entries->syncSubscriber($subscriber);
         });
 
         return response()->noContent();
-    }
-
-    /**
-     * Brings the two columns the dashboard reads back in line with the
-     * logs that exist now: `last_logged_at` (the "hasn't logged today"
-     * count) and `adherence_status` (BR-9/BR-14). Recomputed from the logs
-     * rather than set from the one just written, so an older offline entry
-     * synced late, an edit, or a delete all leave the right value.
-     */
-    private function syncSubscriber(Subscriber $subscriber): void
-    {
-        $subscriber->forceFill(['last_logged_at' => $subscriber->mealLogs()->max('logged_at')])->save();
-
-        $this->adherence->refreshStatus($subscriber);
     }
 }

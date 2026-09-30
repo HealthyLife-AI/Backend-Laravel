@@ -3,7 +3,7 @@
 namespace App\Http\Requests\Logs;
 
 use App\Models\MealItem;
-use App\Services\Logs\MealTypeInference;
+use App\Services\Logs\PatientEntryService;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -73,13 +73,7 @@ class StoreMealLogRequest extends FormRequest
      */
     public function mealType(CarbonInterface $at): string
     {
-        if ($this->planItem !== null) {
-            return $this->planItem->meal->name;
-        }
-
-        $inference = app(MealTypeInference::class);
-
-        return $inference->normalise($this->input('meal_type')) ?? $inference->infer($at);
+        return app(PatientEntryService::class)->mealType($this->planItem, $this->input('meal_type'), $at);
     }
 
     /**
