@@ -99,13 +99,14 @@ class RefreshTokenService
     }
 
     /**
-     * Ends every session at once: refresh tokens are revoked and any access
-     * token issued before now is refused by JwtAuthenticate.
+     * Ends every session at once: refresh tokens are revoked and the session
+     * version moves on, so every access token issued before (whatever its
+     * second) is refused by JwtAuthenticate.
      */
     public function endAllSessions(User $user): void
     {
         $this->revokeAllForUser($user);
-        $user->forceFill(['sessions_revoked_at' => now()])->save();
+        $user->increment('session_version');
     }
 
     public function findValidByPlainToken(string $plainToken): ?RefreshToken

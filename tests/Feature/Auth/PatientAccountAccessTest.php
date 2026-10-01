@@ -46,22 +46,53 @@ class PatientAccountAccessTest extends TestCase
         return ['Authorization' => "Bearer {$access}"];
     }
 
-    /** Sessions opened a little earlier (iat and sessions_revoked_at are whole seconds, and a future iat is refused). */
-    private function earlierSession(): array
+    public function test_the_fresh_pair_works_and_old_tokens_die_within_the_same_second(): void
     {
-        $this->travelTo(now()->subSeconds(10));
-        $session = $this->login();
-        $this->travelBack();
+        // Clock frozen: login, password change and every later request share one second.
+        $this->freezeTime();
 
-        return $session;
+        $old = $this->login();
+
+        $fresh = $this->putJson('/api/v1/me/password', [
+            'current_password' => 'OldPass123',
+            'password' => 'NewPass456',
+            'password_confirmation' => 'NewPass456',
+        ], $this->bearer($old['access_token']))->assertOk()->json();
+
+        $this->getJson('/api/v1/auth/me', $this->bearer($fresh['access_token']))->assertOk();
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $fresh['refresh_token']])->assertOk();
+        $this->getJson('/api/v1/auth/me', $this->bearer($old['access_token']))->assertUnauthorized();
+    }
+
+    public function test_a_sign_in_link_activated_in_the_same_second_ends_older_tokens(): void
+    {
+        $this->freezeTime();
+
+        $old = $this->login();
+        $activated = $this->activate($this->issueLink())->assertOk()->json();
+
+        $this->getJson('/api/v1/auth/me', $this->bearer($activated['access_token']))->assertOk();
+        $this->getJson('/api/v1/auth/me', $this->bearer($old['access_token']))->assertUnauthorized();
+    }
+
+    public function test_the_second_password_change_in_one_second_still_ends_the_first_pair(): void
+    {
+        $this->freezeTime();
+        $session = $this->login();
+
+        $first = $this->putJson('/api/v1/me/password', ['current_password' => 'OldPass123', 'password' => 'NewPass456', 'password_confirmation' => 'NewPass456'], $this->bearer($session['access_token']))->assertOk()->json();
+        $second = $this->putJson('/api/v1/me/password', ['current_password' => 'NewPass456', 'password' => 'Newer789A', 'password_confirmation' => 'Newer789A'], $this->bearer($first['access_token']))->assertOk()->json();
+
+        $this->getJson('/api/v1/auth/me', $this->bearer($first['access_token']))->assertUnauthorized();
+        $this->getJson('/api/v1/auth/me', $this->bearer($second['access_token']))->assertOk();
     }
 
     // ---- PUT /me/password ------------------------------------------------
 
     public function test_changing_password_ends_other_sessions_and_keeps_this_device_signed_in(): void
     {
-        $other = $this->earlierSession();
-        $mine = $this->earlierSession();
+        $other = $this->login();
+        $mine = $this->login();
 
         $response = $this->putJson('/api/v1/me/password', [
             'current_password' => 'OldPass123',
@@ -127,7 +158,7 @@ class PatientAccountAccessTest extends TestCase
 
     public function test_the_sign_in_link_sets_a_new_password_and_ends_old_sessions(): void
     {
-        $old = $this->earlierSession();
+        $old = $this->login();
 
         $token = $this->issueLink();
         $activated = $this->activate($token)->assertOk()->json();

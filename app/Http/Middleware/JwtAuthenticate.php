@@ -49,7 +49,8 @@ class JwtAuthenticate implements AuthenticatesRequests
         $user = User::find($payload->sub);
 
         // Issued before the user's sessions were ended (password change, new sign-in link).
-        if ($user === null || ($user->sessions_revoked_at !== null && (int) ($payload->iat ?? 0) < $user->sessions_revoked_at->timestamp)) {
+        // Tokens from before this claim existed count as version 0.
+        if ($user === null || (int) ($payload->sv ?? 0) !== (int) $user->session_version) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 

@@ -40,7 +40,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'locked_until' => 'datetime',
-            'sessions_revoked_at' => 'datetime',
+            'session_version' => 'integer',
         ];
     }
 

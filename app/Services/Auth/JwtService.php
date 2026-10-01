@@ -43,6 +43,8 @@ class JwtService
             'exp' => $now->copy()->addMinutes(config('jwt.ttl'))->timestamp,
             'role' => $user->getRoleNames()->first(),
             'nutritionist_id' => $user->nutritionist_id,
+            // Session version: see JwtAuthenticate and RefreshTokenService::endAllSessions().
+            'sv' => (int) $user->session_version,
         ];
 
         return JWT::encode($payload, $this->secret(), config('jwt.algo'));
