@@ -7,6 +7,7 @@ use App\Exceptions\Auth\FollowUpEndedException;
 use App\Exceptions\Auth\InvalidGoogleTokenException;
 use App\Exceptions\Auth\InvalidRefreshTokenException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\GoogleAuthRequest;
 use App\Http\Requests\Auth\LoginRequest;
@@ -19,6 +20,7 @@ use App\Notifications\Auth\ResetPasswordNotification;
 use App\Services\Auth\GoogleAuthService;
 use App\Services\Auth\JwtService;
 use App\Services\Auth\RefreshTokenService;
+use App\Services\Clients\FollowUpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -87,7 +89,7 @@ class AuthController extends Controller
         // Checked only after the password matched, so the response never
         // reveals to a stranger that an account exists or is archived.
         if ($user->isFollowUpEnded()) {
-            throw new FollowUpEndedException;
+            throw new FollowUpEndedException(app(FollowUpService::class)->endedDetails($user));
         }
 
         return $this->tokenResponse($user, $request, 200);
@@ -121,7 +123,7 @@ class AuthController extends Controller
         // Google matches an existing account by e-mail, whatever its role,
         // so an archived patient is refused here exactly as in login().
         if ($user->isFollowUpEnded()) {
-            throw new FollowUpEndedException;
+            throw new FollowUpEndedException(app(FollowUpService::class)->endedDetails($user));
         }
 
         return $this->tokenResponse($user, $request, 200);
@@ -166,7 +168,7 @@ class AuthController extends Controller
                     'locked_until' => null,
                 ])->save();
 
-                $this->refreshTokens->revokeAllForUser($user);
+                $this->refreshTokens->endAllSessions($user);
             },
         );
 
@@ -221,6 +223,21 @@ class AuthController extends Controller
     public function me(Request $request): UserResource
     {
         return new UserResource($request->user());
+    }
+
+    /**
+     * Change one's own password (current password required). Every session is
+     * ended, including this one's tokens, and this device gets a fresh pair
+     * in the response so it stays signed in.
+     */
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $user->forceFill(['password' => $request->string('password')->toString()])->save();
+        $this->refreshTokens->endAllSessions($user);
+
+        return $this->tokenResponse($user, $request, 200);
     }
 
     private function tokenResponse(User $user, Request $request, int $status): JsonResponse

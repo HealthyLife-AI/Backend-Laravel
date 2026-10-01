@@ -41,6 +41,8 @@ class ClientInviteController extends Controller
         $user->forceFill(['password' => Hash::make($request->string('password'))])->save();
         $subscriber->forceFill(['status' => 'active'])->save();
 
+        // A sign-in link reissued by the nutritionist replaces every earlier session.
+        $this->refreshTokens->endAllSessions($user);
         $refresh = $this->refreshTokens->issue($user, $request);
 
         return response()->json([

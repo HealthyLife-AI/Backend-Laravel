@@ -83,7 +83,7 @@ class PatientNutritionistCardTest extends TestCase
 
     public function test_a_patient_reads_their_nutritionists_card(): void
     {
-        $this->saveProfile(['gender' => 'female', 'clinic_name' => 'Gaza Nutrition Center', 'specialty' => 'Clinical nutrition', 'whatsapp_number' => '+970599123456', 'bio' => 'private bio']);
+        $this->saveProfile(['gender' => 'female', 'clinic_name' => 'Gaza Nutrition Center', 'specialty' => 'Clinical nutrition', 'whatsapp_number' => '+970599123456', 'bio' => 'Clinical nutritionist.', 'reply_hours' => 'Sun-Thu 9-5']);
 
         $this->getJson('/api/v1/me/nutritionist', $this->bearerFor($this->client))
             ->assertOk()
@@ -93,6 +93,8 @@ class PatientNutritionistCardTest extends TestCase
                 'clinic_name' => 'Gaza Nutrition Center',
                 'specialty' => 'Clinical nutrition',
                 'whatsapp_number' => '+970599123456',
+                'bio' => 'Clinical nutritionist.',
+                'reply_hours' => 'Sun-Thu 9-5',
             ]);
     }
 
@@ -100,7 +102,7 @@ class PatientNutritionistCardTest extends TestCase
     {
         $this->getJson('/api/v1/me/nutritionist', $this->bearerFor($this->client))
             ->assertOk()
-            ->assertExactJson(['name' => 'Dr. Amal', 'gender' => null, 'clinic_name' => null, 'specialty' => null, 'whatsapp_number' => null]);
+            ->assertExactJson(['name' => 'Dr. Amal', 'gender' => null, 'clinic_name' => null, 'specialty' => null, 'whatsapp_number' => null, 'bio' => null, 'reply_hours' => null]);
 
         // Reading it must not create a row on the nutritionist's behalf.
         $this->assertDatabaseCount('nutritionist_profiles', 0);

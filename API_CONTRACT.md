@@ -28,6 +28,27 @@ never in plain prefs/localStorage.
 
 ## Patient app changes
 
+### Batch A (mobile screens) — latest
+
+For the account, password, "my nutritionist" and "follow-up ended" screens.
+Everything here is additive; the only behaviour change is that sessions can now
+end early (last paragraph).
+
+| Screen | What to call / read |
+|---|---|
+| **Change password** (كلمة المرور) | [`PUT /me/password`](#put-mepassword) with `current_password`, `password`, `password_confirmation`. **The response is a new token pair** — store it and replace the old one; every other session on every device ends. `422` on `current_password` (wrong) or `password` (weak, unconfirmed, or the same as the current one). `429` after 10 tries a minute |
+| **Forgot password** (نسيت كلمة المرور؟) | There is **no** self-service reset for patients (no e-mail, no SMS). Show a message telling the patient to ask their nutritionist for a new sign-in link, which the nutritionist sends over WhatsApp from the dashboard. It is the **same deep link as the first invite** (`healthylifeai://activate/{token}`), opens the same activation screen and calls [`POST /invites/{token}/activate`](#post-invitestokenactivate). Activating it ends every earlier session |
+| **Account** (الحساب) | `patient_code` on the user object (`GET /auth/me`, and `user` in login/refresh/activate responses), e.g. `"PT-104"` |
+| **My nutritionist** (حساب الاخصائي) | [`GET /me/nutritionist`](#get-menutritionist) now also returns `bio` and `reply_hours` (free text such as «الأحد–الخميس 9–5»). Both may be `null`: hide what is missing |
+| **Follow-up ended** (انتهت المتابعة) | The `403 follow_up_ended` body now carries `nutritionist.name`, `nutritionist.whatsapp_number`, `weeks_followed` and `adherence_percent` — see "Follow-up ended" in [Common shapes](#common-shapes). Build the screen from the error body: no other call works for this patient |
+
+**Sessions can end early.** After a password change or an activated sign-in
+link, every access token issued before it is refused with `401` immediately
+(not only once it expires), and every refresh token is revoked. The app's
+existing `401` → `/auth/refresh` → `401` → sign-in screen path covers it.
+
+### Phase 1
+
 Everything the Flutter app must adapt to in the phase-1 backend batch. Each
 entry links to the endpoint's own section for the exact request, response and
 error codes. New business rules are numbered from BR-15 (table at the end).
@@ -162,8 +183,9 @@ by UTC hours.
 
 `role` is one of `nutritionist` / `client` / `admin`. For a `client` the object
 also carries **`gender`** (`"male"` | `"female"`, or `null`): the patient's own
-gender from their health profile, `null` until one has been filled in. The key
-is absent for nutritionists and admins.
+gender from their health profile, `null` until one has been filled in — and
+**`patient_code`** (e.g. `"PT-104"`), the code the nutritionist knows them by.
+Both keys are absent for nutritionists and admins.
  `nutritionist_id` is only
 non-null for a `client`-role user (the nutritionist that owns them — BR-1).
 `subscriber_id` is only non-null for a `client`-role user too — it's this
@@ -222,9 +244,20 @@ password matched) and by **every** authenticated request made with a
 ```json
 {
   "message": "Your nutritionist has ended follow-up. Contact them to resume.",
-  "code": "follow_up_ended"
+  "code": "follow_up_ended",
+  "nutritionist": { "name": "أ. ليلى حسن", "whatsapp_number": "+970599123456" },
+  "weeks_followed": 12,
+  "adherence_percent": 88.5
 }
 ```
+
+The extra keys are what the app's "follow-up ended" screen shows, and nothing
+else: `nutritionist.whatsapp_number` is `null` if the nutritionist hasn't set
+one (hide the WhatsApp button); `weeks_followed` is whole weeks from the
+patient being added to the archive, at least 1; `adherence_percent` is the
+on-plan share of all logs over that whole period, `null` if nothing was logged.
+(The dashboard's `409 follow_up_ended` on nutritionist writes, below, does not
+carry them.)
 
 Match on `code`, not on `message` (the message may be reworded). Handle it by
 clearing both stored tokens and showing a dedicated screen ("متابعتك مع
@@ -412,7 +445,32 @@ An expired access token here means: call `/auth/refresh` with the stored
 refresh token, then retry with the new access token. If refresh also fails,
 the session is over — send the user to login.
 
+An access token issued **before** the user's sessions were ended (a password
+change, or an activated sign-in link) is also `401`, even if not yet expired.
+
 ---
+
+## `PUT /me/password`
+
+Change one's own password. Any role. Requires `Authorization`. Throttle: 10/min
+(like login).
+
+**Request**
+
+```json
+{ "current_password": "OldPass123", "password": "NewPass456", "password_confirmation": "NewPass456" }
+```
+
+`password`: at least 8 characters, upper and lower case, a number (same rule as
+invite activation), confirmed, and different from `current_password`.
+
+**200 OK** — the full auth response (`user`, `access_token`, `refresh_token`,
+`token_type`, `expires_in`), same shape as login. **Store the new pair**: every
+earlier access and refresh token of this user, this device's included, stops
+working at once.
+
+**422** — `current_password` wrong, or `password` fails the rules above.
+**429** — too many attempts.
 
 ## `POST /auth/google`
 
@@ -626,6 +684,28 @@ invalidated on archive, so resuming issues a new one: `invite_token` and
 token is returned only this once.
 
 **404** — not your client.
+
+### `POST /clients/{id}/sign-in-link`
+
+A new one-time sign-in link for a patient who can't sign in (forgotten
+password) — the only password recovery a patient has. Dashboard button «إرسال
+رابط دخول جديد»; the nutritionist sends the link over WhatsApp. No body.
+
+It is an invite token: same table, same expiry (`INVITE_TOKEN_TTL_DAYS`, 7 days),
+same deep link `healthylifeai://activate/{token}`, activated with
+[`POST /invites/{token}/activate`](#post-invitestokenactivate), where the
+patient sets a new password. Activation ends every earlier session of that
+patient. Issuing a new link expires any earlier unused one, so only the newest
+works. Works for a pending patient too (it then acts as a fresh invite).
+
+**201 Created**
+
+```json
+{ "token": "BTzHLu9VoleoCApJ1DFgalKJFpjYnpdS0symnl8C", "expires_at": "2026-10-08T09:00:00+00:00" }
+```
+
+The token is returned only this once. **404** — not your client.
+**409 `follow_up_ended`** — follow-up has ended; resume it first.
 
 ### Writes refused while follow-up has ended
 
@@ -1840,6 +1920,7 @@ one would put a permission in the seeder that no document describes.
   "clinic_name": "Gaza Nutrition Center",
   "gender": "female",
   "whatsapp_number": "+970599123456",
+  "reply_hours": "الأحد–الخميس 9–5",
   "bio": "Ten years of practice.",
   "plan_tier": "basic",
   "updated_at": "2026-09-13T11:40:00+00:00"
@@ -1854,10 +1935,11 @@ the row is an implementation detail of reading it.
 
 ### `PUT /me/nutritionist-profile`
 
-Accepts `specialty`, `clinic_name`, `gender`, `whatsapp_number`, `bio` only.
+Accepts `specialty`, `clinic_name`, `gender`, `whatsapp_number`, `reply_hours`, `bio` only.
 
 | field | rules |
 |---|---|
+| `reply_hours` | optional free text, max 100 characters (e.g. «الأحد–الخميس 9–5»), not parsed; `null` clears it. Shown to patients |
 | `gender` | optional, `male` \| `female`; `null` clears it |
 | `whatsapp_number` | optional, **E.164**: a leading `+`, then 8–15 digits, the first not `0`, no spaces or dashes (`^\+[1-9]\d{7,14}$`); `null` clears it. Anything else is `422` |
 
@@ -1892,13 +1974,14 @@ gate.
   "gender": "female",
   "clinic_name": "Gaza Nutrition Center",
   "specialty": "Clinical nutrition",
-  "whatsapp_number": "+970599123456"
+  "whatsapp_number": "+970599123456",
+  "bio": "Ten years of practice.",
+  "reply_hours": "الأحد–الخميس 9–5"
 }
 ```
 
-Exactly these five keys and nothing else (no e-mail, phone, id or plan tier).
-`gender`, `clinic_name`, `specialty` and `whatsapp_number` are `null` until the
-nutritionist fills them in — the app must cope with each being missing (e.g.
+Exactly these seven keys and nothing else (no e-mail, phone, id or plan tier).
+Every key but `name` is `null` until the nutritionist fills it in — the app must cope with each being missing (e.g.
 hide the WhatsApp button). Reading it never creates a profile row.
 
 ---

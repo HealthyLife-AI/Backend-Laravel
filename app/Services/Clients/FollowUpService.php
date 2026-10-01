@@ -4,6 +4,7 @@ namespace App\Services\Clients;
 
 use App\Models\ClientInvite;
 use App\Models\Subscriber;
+use App\Models\User;
 use App\Services\Adherence\AdherenceService;
 use App\Services\Auth\RefreshTokenService;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,34 @@ class FollowUpService
      *
      * @return array{plain: string, model: ClientInvite}|null
      */
+    /**
+     * What the app's "follow-up ended" screen shows, sent in the 403 body:
+     * how to reach the nutritionist, how many whole weeks the follow-up ran
+     * (at least 1), and the adherence rate over that whole period (null if
+     * nothing was logged).
+     *
+     * @return array{nutritionist: array{name: string|null, whatsapp_number: string|null}, weeks_followed: int, adherence_percent: float|null}
+     */
+    public function endedDetails(User $user): array
+    {
+        $subscriber = Subscriber::withoutGlobalScopes()->where('user_id', $user->id)->firstOrFail();
+        $nutritionist = User::with('nutritionistProfile')->find($subscriber->nutritionist_id);
+        $end = $subscriber->archived_at ?? now();
+
+        return [
+            'nutritionist' => [
+                'name' => $nutritionist?->name,
+                'whatsapp_number' => $nutritionist?->nutritionistProfile?->whatsapp_number,
+            ],
+            'weeks_followed' => max(1, intdiv((int) $subscriber->created_at->diffInDays($end), 7)),
+            'adherence_percent' => $this->adherence->summary(
+                $subscriber,
+                $subscriber->created_at->toDateString(),
+                $end->toDateString(),
+            )['adherence_percent'],
+        ];
+    }
+
     public function resume(Subscriber $subscriber): ?array
     {
         if (! $subscriber->isArchived()) {

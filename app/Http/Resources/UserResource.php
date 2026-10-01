@@ -40,6 +40,8 @@ class UserResource extends JsonResource
             // nutritionists and admins.
             $this->mergeWhen($this->hasRole('client'), fn () => [
                 'gender' => $this->subscriberProfile?->healthProfile?->gender,
+                // The patient's own code (e.g. PT-104), shown on the app's account screen.
+                'patient_code' => $this->subscriberProfile?->code,
             ]),
         ];
     }

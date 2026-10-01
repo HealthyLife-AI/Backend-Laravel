@@ -35,6 +35,7 @@ class UpdateNutritionistProfileRequest extends FormRequest
             // clears the value.
             'gender' => ['nullable', Rule::in(NutritionistProfile::GENDERS)],
             'whatsapp_number' => ['nullable', 'string', 'regex:'.NutritionistProfile::WHATSAPP_PATTERN],
+            'reply_hours' => ['nullable', 'string', 'max:100'],
             'bio' => ['nullable', 'string', 'max:1000'],
         ];
     }

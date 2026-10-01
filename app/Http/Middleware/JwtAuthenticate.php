@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Exceptions\Auth\FollowUpEndedException;
 use App\Models\User;
 use App\Services\Auth\JwtService;
+use App\Services\Clients\FollowUpService;
 use Closure;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Http\Request;
@@ -47,7 +48,8 @@ class JwtAuthenticate implements AuthenticatesRequests
 
         $user = User::find($payload->sub);
 
-        if ($user === null) {
+        // Issued before the user's sessions were ended (password change, new sign-in link).
+        if ($user === null || ($user->sessions_revoked_at !== null && (int) ($payload->iat ?? 0) < $user->sessions_revoked_at->timestamp)) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
@@ -55,7 +57,7 @@ class JwtAuthenticate implements AuthenticatesRequests
         // with an access token issued before archiving (refresh tokens are
         // revoked on archive, but an access token lives until JWT_TTL).
         if (($payload->role ?? null) === 'client' && $user->isFollowUpEnded()) {
-            throw new FollowUpEndedException;
+            throw new FollowUpEndedException(app(FollowUpService::class)->endedDetails($user));
         }
 
         Auth::setUser($user);

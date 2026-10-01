@@ -5,14 +5,14 @@ namespace App\Exceptions\Auth;
 use Exception;
 
 /**
- * Thrown when a patient whose nutritionist ended follow-up (archived)
- * tries to log in or use the API. Rendered as 403 `follow_up_ended`
- * (bootstrap/app.php, API_CONTRACT.md) so the patient app can show a
- * specific message instead of a generic auth error.
+ * 403 `follow_up_ended`. `$details` is what the app's "follow-up ended"
+ * screen shows (see FollowUpService::endedDetails()); rendered at the top
+ * level of the error body in bootstrap/app.php.
  */
 class FollowUpEndedException extends Exception
 {
-    public function __construct()
+    /** @param  array<string, mixed>  $details */
+    public function __construct(public readonly array $details = [])
     {
         parent::__construct('Your nutritionist has ended follow-up. Contact them to resume.');
     }

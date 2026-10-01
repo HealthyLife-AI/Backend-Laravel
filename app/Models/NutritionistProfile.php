@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'clinic_name',
     'gender',
     'whatsapp_number',
+    'reply_hours',
     'bio',
 ])]
 class NutritionistProfile extends Model

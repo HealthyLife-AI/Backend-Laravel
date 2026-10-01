@@ -93,6 +93,6 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (FollowUpEndedException $e, Request $request) {
-            return response()->json(['message' => $e->getMessage(), 'code' => 'follow_up_ended'], 403);
+            return response()->json(['message' => $e->getMessage(), 'code' => 'follow_up_ended', ...$e->details], 403);
         });
     })->create();

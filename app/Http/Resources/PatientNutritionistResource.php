@@ -8,7 +8,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
  * What a patient may see of their own nutritionist: how to address them and
- * how to reach them, and nothing else — no e-mail, no phone, no id, no plan
+ * how to reach them, their bio and usual reply hours, and nothing else — no e-mail, no phone, no id, no plan
  * tier. Built from the nutritionist's `User` row; the profile may not exist
  * yet (created on the nutritionist's first visit to their profile screen),
  * in which case its fields are null.
@@ -30,6 +30,8 @@ class PatientNutritionistResource extends JsonResource
             'clinic_name' => $profile?->clinic_name,
             'specialty' => $profile?->specialty,
             'whatsapp_number' => $profile?->whatsapp_number,
+            'bio' => $profile?->bio,
+            'reply_hours' => $profile?->reply_hours,
         ];
     }
 }

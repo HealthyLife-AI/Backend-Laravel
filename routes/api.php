@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientFollowUpController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
+use App\Http\Controllers\Api\Clients\ClientSignInLinkController;
 use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Consent\ConsentController;
 use App\Http\Controllers\Api\Foods\FoodController;
@@ -69,6 +70,11 @@ Route::prefix('v1')->name('api.')->group(function () {
             ->name('me');
     });
 
+    // Change one's own password; ends every other session. Throttled like login.
+    Route::put('me/password', [AuthController::class, 'changePassword'])
+        ->middleware(['jwt', 'throttle:10,1'])
+        ->name('me.password.update');
+
     // FR-03: public — the invite token itself is the credential.
     Route::post('invites/{token}/activate', [ClientInviteController::class, 'activate'])
         ->middleware('throttle:10,1')
@@ -81,6 +87,11 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::delete('clients/{subscriber}', [ClientController::class, 'destroy'])->name('clients.destroy');
         Route::post('clients/{subscriber}/archive', [ClientFollowUpController::class, 'archive'])->name('clients.archive');
         Route::post('clients/{subscriber}/resume', [ClientFollowUpController::class, 'resume'])->name('clients.resume');
+
+        // A new one-time sign-in link for a patient who can't sign in (sent over WhatsApp).
+        Route::post('clients/{subscriber}/sign-in-link', [ClientSignInLinkController::class, 'store'])
+            ->middleware('follow-up')
+            ->name('clients.sign-in-link.store');
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
     });
