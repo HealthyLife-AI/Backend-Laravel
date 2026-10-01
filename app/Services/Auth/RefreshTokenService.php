@@ -99,13 +99,18 @@ class RefreshTokenService
     }
 
     /**
-     * Ends every session at once: refresh tokens are revoked and the session
-     * version moves on, so every access token issued before (whatever its
-     * second) is refused by JwtAuthenticate.
+     * Ends every session at once (password change, activated sign-in link):
+     * refresh tokens are deleted and the session version moves on, so every
+     * access token issued before, whatever its second, is refused by
+     * JwtAuthenticate.
+     *
+     * Deleted rather than revoked: a stale device presenting a REVOKED token
+     * looks like token theft to rotate() and would end every session again,
+     * including the one just opened. A deleted token is a plain 401.
      */
     public function endAllSessions(User $user): void
     {
-        $this->revokeAllForUser($user);
+        $user->refreshTokens()->delete();
         $user->increment('session_version');
     }
 

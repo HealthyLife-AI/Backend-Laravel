@@ -116,6 +116,18 @@ class AccountDeletionTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['phone' => '+970590000001', 'password' => self::PASSWORD])->assertUnauthorized();
     }
 
+    public function test_deleting_the_account_ends_every_session_refresh_tokens_included(): void
+    {
+        $session = $this->postJson('/api/v1/auth/login', ['phone' => $this->client->phone, 'password' => self::PASSWORD])->assertOk()->json();
+
+        $this->deleteJson('/api/v1/me/account', ['password' => self::PASSWORD], ['Authorization' => "Bearer {$session['access_token']}"])->assertNoContent();
+
+        $this->getJson('/api/v1/auth/me', ['Authorization' => "Bearer {$session['access_token']}"])->assertUnauthorized();
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $session['refresh_token']])
+            ->assertUnauthorized()
+            ->assertJsonMissingPath('access_token');
+    }
+
     public function test_the_nutritionist_is_told_with_only_the_code_and_the_date(): void
     {
         $code = $this->subscriber->code;

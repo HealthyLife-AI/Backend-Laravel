@@ -104,6 +104,7 @@ class PatientAccountAccessTest extends TestCase
         $this->getJson('/api/v1/auth/me', $this->bearer($other['access_token']))->assertUnauthorized();
         $this->getJson('/api/v1/auth/me', $this->bearer($mine['access_token']))->assertUnauthorized();
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $other['refresh_token']])->assertUnauthorized();
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $mine['refresh_token']])->assertUnauthorized();
 
         // The pair returned with the change works.
         $this->getJson('/api/v1/auth/me', $this->bearer($response->json('access_token')))->assertOk();
@@ -167,6 +168,40 @@ class PatientAccountAccessTest extends TestCase
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])->assertUnauthorized();
         $this->getJson('/api/v1/auth/me', $this->bearer($activated['access_token']))->assertOk();
         $this->postJson('/api/v1/auth/login', ['phone' => '+15555550199', 'password' => 'Fresh789A'])->assertOk();
+    }
+
+    /**
+     * An old refresh token must not mint a token that carries the new session
+     * version, and a stale device presenting one must not trip theft detection
+     * and log out the session that was just opened.
+     */
+    public function test_after_a_password_change_old_refresh_tokens_mint_nothing_and_cost_the_new_session_nothing(): void
+    {
+        $old = $this->login();
+
+        $fresh = $this->putJson('/api/v1/me/password', [
+            'current_password' => 'OldPass123',
+            'password' => 'NewPass456',
+            'password_confirmation' => 'NewPass456',
+        ], $this->bearer($old['access_token']))->assertOk()->json();
+
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])
+            ->assertUnauthorized()
+            ->assertJsonMissingPath('access_token');
+
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $fresh['refresh_token']])->assertOk();
+    }
+
+    public function test_after_a_sign_in_link_old_refresh_tokens_mint_nothing_and_cost_the_new_session_nothing(): void
+    {
+        $old = $this->login();
+        $activated = $this->activate($this->issueLink())->assertOk()->json();
+
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])
+            ->assertUnauthorized()
+            ->assertJsonMissingPath('access_token');
+
+        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $activated['refresh_token']])->assertOk();
     }
 
     public function test_the_sign_in_link_works_once(): void

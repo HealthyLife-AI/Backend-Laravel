@@ -41,7 +41,7 @@ use Spatie\Permission\Models\Role;
  */
 class SeedDemoData extends Command
 {
-    protected $signature = 'demo:seed {--force : Allow running when APP_ENV=production}';
+    protected $signature = 'demo:seed {--force : Required on any APP_ENV other than local or testing (production included)}';
 
     protected $description = 'Create (or recreate) the demo nutritionist and seven demo patients with 21 days of history';
 
@@ -131,8 +131,10 @@ class SeedDemoData extends Command
         AlertEvaluationService $alerts,
         WeeklySummaryService $summaries,
     ): int {
-        if (app()->environment('production') && ! $this->option('force')) {
-            $this->error('Refusing to seed demo data with APP_ENV=production. Pass --force if you really mean to.');
+        // Only a developer machine runs it unprompted; production, staging or an
+        // unset APP_ENV (Laravel then assumes production) need --force.
+        if (! app()->environment(['local', 'testing']) && ! $this->option('force')) {
+            $this->error('Refusing to seed demo data with APP_ENV='.app()->environment().'. Pass --force if you really mean to.');
 
             return self::FAILURE;
         }
@@ -140,6 +142,15 @@ class SeedDemoData extends Command
         $password = config('demo.password');
         if (! filled($password)) {
             $this->error('DEMO_PASSWORD is not set. Add DEMO_PASSWORD=<a password> to .env (then `php artisan config:clear` if config is cached).');
+
+            return self::FAILURE;
+        }
+
+        // Only an account this command created (is_demo) is ever deleted: a
+        // real user who registered with this e-mail is left alone.
+        $existing = User::where('email', self::NUTRITIONIST_EMAIL)->first();
+        if ($existing !== null && ! $existing->is_demo) {
+            $this->error(self::NUTRITIONIST_EMAIL.' belongs to an account demo:seed did not create. Nothing was changed.');
 
             return self::FAILURE;
         }
@@ -212,14 +223,10 @@ class SeedDemoData extends Command
 
     private function removePrevious(ClientDeletionService $deletion): void
     {
-        $old = User::where('email', self::NUTRITIONIST_EMAIL)->first();
+        $old = User::where('email', self::NUTRITIONIST_EMAIL)->where('is_demo', true)->first();
 
         if ($old === null) {
             return;
-        }
-
-        if (! $old->hasRole('nutritionist')) {
-            throw new \RuntimeException(self::NUTRITIONIST_EMAIL.' exists but is not a nutritionist; not touching it.');
         }
 
         User::where('nutritionist_id', $old->id)->get()->each(function (User $patient) use ($deletion) {
@@ -248,7 +255,7 @@ class SeedDemoData extends Command
             'email' => self::NUTRITIONIST_EMAIL,
             'password' => Hash::make($password),
         ]);
-        $nutritionist->forceFill(['email_verified_at' => now()])->save();
+        $nutritionist->forceFill(['email_verified_at' => now(), 'is_demo' => true])->save();
         $nutritionist->assignRole('nutritionist');
         $nutritionist->nutritionistProfile()->create([
             'specialty' => 'تغذية علاجية وإدارة الوزن',
@@ -272,6 +279,7 @@ class SeedDemoData extends Command
                 'password' => Hash::make($spec['pattern'] === 'declining' ? $password : Str::random(40)),
                 'nutritionist_id' => $nutritionist->id,
             ]);
+            $user->forceFill(['is_demo' => true])->save();
             $user->assignRole('client');
 
             $subscriber = Subscriber::create([

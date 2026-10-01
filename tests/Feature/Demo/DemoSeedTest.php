@@ -113,6 +113,39 @@ class DemoSeedTest extends TestCase
         $this->assertNotNull(User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->first());
     }
 
+    public function test_any_environment_but_local_or_testing_needs_force(): void
+    {
+        foreach (['staging', 'prod'] as $env) {
+            $this->app['env'] = $env;
+            $this->artisan('demo:seed')->expectsOutputToContain('--force')->assertFailed();
+        }
+
+        $this->assertNull(User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->first());
+    }
+
+    public function test_a_real_account_holding_the_demo_email_is_never_touched(): void
+    {
+        $real = User::factory()->nutritionist()->create(['email' => SeedDemoData::NUTRITIONIST_EMAIL]);
+        $theirPatient = Subscriber::factory()->active()->forNutritionist($real)->create();
+
+        $this->artisan('demo:seed')->assertFailed();
+
+        $this->assertNotNull($real->fresh());
+        $this->assertFalse($real->fresh()->is_demo);
+        $this->assertNotNull(Subscriber::withoutGlobalScopes()->find($theirPatient->id));
+        $this->assertSame(1, User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->count());
+    }
+
+    public function test_only_demo_flagged_accounts_are_created(): void
+    {
+        $this->artisan('demo:seed')->assertSuccessful();
+
+        $nutritionist = User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->first();
+        $this->assertTrue($nutritionist->is_demo);
+        $this->assertSame(7, User::where('nutritionist_id', $nutritionist->id)->where('is_demo', true)->count());
+        $this->assertSame(8, User::where('is_demo', true)->count());
+    }
+
     public function test_it_stops_when_the_password_or_the_foods_are_missing(): void
     {
         config(['demo.password' => null]);

@@ -41,6 +41,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'locked_until' => 'datetime',
             'session_version' => 'integer',
+            'is_demo' => 'boolean',
         ];
     }
 
