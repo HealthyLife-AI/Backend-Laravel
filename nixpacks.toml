@@ -1,0 +1,6 @@
+# Taqat (Dokku + Nixpacks) builds this API. Without our own Procfile and this
+# file the platform writes its own, which served the app as static files.
+providers = ["php"]
+
+[variables]
+NIXPACKS_PHP_ROOT_DIR = "/app/public"
