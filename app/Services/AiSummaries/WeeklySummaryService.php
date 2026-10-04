@@ -52,6 +52,9 @@ class WeeklySummaryService
      */
     private const RATE_LIMIT_BACKOFF_SECONDS = [15, 30, 60];
 
+    /** Upper bound on a provider-sent Retry-After, so one odd header can't stall the run. */
+    private const MAX_RETRY_AFTER_SECONDS = 120;
+
     public function __construct(
         private readonly AdherenceService $adherence,
         private readonly OpenAiCompatibleClient $llm,
@@ -63,6 +66,12 @@ class WeeklySummaryService
      * the job for an already-summarised week replaces that row rather
      * than accumulating a second one for the same period.
      */
+    /** Whether summaries go through the LLM at all (else every one is the templated fallback). */
+    public function usesLlm(): bool
+    {
+        return $this->llm->isConfigured();
+    }
+
     public function generateForWeek(Subscriber $subscriber, CarbonImmutable $weekStart): AiSummary
     {
         $weekEnd = $weekStart->addDays(6);
@@ -145,7 +154,12 @@ class WeeklySummaryService
                 break;
             } catch (AiGenerationException $e) {
                 if ($e->getCode() === 429 && $attempt < count(self::RATE_LIMIT_BACKOFF_SECONDS)) {
-                    Sleep::for(self::RATE_LIMIT_BACKOFF_SECONDS[$attempt++])->seconds();
+                    // The provider's own Retry-After when it sends one (capped), else the fixed backoff.
+                    $wait = $e->retryAfter !== null
+                        ? min($e->retryAfter, self::MAX_RETRY_AFTER_SECONDS)
+                        : self::RATE_LIMIT_BACKOFF_SECONDS[$attempt];
+                    $attempt++;
+                    Sleep::for($wait)->seconds();
 
                     continue;
                 }

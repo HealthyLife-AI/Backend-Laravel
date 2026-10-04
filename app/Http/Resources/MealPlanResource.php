@@ -6,6 +6,7 @@ use App\Models\MealPlan;
 use App\Services\Nutrition\MealPlanCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * @mixin MealPlan
@@ -22,6 +23,10 @@ class MealPlanResource extends JsonResource
             'subscriber_id' => $this->subscriber_id,
             'is_template' => $this->is_template,
             'is_ai_draft' => $this->is_ai_draft,
+            // Which path produced an AI draft (true = the rule-based calorie fit,
+            // not the model). For the nutritionist only: the patient's own plan
+            // (GET /me/meal-plan) never carries it.
+            $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => ['is_ai_fallback' => (bool) $this->is_ai_fallback]),
             // Only a template is ever given one deliberately — see the
             // migration. Null on a hand-built client plan, which has one
             // audience and doesn't need to be told apart from another.

@@ -1022,6 +1022,7 @@ array of the response shape below.
   "subscriber_id": 3,
   "is_template": false,
   "is_ai_draft": false,
+  "is_ai_fallback": false,
   "name": null,
   "start_date": "2026-09-15",
   "status": "draft",
@@ -1130,9 +1131,19 @@ explicitly not a certified allergen system: it can't catch an allergen an
 ingredient name doesn't mention).
 
 The fallback is silent by design: a caller always gets a usable draft and
-never an AI error. That also means the response alone doesn't say which path
-ran — use [`GET /system/ai-status`](#get-systemai-status) to check whether an
-environment is even configured to attempt the LLM path.
+never an AI error. The plan records which path ran in **`is_ai_fallback`**:
+`false` when the model's choice was used, `true` when the rule-based calorie fit
+was (no provider configured, the call failed, or the response failed
+validation). The dashboard labels only `false` drafts «مسودة ذكية». The field
+is in the nutritionist's plan responses only, never in the patient's
+`GET /me/meal-plan`. Plans created before the field existed read `false`.
+
+When the LLM path runs, the patient's allergies are sent to the model as
+`must_avoid_allergies`, with a hard rule to never choose a food that contains
+or derives from one (e.g. milk → cheese, labneh, yogurt; gluten → bread,
+manakish; sesame → tahini, hummus, halawa). The name-based pre-filter still
+removes matching foods before the model sees the list, and any food id the
+model invents still discards the whole response.
 
 **201 Created** — same shape, `is_ai_draft: true`, `status: "draft"`. Always a
 draft; the nutritionist reviews (`PUT`, if anything needs changing) and
