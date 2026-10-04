@@ -10,6 +10,7 @@ use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Services\MealPlans\AiDraftPlanService;
 use App\Services\MealPlans\MealPlanService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -66,6 +67,11 @@ class MealPlanController extends Controller
         }
         $this->plans->replaceMeals($mealPlan, $request->validated()['meals']);
 
+        // Only the plan the patient is following; editing a draft tells them nothing.
+        if ($mealPlan->status === 'active') {
+            $this->notifyPatient($subscriber, $mealPlan, 'plan_updated');
+        }
+
         return new MealPlanResource($mealPlan->load(self::EAGER_LOAD));
     }
 
@@ -79,8 +85,22 @@ class MealPlanController extends Controller
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
         $this->plans->activate($mealPlan);
+        $this->notifyPatient($subscriber, $mealPlan, 'plan_activated');
 
         return new MealPlanResource($mealPlan->refresh()->load(self::EAGER_LOAD));
+    }
+
+    /**
+     * Activation and later edits of the same plan share one dedupe key, so
+     * "activate, then edit two minutes later" is one notification.
+     */
+    private function notifyPatient(Subscriber $subscriber, MealPlan $plan, string $type): void
+    {
+        $user = $subscriber->user()->first();
+
+        if ($user !== null) {
+            app(NotificationService::class)->notify($user, 'plan', $type, ['plan_id' => $plan->id], "plan:{$plan->id}");
+        }
     }
 
     /** F-5 (PRD, P1): "Suggest a starting plan." Always a draft — see AiDraftPlanService. */

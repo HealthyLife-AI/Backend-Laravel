@@ -54,6 +54,7 @@ class DailyAdherenceRefreshTest extends TestCase
     {
         DB::table('meal_logs')->insert([
             'subscriber_id' => $subscriber->id, 'food_id' => $this->food->id, 'meal_item_id' => $mealItemId,
+            'log_kind' => $mealItemId === null ? 'off_plan' : 'planned',
             'quantity_grams' => 100, 'logged_at' => now()->subDays($daysAgo)->setTime(12, 0),
             'created_at' => now(), 'updated_at' => now(),
         ]);

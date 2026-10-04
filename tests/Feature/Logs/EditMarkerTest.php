@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Logs;
 
+use App\Models\BodyCompositionReading;
 use App\Models\Food;
 use App\Models\MealLog;
 use App\Models\Subscriber;
@@ -40,12 +41,16 @@ class EditMarkerTest extends TestCase
         $this->subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id, 'user_id' => $this->client->id]);
     }
 
+    /** A log made, and received by the server, $daysAgo days ago (the edit window counts from arrival). */
     private function log(int $daysAgo): MealLog
     {
-        return MealLog::create([
+        $log = MealLog::create([
             'subscriber_id' => $this->subscriber->id, 'food_id' => Food::factory()->create()->id,
             'quantity_grams' => 100, 'meal_type' => 'snack', 'logged_at' => now()->subDays($daysAgo),
         ]);
+        $log->forceFill(['created_at' => now()->subDays($daysAgo)])->saveQuietly();
+
+        return $log;
     }
 
     public function test_a_log_can_be_edited_on_day_six_and_is_refused_on_day_eight(): void
@@ -69,8 +74,10 @@ class EditMarkerTest extends TestCase
         $token = $this->bearerFor($this->client);
         $this->postJson('/api/v1/me/measurements', ['weight_kg' => 80, 'recorded_at' => now()->subDays(2)->toDateString()], $token)->assertCreated();
 
-        $this->assertSame($log->logged_at->addDays(7)->toIso8601String(), $this->getJson('/api/v1/me/meal-logs', $token)->json('data.0.editable_until'));
-        $this->assertSame(now()->subDays(2)->startOfDay()->addDays(7)->toIso8601String(), $this->getJson('/api/v1/me/measurements', $token)->json('0.deletable_until'));
+        $this->assertSame($log->fresh()->created_at->addDays(7)->toIso8601String(), $this->getJson('/api/v1/me/meal-logs', $token)->json('data.0.editable_until'));
+        // The reading arrived just now (POST above), whatever date it is for.
+        $reading = BodyCompositionReading::query()->latest('id')->first();
+        $this->assertSame($reading->created_at->addDays(7)->toIso8601String(), $this->getJson('/api/v1/me/measurements', $token)->json('0.deletable_until'));
     }
 
     public function test_an_edit_records_edited_at_and_a_log_never_edited_has_none(): void

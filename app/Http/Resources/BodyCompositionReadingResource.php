@@ -42,7 +42,7 @@ class BodyCompositionReadingResource extends JsonResource
             // is never theirs to delete. Not part of the nutritionist's view.
             $this->mergeWhen(Auth::user()?->hasRole('client'), fn () => [
                 'deletable_until' => $this->source === BodyCompositionReading::SOURCE_SELF
-                    ? app(LogWindow::class)->readingEditableUntil($this->recorded_at)->toIso8601String()
+                    ? app(LogWindow::class)->editableUntil($this->resource)->toIso8601String()
                     : null,
             ]),
         ];

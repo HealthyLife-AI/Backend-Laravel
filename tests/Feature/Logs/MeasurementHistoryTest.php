@@ -5,6 +5,7 @@ namespace Tests\Feature\Logs;
 use App\Models\BodyCompositionReading;
 use App\Models\Subscriber;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\AuthenticatesForApi;
@@ -46,13 +47,18 @@ class MeasurementHistoryTest extends TestCase
         return $this->bearerFor($as ?? $this->client);
     }
 
+    /** A reading for $date, received by the server at noon that day (the delete window counts from arrival). */
     private function reading(string $date, string $source = BodyCompositionReading::SOURCE_SELF, array $extra = [], ?Subscriber $for = null): BodyCompositionReading
     {
-        return ($for ?? $this->subscriber)->bodyCompositionReadings()->create($extra + [
+        $reading = ($for ?? $this->subscriber)->bodyCompositionReadings()->create($extra + [
             'recorded_at' => $date,
             'source' => $source,
             'weight_kg' => 80,
         ]);
+        $arrived = CarbonImmutable::parse($date)->setTime(12, 0);
+        $reading->forceFill(['created_at' => $arrived->greaterThan(now()) ? now() : $arrived])->saveQuietly();
+
+        return $reading->fresh();
     }
 
     // ---- GET --------------------------------------------------------------
@@ -83,7 +89,7 @@ class MeasurementHistoryTest extends TestCase
         $rows = $this->getJson('/api/v1/me/measurements', $this->auth())->assertOk()->json();
 
         $this->assertNull($rows[0]['deletable_until'], 'a clinic reading is never deletable');
-        $this->assertSame(now()->startOfDay()->addDays(7)->toIso8601String(), $rows[1]['deletable_until']);
+        $this->assertSame($mine->created_at->addDays(7)->toIso8601String(), $rows[1]['deletable_until']);
         $this->assertSame($mine->id, $rows[1]['id']);
     }
 
@@ -136,12 +142,12 @@ class MeasurementHistoryTest extends TestCase
         $this->assertDatabaseHas('body_composition_readings', ['id' => $clinic->id]);
     }
 
-    public function test_the_delete_window_runs_from_the_readings_date(): void
+    public function test_the_delete_window_runs_from_when_the_reading_arrived(): void
     {
-        // 7 days from the START of the reading's date: one dated 6 days ago is
-        // deletable until tomorrow, one dated 7 days ago locked at midnight.
+        // 7 days from arrival: one received 6 days ago is still deletable, one
+        // received 8 days ago is locked.
         $sixDaysAgo = $this->reading(now()->subDays(6)->toDateString());
-        $sevenDaysAgo = $this->reading(now()->subDays(7)->toDateString());
+        $sevenDaysAgo = $this->reading(now()->subDays(8)->toDateString());
 
         $this->deleteJson("/api/v1/me/measurements/{$sevenDaysAgo->id}", [], $this->auth())
             ->assertForbidden()->assertJsonPath('code', 'log_locked')->assertJsonPath('editable_days', 7);

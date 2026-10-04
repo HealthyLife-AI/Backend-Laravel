@@ -4,6 +4,7 @@ namespace Tests\Feature\Notifications;
 
 use App\Models\Subscriber;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -55,6 +56,8 @@ class SendLogRemindersTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolesAndPermissionsSeeder::class);
+        // The reminder now respects quiet hours (default 22:00-07:00): run it at its real 20:00.
+        $this->travelTo(CarbonImmutable::parse('today 20:00', config('scheduling.timezone')));
 
         $this->fixturePath = storage_path('framework/testing/fake-firebase-credentials-2.json');
         file_put_contents($this->fixturePath, json_encode([

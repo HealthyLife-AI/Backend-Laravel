@@ -4,6 +4,7 @@ namespace App\Console\Commands\Notifications;
 
 use App\Models\Subscriber;
 use App\Services\Notifications\FcmPushService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 
@@ -27,7 +28,7 @@ class SendLogReminders extends Command
 
     protected $description = 'Push a reminder to every active client who has not logged today (FR-22)';
 
-    public function handle(FcmPushService $fcm): int
+    public function handle(FcmPushService $fcm, NotificationService $notifications): int
     {
         // Recorded up front: a reminder must never be pushed twice for the
         // same evening, even if this run stops partway.
@@ -53,16 +54,19 @@ class SendLogReminders extends Command
             ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
             ->with('user')
             ->lazy()
-            ->each(function (Subscriber $subscriber) use ($fcm, &$total, &$sent, &$failed): void {
+            ->each(function (Subscriber $subscriber) use ($notifications, &$total, &$sent, &$failed): void {
                 $total++;
 
                 try {
-                    $fcm->send(
-                        $subscriber->user->fcm_token,
-                        'Time to log today\'s meals',
-                        'You haven\'t logged anything yet today — تذكير بتسجيل وجباتك اليوم.',
-                    );
-                    $sent++;
+                    // Through the notification center: it lands in the inbox in the
+                    // patient's language, and quiet hours / the meals toggle decide
+                    // whether it is pushed.
+                    $row = $notifications->notify($subscriber->user, 'meals', 'log_reminder');
+                    if ($row->pushed_at !== null) {
+                        $sent++;
+                    } elseif ($row->push_skipped === 'failed') {
+                        $failed++;
+                    }
                 } catch (\Throwable $e) {
                     $failed++;
                     report($e);

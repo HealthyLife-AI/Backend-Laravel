@@ -86,7 +86,7 @@ class MeasurementController extends Controller
             throw new ApiCodeException('A reading taken at the clinic can only be removed by your nutritionist.', 'reading_not_deletable', 403);
         }
 
-        $this->window->assertReadingEditable($reading->recorded_at);
+        $this->window->assertEditable($reading);
 
         $reading->delete();
 
@@ -129,7 +129,7 @@ class MeasurementController extends Controller
         // deleting would be pointless (re-sending the day would rewrite it).
         // Re-sending the SAME figures is a replay of an entry that was
         // saved, and is answered like one instead of as an error.
-        if ($this->window->isReadingLocked($reading->recorded_at)) {
+        if ($this->window->isLocked($reading)) {
             if ($this->sameFigures($reading, $measurements)) {
                 return (new BodyCompositionReadingResource($reading))->response();
             }

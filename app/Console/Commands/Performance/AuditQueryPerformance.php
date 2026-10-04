@@ -172,7 +172,7 @@ class AuditQueryPerformance extends Command
             fn () => $subscriber->mealLogs()->reorder()
                 ->whereBetween('logged_at', [now()->subDays(7)->toDateString(), now()->toDateString()])
                 ->selectRaw('count(*) as total')
-                ->selectRaw('count(meal_item_id) as on_plan'),
+                ->selectRaw("sum(case when log_kind in ('planned', 'alternative') then 1 else 0 end) as on_plan"),
         );
 
         $this->check(

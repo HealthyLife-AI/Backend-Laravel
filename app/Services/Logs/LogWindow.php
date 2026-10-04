@@ -5,6 +5,7 @@ namespace App\Services\Logs;
 use App\Exceptions\ApiCodeException;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * The two time limits on a patient's own entries, both from
@@ -49,52 +50,65 @@ class LogWindow
         return $this->isLate(CarbonImmutable::instance($date)->endOfDay());
     }
 
-    /** BR-15: when an entry dated `$at` stops being editable. */
-    public function editableUntil(CarbonInterface $at): CarbonImmutable
-    {
-        return CarbonImmutable::instance($at)->addDays($this->editDays());
-    }
-
     /**
-     * BR-15 for a reading, which has a date and no time of day: the window
-     * runs from the start of its date, so with the default 7 days a reading
-     * dated Monday stays editable until the start of the next Monday.
+     * BR-15: when an entry stops being editable — a fixed number of days
+     * after it ARRIVED on the server (created_at), not after the date it is
+     * for. An offline entry synced late gets its full window instead of
+     * being locked on arrival. Meal logs and readings follow the same rule.
      */
-    public function readingEditableUntil(CarbonInterface $date): CarbonImmutable
+    public function editableUntil(Model $entry): CarbonImmutable
     {
-        return $this->editableUntil(CarbonImmutable::instance($date)->startOfDay());
+        return $this->arrivalOf($entry)->addDays($this->editDays());
     }
 
-    public function isReadingLocked(CarbonInterface $date): bool
+    public function isLocked(Model $entry): bool
     {
-        return CarbonImmutable::now()->greaterThan($this->readingEditableUntil($date));
-    }
-
-    /** BR-15: 403 `log_locked` once a reading's window has passed. */
-    public function assertReadingEditable(CarbonInterface $date): void
-    {
-        if ($this->isReadingLocked($date)) {
-            $this->throwLocked();
-        }
-    }
-
-    /** BR-15: the earliest date an edit may move an entry to without locking it on the spot. */
-    public function earliestEditableTimestamp(): CarbonImmutable
-    {
-        return CarbonImmutable::now()->subDays($this->editDays());
-    }
-
-    public function isLocked(CarbonInterface $at): bool
-    {
-        return CarbonImmutable::now()->greaterThan($this->editableUntil($at));
+        return CarbonImmutable::now()->greaterThan($this->editableUntil($entry));
     }
 
     /** BR-15: 403 `log_locked` once the window has passed. */
-    public function assertEditable(CarbonInterface $at): void
+    public function assertEditable(Model $entry): void
     {
-        if ($this->isLocked($at)) {
+        if ($this->isLocked($entry)) {
             $this->throwLocked();
         }
+    }
+
+    /**
+     * When the entry reached the server. Every row has created_at; the date
+     * it is for is only a fallback for a row that somehow has none.
+     */
+    private function arrivalOf(Model $entry): CarbonImmutable
+    {
+        $at = $entry->created_at ?? $entry->logged_at ?? $entry->recorded_at ?? now();
+
+        return CarbonImmutable::instance($at);
+    }
+
+    /**
+     * BR-15: how far an edit may move a log's logged_at — never into the
+     * future, never more than the edit window (7 days) away from where it is
+     * now, and never beyond the rejection limit (`entry_too_old`).
+     */
+    public function assertLoggedAtMove(CarbonInterface $from, CarbonInterface $to): void
+    {
+        if (abs(CarbonImmutable::instance($to)->diffInSeconds(CarbonImmutable::instance($from), false)) > $this->editDays() * 86400) {
+            throw new ApiCodeException(
+                'A meal can only be moved by up to '.$this->editDays().' days.',
+                'logged_at_move_too_far',
+                422,
+                ['max_move_days' => $this->editDays()],
+                ['logged_at' => ['The logged_at may move by at most '.$this->editDays().' days from its current value.']],
+            );
+        }
+
+        $this->assertNotTooOld($to, 'logged_at');
+    }
+
+    /** BR-19 recomputed after an edit: late when it arrived more than the late threshold after its (new) date. */
+    public function isLateFor(Model $entry, CarbonInterface $loggedAt): bool
+    {
+        return $this->arrivalOf($entry)->greaterThan(CarbonImmutable::instance($loggedAt)->addDays($this->lateAfterDays()));
     }
 
     public function throwLocked(): never

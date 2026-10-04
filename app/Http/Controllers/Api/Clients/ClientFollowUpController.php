@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\SubscriberResource;
 use App\Models\Subscriber;
 use App\Services\Clients\FollowUpService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -33,7 +34,13 @@ class ClientFollowUpController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
+        $wasArchived = $subscriber->isArchived();
         $invite = $this->followUp->resume($subscriber);
+
+        // Only a real resume of a patient who uses the app; pending patients get a fresh invite instead.
+        if ($wasArchived && $subscriber->status === 'active' && ($user = $subscriber->user()->first()) !== null) {
+            app(NotificationService::class)->notify($user, 'system', 'follow_up_resumed');
+        }
 
         return response()->json([
             'client' => new SubscriberResource($subscriber->refresh()->load('user')),

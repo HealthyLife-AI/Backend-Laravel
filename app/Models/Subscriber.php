@@ -89,6 +89,11 @@ class Subscriber extends Model
     }
 
     /** Activated (invite accepted) and still followed up — not archived. */
+    public function followUpReviews(): HasMany
+    {
+        return $this->hasMany(FollowUpReview::class)->orderByDesc('created_at')->orderByDesc('id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active' && ! $this->isArchived();
