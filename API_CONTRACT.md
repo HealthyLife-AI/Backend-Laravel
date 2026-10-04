@@ -1145,6 +1145,12 @@ manakish; sesame → tahini, hummus, halawa). The name-based pre-filter still
 removes matching foods before the model sees the list, and any food id the
 model invents still discards the whole response.
 
+The model is shown at most 80 foods (curated Arabic dishes first, then foods
+the admin or nutritionists added, then Arabic-named catalog foods), as compact
+rows: the full catalog would exceed the provider's request size limit (HTTP
+413). A short rate limit (Retry-After up to 10 s) or a provider-side JSON
+validation error is retried once before the draft falls back.
+
 **201 Created** — same shape, `is_ai_draft: true`, `status: "draft"`. Always a
 draft; the nutritionist reviews (`PUT`, if anything needs changing) and
 approves (`activate`) it exactly like any hand-built plan.

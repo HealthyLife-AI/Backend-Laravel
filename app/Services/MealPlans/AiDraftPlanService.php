@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Ai\OpenAiCompatibleClient;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 
 /**
  * S3-06/S3-07 / F-5 (PRD, P1): "Suggest a starting plan."
@@ -68,8 +69,16 @@ class AiDraftPlanService
         'dinner' => 0.30,
     ];
 
-    /** Foods sent to the LLM as its menu — capped so a large catalog never blows up the prompt. */
-    private const MAX_CANDIDATE_FOODS = 200;
+    /**
+     * Foods sent to the LLM as its menu. Kept small, and sent as compact rows:
+     * with the full catalog (~7,800 foods) the old 200-food list of keyed
+     * objects went past the provider's per-request token limit (Groq answered
+     * HTTP 413 on every draft, so every draft fell back). 80 rows is ~2k tokens.
+     */
+    private const MAX_CANDIDATE_FOODS = 80;
+
+    /** Longest a nutritionist is kept waiting for a rate-limit retry before the draft falls back. */
+    private const MAX_INTERACTIVE_WAIT_SECONDS = 10;
 
     public function __construct(
         private readonly MealPlanService $plans,
@@ -118,17 +127,36 @@ class AiDraftPlanService
      */
     private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): ?array
     {
-        $candidates = $safeFoods->take(self::MAX_CANDIDATE_FOODS);
+        $candidates = $this->menuFor($safeFoods);
 
-        try {
-            $response = $this->llm->chatJson([
-                ['role' => 'system', 'content' => $this->systemPrompt()],
-                ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal)],
-            ]);
-        } catch (AiGenerationException $e) {
-            Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['reason' => 'request_failed', 'error' => $e->getMessage()]);
+        $messages = [
+            ['role' => 'system', 'content' => $this->systemPrompt()],
+            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal)],
+        ];
 
-            return null;
+        // One retry for a passing hiccup, so a single click doesn't fall back:
+        // a 429 whose Retry-After is short (the nutritionist is waiting), or a
+        // 400 where the model's own JSON failed the provider's check.
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                $response = $this->llm->chatJson($messages);
+                break;
+            } catch (AiGenerationException $e) {
+                $retryable = $attempt === 1 && (
+                    ($e->getCode() === 429 && $e->retryAfter !== null && $e->retryAfter <= self::MAX_INTERACTIVE_WAIT_SECONDS)
+                    || $e->getCode() === 400
+                );
+
+                if (! $retryable) {
+                    Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['reason' => 'request_failed', 'error' => $e->getMessage()]);
+
+                    return null;
+                }
+
+                if ($e->getCode() === 429) {
+                    Sleep::for(max(1, $e->retryAfter))->seconds();
+                }
+            }
         }
 
         $validated = $this->validateLlmMeals($response, $candidates);
@@ -149,8 +177,9 @@ class AiDraftPlanService
         return <<<'PROMPT'
         You are a licensed clinical nutrition assistant. You produce a
         starting meal-plan draft for a nutritionist to review and edit —
-        never a final plan. Choose foods ONLY from the numbered list of
-        "id" values the user message gives you; never invent a food or an
+        never a final plan. Choose foods ONLY from "available_foods" in
+        the user message — each food is a row whose columns are named in
+        "food_columns" (the first is its id); never invent a food or an
         id that isn't in that list.
 
         Use every piece of the "client_profile" in the user message to
@@ -247,15 +276,40 @@ class AiDraftPlanService
         PROMPT;
     }
 
+    /**
+     * Which safe foods the model is shown, best first: the curated Arabic
+     * dishes, then foods the admin or a nutritionist added, then catalog foods
+     * that have an Arabic name (the common ingredients), then the rest. The
+     * allergy pre-filter has already run on $safeFoods.
+     *
+     * @return Collection<int, Food>
+     */
+    private function menuFor(Collection $safeFoods): Collection
+    {
+        return $safeFoods
+            ->sortBy(fn (Food $food) => [
+                match (true) {
+                    $food->seed_key !== null => 0,
+                    $food->source !== 'usda' => 1,
+                    filled($food->name_ar) => 2,
+                    default => 3,
+                },
+                $food->id,
+            ])
+            ->take(self::MAX_CANDIDATE_FOODS)
+            ->values();
+    }
+
     private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): string
     {
+        // Compact rows, one array per food, in the order of food_columns.
         $foods = $candidateFoods->map(fn (Food $food) => [
-            'id' => $food->id,
-            'name' => $food->name_en ?? $food->name_ar,
-            'calories_per_100g' => (float) $food->calories_per_100g,
-            'protein_g_per_100g' => (float) $food->protein_g_per_100g,
-            'carbs_g_per_100g' => (float) $food->carbs_g_per_100g,
-            'fat_g_per_100g' => (float) $food->fat_g_per_100g,
+            $food->id,
+            $food->name_en ?? $food->name_ar,
+            round((float) $food->calories_per_100g),
+            round((float) $food->protein_g_per_100g, 1),
+            round((float) $food->carbs_g_per_100g, 1),
+            round((float) $food->fat_g_per_100g, 1),
         ])->values()->all();
 
         $mealTargets = [];
@@ -284,6 +338,7 @@ class AiDraftPlanService
         $payload = [
             'daily_calorie_target' => $dailyCalories,
             'meal_calorie_targets' => $mealTargets,
+            'food_columns' => ['id', 'name', 'kcal_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g'],
             'available_foods' => $foods,
         ];
 
