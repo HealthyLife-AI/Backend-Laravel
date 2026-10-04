@@ -12,6 +12,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\TestCase;
@@ -153,9 +155,85 @@ class AiDraftHonestyTest extends TestCase
         $this->draft();
 
         Http::assertSent(function (Request $request) use ($sesame) {
-            $offered = collect(json_decode($request->data()['messages'][1]['content'], true)['available_foods'])->pluck('id');
+            $offered = collect(json_decode($request->data()['messages'][1]['content'], true)['available_foods'])->pluck(0);
 
             return ! $offered->contains($sesame->id);
         });
+    }
+
+    /**
+     * Production regression: with the full catalog the prompt went past Groq's
+     * per-request token limit (HTTP 413) and every draft fell back. The menu is
+     * capped at 80 compact rows, curated Arabic dishes first.
+     */
+    public function test_a_large_catalog_still_makes_a_small_prompt_with_curated_dishes_first(): void
+    {
+        Food::factory()->count(1500)->create(['source' => 'usda']);
+        $curated = Food::factory()->count(5)->sequence(fn ($s) => ['seed_key' => "dish-{$s->index}", 'source' => 'admin'])->create();
+        $food = $curated->first();
+        Http::fake(['*' => Http::response($this->validLlmResponse($food))]);
+
+        $this->draft()->assertJsonPath('is_ai_fallback', false);
+
+        Http::assertSent(function (Request $request) use ($curated) {
+            $user = $request->data()['messages'][1]['content'];
+            $payload = json_decode($user, true);
+            $ids = array_column($payload['available_foods'], 0);
+
+            return mb_strlen($user) < 8000
+                && count($ids) === 80
+                && array_slice($ids, 0, 5) === $curated->pluck('id')->all()
+                && $payload['food_columns'][0] === 'id';
+        });
+    }
+
+    public function test_the_providers_own_reason_is_kept_in_the_log(): void
+    {
+        Food::factory()->create();
+        Http::fake(['*' => Http::response(['error' => ['message' => 'Request too large for model on tokens per minute (TPM): Limit 8000']], 413)]);
+        Log::spy();
+
+        $this->draft()->assertJsonPath('is_ai_fallback', true);
+
+        Log::shouldHaveReceived('warning')->withArgs(fn ($msg, $ctx = []) => str_contains($ctx['error'] ?? '', 'HTTP 413. Request too large'));
+    }
+
+    public function test_a_short_rate_limit_is_waited_out_once(): void
+    {
+        $food = Food::factory()->create(['name_en' => 'Foul', 'calories_per_100g' => 110]);
+        Sleep::fake();
+        Http::fakeSequence()->push(['error' => ['message' => 'Rate limit reached']], 429, ['Retry-After' => '3'])->push($this->validLlmResponse($food));
+
+        $this->draft()->assertJsonPath('is_ai_fallback', false);
+        Sleep::assertSequence([Sleep::for(3)->seconds()]);
+    }
+
+    public function test_a_long_rate_limit_falls_back_without_waiting(): void
+    {
+        Food::factory()->create();
+        Sleep::fake();
+        Http::fake(['*' => Http::response(['error' => ['message' => 'Rate limit reached']], 429, ['Retry-After' => '45'])]);
+
+        $this->draft()->assertJsonPath('is_ai_fallback', true);
+        Sleep::assertNeverSlept();
+        Http::assertSentCount(1);
+    }
+
+    public function test_an_invalid_json_generation_is_retried_once(): void
+    {
+        $food = Food::factory()->create(['name_en' => 'Foul', 'calories_per_100g' => 110]);
+        Http::fakeSequence()->push(['error' => ['message' => 'Failed to validate JSON']], 400)->push($this->validLlmResponse($food));
+
+        $this->draft()->assertJsonPath('is_ai_fallback', false);
+        Http::assertSentCount(2);
+    }
+
+    public function test_a_second_failure_falls_back(): void
+    {
+        Food::factory()->create();
+        Http::fake(['*' => Http::response(['error' => ['message' => 'Failed to validate JSON']], 400)]);
+
+        $this->draft()->assertJsonPath('is_ai_fallback', true);
+        Http::assertSentCount(2);
     }
 }

@@ -74,7 +74,8 @@ class OpenAiCompatibleClient
             $retryAfter = $response->header('Retry-After');
 
             throw new AiGenerationException(
-                "AI provider returned HTTP {$response->status()}.",
+                // The provider's own reason (e.g. Groq's token-limit message) makes the log actionable.
+                rtrim("AI provider returned HTTP {$response->status()}. ".mb_substr((string) ($response->json('error.message') ?? ''), 0, 300)),
                 $response->status(),
                 retryAfter: is_numeric($retryAfter) ? max(0, (int) ceil((float) $retryAfter)) : null,
             );
