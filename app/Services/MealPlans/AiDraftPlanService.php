@@ -94,13 +94,19 @@ class AiDraftPlanService
 
         if ($this->llm->isConfigured()) {
             $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->goal);
+        } else {
+            Log::info('AI draft: no provider configured, using rule-based generation.', ['reason' => 'not_configured']);
         }
 
-        if ($meals === null) {
+        $isFallback = $meals === null;
+        if ($isFallback) {
             $meals = $this->generateRuleBasedMeals($safeFoods, $dailyCalories);
         }
 
-        return $this->plans->create($subscriber, ['meals' => $meals], $creator, isAiDraft: true);
+        $plan = $this->plans->create($subscriber, ['meals' => $meals], $creator, isAiDraft: true);
+        $plan->forceFill(['is_ai_fallback' => $isFallback])->save();
+
+        return $plan;
     }
 
     /**
@@ -120,7 +126,7 @@ class AiDraftPlanService
                 ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal)],
             ]);
         } catch (AiGenerationException $e) {
-            Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['error' => $e->getMessage()]);
+            Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['reason' => 'request_failed', 'error' => $e->getMessage()]);
 
             return null;
         }
@@ -128,7 +134,7 @@ class AiDraftPlanService
         $validated = $this->validateLlmMeals($response, $candidates);
 
         if ($validated === null) {
-            Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['response' => $response]);
+            Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'response' => $response]);
 
             return null;
         }
@@ -183,10 +189,28 @@ class AiDraftPlanService
            - Females → include iron-rich foods when appropriate.
            - Young adults → balanced macros supporting activity.
 
-        6. ACTIVITY LEVEL — higher activity → more complex carbs for
+        6. ALLERGIES — a hard safety rule, above every other consideration:
+           NEVER choose a food (planned item OR alternative) that contains,
+           or is made or derived from, anything in "must_avoid_allergies".
+           Judge by what the dish is made of, not only by its name:
+           - milk / dairy / lactose → cheese (incl. akkawi, halloumi),
+             labneh, yogurt, laban, butter, ghee, cream, milk-based
+             desserts (muhallabia, kunafa, halawet el jibn, om ali).
+           - gluten / wheat → bread (pita, khubz), manakish, pasta,
+             bulgur, freekeh, couscous, kibbeh, fatteh, pastries.
+           - sesame → tahini, hummus (made with tahini), mutabbal / baba
+             ghanoush, halawa, za'atar blends containing sesame.
+           - egg → eggs, shakshuka, dishes or pastries made with egg.
+           - nuts / peanuts → nuts, baklava, nut pastes and fillings.
+           - fish / seafood / shellfish → fish, shrimp, any seafood dish.
+           If you are unsure whether a food is safe for a listed allergy,
+           do not choose it. Choosing fewer or plainer foods is always
+           better than risking an allergen.
+
+        7. ACTIVITY LEVEL — higher activity → more complex carbs for
            energy and protein for recovery; sedentary → lighter portions.
 
-        7. NUTRITIONIST NOTES / LAB NOTES — if the nutritionist left
+        8. NUTRITIONIST NOTES / LAB NOTES — if the nutritionist left
            specific instructions, follow them; they override generic rules.
 
         Context: this is for Arab / Middle-Eastern clients. Pick foods that
@@ -218,6 +242,7 @@ class AiDraftPlanService
         - Use a DIFFERENT food_id as the planned item in every meal — do not repeat the same headline food across meals (alternatives may repeat).
         - Try to make each meal's planned item's calories land close to that meal's target calories given in the user message.
         - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
+        - Never choose a food that contains or derives from anything in must_avoid_allergies (rule 6).
         - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
         PROMPT;
     }
@@ -264,6 +289,11 @@ class AiDraftPlanService
 
         if ($clientProfile !== []) {
             $payload = ['client_profile' => $clientProfile] + $payload;
+        }
+
+        // Stated again on its own, as a hard rule rather than context (system prompt rule 6).
+        if (! empty($profile->allergies)) {
+            $payload = ['must_avoid_allergies' => array_values($profile->allergies)] + $payload;
         }
 
         return json_encode($payload, JSON_UNESCAPED_UNICODE);

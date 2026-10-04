@@ -129,6 +129,7 @@ class FollowUpTest extends TestCase
         $this->archive();
         $seen = [];
         $this->mock(WeeklySummaryService::class, function ($mock) use (&$seen) {
+            $mock->shouldReceive('usesLlm')->andReturnFalse();
             $mock->shouldReceive('generateForWeek')->andReturnUsing(function (Subscriber $s) use (&$seen) {
                 $seen[] = $s->id;
                 throw new \RuntimeException('stop here');

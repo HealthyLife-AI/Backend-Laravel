@@ -70,7 +70,14 @@ class OpenAiCompatibleClient
 
         if (! $response->successful()) {
             // HTTP status as the exception code, so a caller can tell a rate limit (429) from a hard failure.
-            throw new AiGenerationException("AI provider returned HTTP {$response->status()}.", $response->status());
+            // Retry-After in seconds when the provider sends it (only the numeric form is used).
+            $retryAfter = $response->header('Retry-After');
+
+            throw new AiGenerationException(
+                "AI provider returned HTTP {$response->status()}.",
+                $response->status(),
+                retryAfter: is_numeric($retryAfter) ? max(0, (int) ceil((float) $retryAfter)) : null,
+            );
         }
 
         $content = $response->json('choices.0.message.content');

@@ -8,6 +8,7 @@ use App\Services\AiSummaries\WeeklySummaryService;
 use App\Services\Scheduling\SelfScheduler;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
+use Illuminate\Support\Sleep;
 
 /**
  * S5-04 / FR-21. Runs weekly, one week AFTER the week it summarises ends
@@ -32,6 +33,8 @@ class GenerateWeeklySummaries extends Command
 
     protected $description = 'Generate the FR-21 weekly natural-language summary for every active client';
 
+    private const SECONDS_BETWEEN_PATIENTS = 2;
+
     public function handle(WeeklySummaryService $summaries): int
     {
         if ($this->option('regenerate-non-arabic')) {
@@ -44,8 +47,14 @@ class GenerateWeeklySummaries extends Command
         $total = 0;
         $fallbacks = 0;
         $failures = 0;
+        // A short gap between patients so a Monday run for many patients doesn't
+        // hit the provider's per-minute limit back to back (429s, seen 2026-09-27).
+        $pace = $summaries->usesLlm();
 
-        Subscriber::active()->lazy()->each(function (Subscriber $subscriber) use ($summaries, $weekStart, &$total, &$fallbacks, &$failures): void {
+        Subscriber::active()->lazy()->each(function (Subscriber $subscriber) use ($summaries, $weekStart, $pace, &$total, &$fallbacks, &$failures): void {
+            if ($pace && $total > 0) {
+                Sleep::for(self::SECONDS_BETWEEN_PATIENTS)->seconds();
+            }
             $total++;
 
             try {
