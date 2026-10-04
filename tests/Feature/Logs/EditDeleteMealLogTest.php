@@ -76,6 +76,16 @@ class EditDeleteMealLogTest extends TestCase
         ]);
     }
 
+    /** A log that reached the server $days days ago (the edit window counts from arrival). */
+    private function arrivedDaysAgo(float $days, array $overrides = []): MealLog
+    {
+        $this->travelTo(now()->subMinutes((int) round($days * 1440)));
+        $log = $this->offPlanLog($overrides);
+        $this->travelBack();
+
+        return $log;
+    }
+
     private function onPlanLog(): MealLog
     {
         return MealLog::create([
@@ -150,19 +160,44 @@ class EditDeleteMealLogTest extends TestCase
         $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['meal_type' => 'brunch'], $this->auth())->assertUnprocessable()->assertJsonValidationErrors('meal_type');
     }
 
-    public function test_the_time_cannot_be_moved_into_the_future_or_out_of_the_window(): void
+    public function test_the_time_moves_at_most_seven_days_and_never_into_the_future(): void
     {
         $log = $this->offPlanLog();
 
         $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->addHour()->toIso8601String()], $this->auth())
             ->assertUnprocessable()->assertJsonValidationErrors('logged_at');
 
-        // Older than the window would lock the entry on the spot — and be a
-        // way to backfill old history one edit at a time.
-        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->subHour()->toIso8601String()], $this->auth())
-            ->assertUnprocessable()->assertJsonValidationErrors('logged_at');
-        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->addHour()->toIso8601String()], $this->auth())
+        // More than 7 days from where it is now: refused, so a fresh log can't
+        // be walked weeks back.
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->subHours(2)->toIso8601String()], $this->auth())
+            ->assertUnprocessable()->assertJsonPath('code', 'logged_at_move_too_far')->assertJsonPath('max_move_days', 7)
+            ->assertJsonValidationErrors('logged_at');
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->toIso8601String()], $this->auth())
             ->assertOk();
+
+        // Another move of up to 7 days from its NEW place is allowed — but never
+        // past the rejection limit.
+        config(['patient_app.reject_after_days' => 10]);
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(12)->toIso8601String()], $this->auth())
+            ->assertUnprocessable()->assertJsonPath('code', 'entry_too_old');
+    }
+
+    public function test_moving_logged_at_recomputes_is_late_against_arrival(): void
+    {
+        $log = $this->offPlanLog();
+        $this->assertFalse($log->fresh()->is_late);
+
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(7)->subHour()->toIso8601String()], $this->auth())
+            ->assertOk()->assertJsonPath('is_late', true);
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['logged_at' => now()->subDays(2)->toIso8601String()], $this->auth())
+            ->assertOk()->assertJsonPath('is_late', false);
+    }
+
+    public function test_an_old_meal_that_arrived_today_can_still_be_edited(): void
+    {
+        $log = $this->offPlanLog(['logged_at' => now()->subDays(20)]);
+
+        $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['quantity_grams' => 150], $this->auth())->assertOk();
     }
 
     public function test_last_logged_at_follows_the_newest_remaining_log_after_an_edit(): void
@@ -177,13 +212,13 @@ class EditDeleteMealLogTest extends TestCase
         $this->assertEquals($older->logged_at->timestamp, $this->subscriber->fresh()->last_logged_at->timestamp);
     }
 
-    // ---- the 48h window ---------------------------------------------------
+    // ---- the edit window (from arrival) ---------------------------------------------------
 
-    public function test_the_window_closes_seven_days_after_logged_at(): void
+    public function test_the_window_closes_seven_days_after_the_log_arrived(): void
     {
         $this->travelTo(now()->startOfSecond());
-        $inside = $this->offPlanLog(['logged_at' => now()->subDays(7)->addMinute()]);
-        $outside = $this->offPlanLog(['logged_at' => now()->subDays(7)->subMinute()]);
+        $inside = $this->arrivedDaysAgo(7 - 1 / 1440);
+        $outside = $this->arrivedDaysAgo(7 + 1 / 1440);
 
         $this->patchJson("/api/v1/me/meal-logs/{$inside->id}", ['quantity_grams' => 150], $this->auth())->assertOk();
 
@@ -198,7 +233,7 @@ class EditDeleteMealLogTest extends TestCase
 
     public function test_a_locked_log_answers_403_before_its_body_is_validated(): void
     {
-        $locked = $this->offPlanLog(['logged_at' => now()->subDays(9)]);
+        $locked = $this->arrivedDaysAgo(9);
 
         $this->patchJson("/api/v1/me/meal-logs/{$locked->id}", ['quantity_grams' => -5], $this->auth())
             ->assertForbidden()->assertJsonPath('code', 'log_locked');
@@ -207,7 +242,7 @@ class EditDeleteMealLogTest extends TestCase
     public function test_the_window_length_comes_from_config(): void
     {
         config(['patient_app.edit_window_days' => 1]);
-        $log = $this->offPlanLog(['logged_at' => now()->subDays(2)]);
+        $log = $this->arrivedDaysAgo(2);
 
         $this->patchJson("/api/v1/me/meal-logs/{$log->id}", ['quantity_grams' => 150], $this->auth())
             ->assertForbidden()->assertJsonPath('code', 'log_locked');
@@ -222,7 +257,7 @@ class EditDeleteMealLogTest extends TestCase
 
         $row = $this->getJson('/api/v1/me/meal-logs', $this->auth())->assertOk()->json('data.0');
 
-        $this->assertSame($log->logged_at->addDays(7)->toIso8601String(), $row['editable_until']);
+        $this->assertSame($log->created_at->addDays(7)->toIso8601String(), $row['editable_until']);
     }
 
     // ---- delete -----------------------------------------------------------

@@ -313,7 +313,9 @@ class AdherenceService
             ->reorder()
             ->loggedBetween($from, $to)
             ->selectRaw('count(*) as total')
-            ->selectRaw('count(meal_item_id) as on_plan')
+            // BR-9: on-plan is what the log WAS when made (log_kind), so a later
+            // plan edit that deletes the item it pointed at can't rewrite history.
+            ->selectRaw("sum(case when log_kind in ('planned', 'alternative') then 1 else 0 end) as on_plan")
             ->first();
 
         $total = (int) ($totals->total ?? 0);

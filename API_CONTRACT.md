@@ -28,7 +28,66 @@ never in plain prefs/localStorage.
 
 ## Patient app changes
 
-### Batch A (mobile screens) — latest
+### Phase 2, batch 1 (follow-up between sessions) — latest
+
+Screens: «ملاحظات الأخصائي» (notes, rating, key points, tasks), the
+notifications inbox «التنبيهات», notification settings «الإشعارات», and the
+edit window on meal logs and readings. Details in
+[Follow-up between sessions & notifications](#follow-up-between-sessions--notifications-phase-2).
+
+| Screen | What to call |
+|---|---|
+| **Nutritionist's notes** | `GET /me/reviews`: newest first, each `{id, rating, note, key_points[], tasks[{id, title, done_at}], acknowledged_at, edited_at, created_at}`. `rating` is `on_track` (على المسار) \| `small_adjustment` (تعديل بسيط) \| `review_together` (لنراجع معًا) \| `null`. A plain array, not paginated |
+| **«فهمت»** | `POST /me/reviews/{id}/acknowledge` → the review. Safe to repeat. If the nutritionist edits it afterwards, `acknowledged_at` goes back to `null` and the patient gets one notification: show «فهمت» again |
+| **Tasks** | `POST /me/tasks/{id}/done` to tick, `DELETE /me/tasks/{id}/done` to untick → `{id, title, done_at}`. Both safe to repeat |
+| **Inbox** | `GET /me/notifications?category=&unread=1` (20 per page: `{data, meta}`), `GET /me/notifications/unread-count` → `{unread}`, `POST /me/notifications/{id}/read`, `POST /me/notifications/read-all` → `{marked}`. Each row: `{id, category, type, title, body, data, read_at, created_at, updated_at}`; sort by `updated_at` (a debounced row moves back to the top) |
+| **Settings** | `GET` / `PUT /me/notification-preferences`. Send any of `locale` (`ar`\|`en`), `meals`, `measurements`, `nutritionist`, `plan` (booleans), `quiet_hours_enabled`, `quiet_start`, `quiet_end` (`HH:MM`), `timezone`. **Send the device's IANA timezone** (e.g. `Asia/Gaza`) whenever the app starts or the device zone changes; until then the server uses its own (`effective_timezone` in the response) |
+
+**Inbox filters ↔ categories** (the design's chips): الوجبات = `meals`,
+القياسات = `measurements`, الأخصائي = `nutritionist`, تحديثات الخطة = `plan`,
+plus `system` (always on, no chip needed). `type` is one of `plan_activated`,
+`plan_updated`, `follow_up_resumed`, `review_new`, `review_updated`,
+`log_reminder`.
+
+**Deep links** — `data` (also in every FCM push's data, as strings):
+`plan_activated` / `plan_updated` → `{plan_id}` (open «خطتي»);
+`review_new` / `review_updated` → `{review_id}` (open the notes screen);
+`follow_up_resumed`, `log_reminder` → `{}`. FCM data also carries
+`notification_id`, `category`, `type`: mark the row read when the push is
+opened.
+
+**What the server already does — don't repeat it in the app:** it drops a
+push during quiet hours (the inbox row is still there), drops one in a switched-off
+category, writes titles in the patient's `locale`, and never puts health
+details in a push (the text is generic, the content is only in the inbox and
+`GET /me/reviews`). Only the 20:00 "no meal logged yet" reminder comes from the
+server. **Meal-time and weekly weigh-in reminders are local notifications
+scheduled by the app**: schedule them from the same preferences (`meals`,
+`measurements`, quiet hours) so the two never disagree.
+
+**Edit window (changed).** A log or reading can be edited/deleted for 7 days
+from when it **reached the server**, not from the meal's date — an entry
+queued offline and synced late now gets its full week. Always show the
+server's `editable_until` (logs) / `deletable_until` (readings). Moving a
+log's `logged_at` is limited to **7 days from where it is now** (new code
+`logged_at_move_too_far`) and still to 90 days back (`entry_too_old`);
+`is_late` is recalculated after such a move.
+
+**Same gates as the other data endpoints:** every new `/me/*` route answers
+`403 follow_up_ended` while follow-up is paused, then `403 consent_required`
+before consent.
+
+**Arabic messages for the new codes:**
+
+| Code | Show | Way forward |
+|---|---|---|
+| `logged_at_move_too_far` (422) | «يمكن تغيير وقت الوجبة بحد أقصى 7 أيام.» | Pick a closer date, or delete the log and add a new one |
+| `log_locked` (403) | «مرّ أكثر من 7 أيام على تسجيل هذا الإدخال، فلا يمكن تعديله.» | Read-only; ask the nutritionist if it's wrong |
+| `entry_too_old` (422) | «التاريخ أقدم من 90 يومًا. تأكد من تاريخ جهازك.» | Fix the device date |
+| `invalid_timezone` (422) | «تعذّر قراءة المنطقة الزمنية للجهاز.» | Retry with `timezone` omitted (server default) |
+| `follow_up_ended` (403) | The «انتهت المتابعة» screen | Contact the nutritionist |
+
+### Batch A (mobile screens)
 
 For the account, password, "my nutritionist" and "follow-up ended" screens.
 Everything here is additive; the only behaviour change is that sessions can now
@@ -157,7 +216,7 @@ by UTC hours.
 
 | Rule | What it says |
 |---|---|
-| **BR-15** | A patient can edit or delete their own meal log, and correct or delete their own self-reported reading, for 7 days after its date (`LOG_EDIT_WINDOW_DAYS`); then `403 log_locked`. The food of a log is never editable. Every edit is recorded in `edited_at` (its own column, not `updated_at`) and the nutritionist sees a "معدّلة" marker |
+| **BR-15** | A patient can edit or delete their own meal log, and correct or delete their own self-reported reading, for 7 days after it **reached the server** (`created_at`; `LOG_EDIT_WINDOW_DAYS`), not after its date; then `403 log_locked`. Moving a log's `logged_at` is limited to 7 days from its current value (`422 logged_at_move_too_far`) and the 90-day limit. The food of a log is never editable. Every edit is recorded in `edited_at` (its own column, not `updated_at`) and the nutritionist sees a "معدّلة" marker |
 | **BR-16** | Every meal log belongs to a meal (`breakfast`/`lunch`/`dinner`/`snack`): the plan meal for an on-plan log (server-set); for an off-plan one the patient's choice, or, when none is given, the meal whose time range holds the local time of `logged_at` (configurable, default breakfast 05:00–10:59, lunch 11:00–16:59, dinner 17:00–22:59, otherwise snack). A meal type is never a reason to refuse a log |
 | **BR-17** | A patient must accept the current privacy-policy version before their data endpoints open; each acceptance is recorded (version, time, IP, user agent). The version is `CONSENT_VERSION`, or a default (`2026-10-01`) when that isn't set, so the gate is always on and a missing setting never blocks the app |
 | **BR-18** | A patient can delete their own account and all their data with their password; the nutritionist gets a notice with only the patient's code and the date |
@@ -2217,3 +2276,96 @@ test`:
    `recorded_at` lookup (S4-02): `updateOrCreate(['week_start' => ...])`
    against a `date`-cast column is not reliable across drivers. Fixed with
    the same `whereDate()` lookup pattern.
+
+---
+
+## Follow-up between sessions & notifications (Phase 2)
+
+### Log kind (BR-9, stored)
+
+Every meal log now carries **`log_kind`**: `planned` (the plan's item),
+`alternative` (one of that item's alternatives) or `off_plan`. It is fixed
+when the log is created, from the item it points at then, and never
+re-derived. A plan edit that deletes and recreates items (e.g. «تعيين
+كافتراضي», swapping a planned item with its alternative) nulls `meal_item_id`
+on old logs but leaves their `log_kind` — so the badge and past adherence
+don't change after the fact. BR-9/BR-14 count `planned` + `alternative` as
+on-plan, exactly as before; `is_on_plan` follows `log_kind`. Existing rows
+were backfilled from their link at migration time (a log whose item was
+already deleted reads `off_plan`, as before).
+
+### `GET /clients/{id}/meal-logs/daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+The nutritionist's day-by-day meal log. Gate: `clients.manage`, own patient
+(else `404`). Default: the last 7 days; at most 31 days (`422
+range_too_large`, `max_days: 31`). Every day in the range, newest first, even
+empty ones:
+
+```json
+{
+  "from": "2026-09-29", "to": "2026-10-05",
+  "days": [
+    { "date": "2026-10-05", "planned_calories": 1650.0, "logged_calories": 1420.5,
+      "logs": [ { "id": 81, "food": {"id": 3, "name_ar": "كبسة دجاج", "...": "..."}, "quantity_grams": 250,
+                  "macros": {"calories": 412.5, "...": "..."}, "meal_type": "lunch", "log_kind": "alternative",
+                  "is_on_plan": true, "logged_at": "2026-10-05T13:35:00+03:00", "is_late": false, "edited_at": null } ] }
+  ]
+}
+```
+
+Badges: `log_kind` → من الخطة / بديل / خارج الخطة; `is_late` → تسجيل متأخر;
+`edited_at` → معدّلة. The calorie totals are the same as the progress chart's
+`daily_calories`.
+
+### Reviews (nutritionist)
+
+Gate: `clients.manage`, own patient (`404` otherwise). Writes answer `409
+follow_up_ended` while follow-up has ended; reading still works.
+
+- `GET /clients/{id}/reviews` — newest first (plain array), same shape as
+  the patient sees, with `acknowledged_at` and each task's `done_at`.
+- `POST /clients/{id}/reviews` → `201`. Body:
+  `{ rating?, note?, key_points?: string[], tasks?: [{title}] }`.
+  `rating`: `on_track` | `small_adjustment` | `review_together`; `note` ≤ 2,000
+  characters; ≤ 10 key points (≤ 300 each, blanks dropped); ≤ 10 tasks (title ≤
+  200). At least one of them is required: else `422 review_empty`. The
+  patient gets one notification («لديك ملاحظة جديدة من أخصائيك»).
+- `PUT /clients/{id}/reviews/{reviewId}` — the whole review again. Tasks:
+  send `{id, title}` to keep an existing task (its done state is kept), `{title}`
+  for a new one; tasks left out are removed. If anything changed, `edited_at`
+  is set and `acknowledged_at` cleared; if the patient had already pressed
+  «فهمت», they get one notification (debounced 5 minutes per review).
+- `DELETE /clients/{id}/reviews/{reviewId}` → `204`, tasks included.
+
+### Notifications
+
+All notifications go through one service. Each is an inbox row
+(`patient_notifications`), rendered in the patient's `locale`, and pushed via
+FCM only if: Firebase is configured, the patient has a device token, the
+category is on (`system` always is), and it is not their quiet hours in their
+timezone (`timezone`, else the server's `SCHEDULE_TIMEZONE`). Otherwise the row
+records why (`push_skipped`: `not_configured`, `no_token`, `category_off`,
+`quiet_hours`, `failed`) and is **never pushed later**.
+
+| Event | Category | Type | Dedupe |
+|---|---|---|---|
+| Plan activated | `plan` | `plan_activated` | `plan:{planId}` |
+| Active plan edited (a draft edit sends nothing) | `plan` | `plan_updated` | `plan:{planId}` (shared with activation) |
+| Follow-up resumed (active patients only) | `system` | `follow_up_resumed` | — |
+| New review | `nutritionist` | `review_new` | `review:{id}` |
+| Review edited after «فهمت» | `nutritionist` | `review_updated` | `review:{id}` |
+| 20:00 "nothing logged today" | `meals` | `log_reminder` | — |
+
+**Debounce:** an event with the same dedupe key within 5 minutes of the last
+one refreshes that row (unread again, `updated_at` now) and is not pushed
+again — "activate, then edit two minutes later" is one notification.
+
+**Privacy:** push titles/bodies are generic (`lang/{ar,en}/notifications.php`)
+and the FCM data holds only ids; no note, weight or other health detail
+leaves the server through Google.
+
+Patient endpoints (`/me/reviews`, `/me/tasks/*`, `/me/notifications*`,
+`/me/notification-preferences`) are listed under
+[Patient app changes](#patient-app-changes). Deleting the patient (by the
+nutritionist or `DELETE /me/account`) deletes their reviews, tasks,
+notifications and preferences.

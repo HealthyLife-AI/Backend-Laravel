@@ -108,7 +108,13 @@ class MealLogController extends Controller
             $log->fill($request->safe()->only(['quantity_grams', 'meal_type']));
 
             if ($request->filled('logged_at')) {
-                $log->logged_at = $request->date('logged_at')->setTimezone(config('app.timezone'));
+                $newAt = $request->date('logged_at');
+                // BR-15: at most 7 days from where it is now, never past the 90-day limit,
+                // so a fresh log can't be walked weeks back one edit at a time.
+                $this->window->assertLoggedAtMove($log->logged_at, $newAt);
+                $log->logged_at = $newAt->setTimezone(config('app.timezone'));
+                // BR-19 follows the new date: late if it arrived over 7 days after it.
+                $log->is_late = $this->window->isLateFor($log, $newAt);
             }
 
             // BR-15: shown to the nutritionist as "edited". Only when
@@ -132,7 +138,7 @@ class MealLogController extends Controller
         abort_if($subscriber === null, 403, 'This account is not set up as a client.');
 
         $log = $subscriber->mealLogs()->findOrFail($id);
-        $this->window->assertEditable($log->logged_at);
+        $this->window->assertEditable($log);
 
         DB::transaction(function () use ($log, $subscriber) {
             $log->delete();

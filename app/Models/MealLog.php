@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'idempotency_key',
     'food_id',
     'meal_item_id',
+    'log_kind',
     'meal_type',
     'quantity_grams',
     'logged_at',
@@ -31,6 +32,37 @@ class MealLog extends Model
 {
     /** BR-16: the four meals a log can belong to; the same set as `meals.name`. */
     public const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack'];
+
+    /** What the log was when made; planned and alternative count as on-plan (BR-9). Never re-derived later. */
+    public const KIND_PLANNED = 'planned';
+
+    public const KIND_ALTERNATIVE = 'alternative';
+
+    public const KIND_OFF_PLAN = 'off_plan';
+
+    public const ON_PLAN_KINDS = [self::KIND_PLANNED, self::KIND_ALTERNATIVE];
+
+    /**
+     * BR-9: the kind is fixed when the log is created, from the item it
+     * points at then, so a later plan edit that deletes that item never
+     * turns an on-plan log into off-plan.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (MealLog $log): void {
+            if ($log->log_kind !== null) {
+                return;
+            }
+
+            $item = $log->meal_item_id !== null ? MealItem::query()->find($log->meal_item_id) : null;
+
+            $log->log_kind = match (true) {
+                $item === null => self::KIND_OFF_PLAN,
+                $item->parent_item_id === null => self::KIND_PLANNED,
+                default => self::KIND_ALTERNATIVE,
+            };
+        });
+    }
 
     protected function casts(): array
     {
@@ -61,7 +93,7 @@ class MealLog extends Model
     /** BR-9: the on-plan half of the adherence ratio. */
     public function scopeOnPlan(Builder $query): void
     {
-        $query->whereNotNull('meal_item_id');
+        $query->whereIn($query->qualifyColumn('log_kind'), self::ON_PLAN_KINDS);
     }
 
     public function scopeLoggedBetween(Builder $query, string $from, string $to): void

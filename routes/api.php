@@ -13,9 +13,12 @@ use App\Http\Controllers\Api\Clients\ClientInviteController;
 use App\Http\Controllers\Api\Clients\ClientSignInLinkController;
 use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Consent\ConsentController;
+use App\Http\Controllers\Api\FollowUp\ClientReviewController;
+use App\Http\Controllers\Api\FollowUp\MyReviewController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\Logs\ClientMealLogController;
 use App\Http\Controllers\Api\Logs\MealLogController;
 use App\Http\Controllers\Api\Logs\MeasurementController;
 use App\Http\Controllers\Api\MealPlans\ClientPlanController;
@@ -23,6 +26,8 @@ use App\Http\Controllers\Api\MealPlans\MealPlanController;
 use App\Http\Controllers\Api\MealPlans\MealPlanTemplateController;
 use App\Http\Controllers\Api\Notices\DeletionNoticeController;
 use App\Http\Controllers\Api\Notifications\FcmTokenController;
+use App\Http\Controllers\Api\Notifications\MyNotificationController;
+use App\Http\Controllers\Api\Notifications\NotificationPreferenceController;
 use App\Http\Controllers\Api\Nutritionists\MyNutritionistController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
@@ -92,6 +97,15 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/sign-in-link', [ClientSignInLinkController::class, 'store'])
             ->middleware('follow-up')
             ->name('clients.sign-in-link.store');
+
+        // Phase 2: the patient's meal log day by day, with each log's kind.
+        Route::get('clients/{subscriber}/meal-logs/daily', [ClientMealLogController::class, 'daily'])->name('clients.meal-logs.daily');
+
+        // Phase 2: follow-up between sessions (rating, note, key points, tasks).
+        Route::get('clients/{subscriber}/reviews', [ClientReviewController::class, 'index'])->name('clients.reviews.index');
+        Route::post('clients/{subscriber}/reviews', [ClientReviewController::class, 'store'])->middleware('follow-up')->name('clients.reviews.store');
+        Route::put('clients/{subscriber}/reviews/{review}', [ClientReviewController::class, 'update'])->whereNumber('review')->middleware('follow-up')->name('clients.reviews.update');
+        Route::delete('clients/{subscriber}/reviews/{review}', [ClientReviewController::class, 'destroy'])->whereNumber('review')->middleware('follow-up')->name('clients.reviews.destroy');
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
     });
@@ -205,6 +219,22 @@ Route::prefix('v1')->name('api.')->group(function () {
         // The patient's own nutritionist: name, gender, clinic, specialty,
         // WhatsApp number — for the app's "my nutritionist" card.
         Route::get('me/nutritionist', [MyNutritionistController::class, 'show'])->name('me.nutritionist.show');
+    });
+
+    // Phase 2, the patient's side. Same gates as the other patient data
+    // endpoints: follow_up_ended (jwt), then consent_required.
+    Route::middleware(['jwt', 'consent', 'role:client'])->group(function () {
+        Route::get('me/reviews', [MyReviewController::class, 'index'])->name('me.reviews.index');
+        Route::post('me/reviews/{review}/acknowledge', [MyReviewController::class, 'acknowledge'])->whereNumber('review')->name('me.reviews.acknowledge');
+        Route::post('me/tasks/{task}/done', [MyReviewController::class, 'done'])->whereNumber('task')->name('me.tasks.done');
+        Route::delete('me/tasks/{task}/done', [MyReviewController::class, 'undone'])->whereNumber('task')->name('me.tasks.undone');
+
+        Route::get('me/notifications', [MyNotificationController::class, 'index'])->name('me.notifications.index');
+        Route::get('me/notifications/unread-count', [MyNotificationController::class, 'unreadCount'])->name('me.notifications.unread-count');
+        Route::post('me/notifications/read-all', [MyNotificationController::class, 'readAll'])->name('me.notifications.read-all');
+        Route::post('me/notifications/{id}/read', [MyNotificationController::class, 'read'])->whereNumber('id')->name('me.notifications.read');
+        Route::get('me/notification-preferences', [NotificationPreferenceController::class, 'show'])->name('me.notification-preferences.show');
+        Route::put('me/notification-preferences', [NotificationPreferenceController::class, 'update'])->name('me.notification-preferences.update');
     });
 
     // S4-00 / PRD Section 5.2: the nutritionist's own professional

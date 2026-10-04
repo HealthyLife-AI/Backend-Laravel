@@ -30,7 +30,7 @@ class UpdateMealLogRequest extends FormRequest
 
         $this->log = $subscriber->mealLogs()->findOrFail($this->route('id'));
 
-        app(LogWindow::class)->assertEditable($this->log->logged_at);
+        app(LogWindow::class)->assertEditable($this->log);
 
         return true;
     }
@@ -45,15 +45,12 @@ class UpdateMealLogRequest extends FormRequest
      */
     public function rules(): array
     {
-        $window = app(LogWindow::class);
-
         return [
             'quantity_grams' => ['sometimes', 'required', 'numeric', 'min:1', 'max:5000'],
 
-            // Not in the future, and not so far back that the entry would
-            // be locked the moment it is saved (which would also make this
-            // a way to backfill old history one edit at a time).
-            'logged_at' => ['sometimes', 'required', 'date', 'before_or_equal:now', 'after_or_equal:'.$window->earliestEditableTimestamp()->toIso8601String()],
+            // Not in the future here; how far it may move (7 days from where it
+            // is, and within the 90-day limit) is checked in the controller.
+            'logged_at' => ['sometimes', 'required', 'date', 'before_or_equal:now'],
 
             'meal_type' => ['sometimes', 'required', Rule::in(MealLog::MEAL_TYPES)],
 
@@ -76,7 +73,7 @@ class UpdateMealLogRequest extends FormRequest
             }
 
             // BR-16: an on-plan log's meal comes from the plan.
-            if ($this->has('meal_type') && $this->log->meal_item_id !== null) {
+            if ($this->has('meal_type') && $this->log->log_kind !== MealLog::KIND_OFF_PLAN) {
                 $validator->errors()->add('meal_type', 'The meal type of a log that follows the plan is set by the plan and cannot be changed.');
             }
         });
