@@ -304,4 +304,21 @@ class HealthRecordsTest extends TestCase
             $this->assertSame(0, DB::table($table)->where('subscriber_id', $this->patient->id)->count(), $table);
         }
     }
+
+    public function test_the_admin_retags_a_food_without_an_in_use_confirmation_and_the_plan_carries_the_tags(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $food = Food::factory()->create(['name_en' => 'Rice', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3]);
+        $plan = $this->postJson("/api/v1/clients/{$this->patient->id}/meal-plans", ['meals' => [['name' => 'lunch', 'items' => [['food_id' => $food->id, 'quantity_grams' => 200]]]]], $this->nurse())->json('id');
+        $this->postJson("/api/v1/clients/{$this->patient->id}/meal-plans/{$plan}/activate", [], $this->nurse())->assertOk();
+
+        $body = ['name_en' => 'Rice', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3];
+        $this->putJson("/api/v1/admin/foods/{$food->id}", $body + ['allergens' => ['soy'], 'shopping_section' => 'grains_starches'], $this->bearerFor($admin))
+            ->assertOk()->assertJsonPath('allergens', ['soy'])->assertJsonPath('shopping_section', 'grains_starches');
+        $this->putJson("/api/v1/admin/foods/{$food->id}", ['calories_per_100g' => 140] + $body, $this->bearerFor($admin))->assertStatus(409);
+        $this->putJson("/api/v1/admin/foods/{$food->id}", $body + ['shopping_section' => 'aisle-9'], $this->bearerFor($admin))->assertUnprocessable();
+
+        $this->getJson('/api/v1/me/meal-plan', $this->me())->assertOk()
+            ->assertJsonPath('meals.0.items.0.food.allergens', ['soy'])->assertJsonPath('meals.0.items.0.food.shopping_section', 'grains_starches');
+    }
 }
