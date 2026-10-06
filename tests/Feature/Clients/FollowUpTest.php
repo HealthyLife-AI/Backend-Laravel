@@ -116,6 +116,8 @@ class FollowUpTest extends TestCase
     {
         DB::table('users')->whereIn('id', [$this->patient->user_id, $this->other->user_id])->update(['fcm_token' => 'device']);
         $this->archive();
+        // Midday (after the API call, whose token uses the real clock), so the run never falls in the default quiet hours (22:00-07:00).
+        $this->travelTo(now(config('scheduling.timezone'))->setTime(12, 0));
         $this->mock(FcmPushService::class, function ($mock) {
             $mock->shouldReceive('isConfigured')->andReturnTrue();
             $mock->shouldReceive('send')->once();
