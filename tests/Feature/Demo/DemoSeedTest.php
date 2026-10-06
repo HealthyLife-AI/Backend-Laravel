@@ -5,8 +5,13 @@ namespace Tests\Feature\Demo;
 use App\Console\Commands\Demo\SeedDemoData;
 use App\Models\AiSummary;
 use App\Models\Alert;
+use App\Models\Appointment;
+use App\Models\FollowUpReview;
+use App\Models\FollowUpTask;
 use App\Models\Food;
 use App\Models\MealLog;
+use App\Models\PatientNotification;
+use App\Models\ProfileProposal;
 use App\Models\Subscriber;
 use App\Models\User;
 use Database\Seeders\ArabicFoodSeeder;
@@ -156,5 +161,24 @@ class DemoSeedTest extends TestCase
         $this->artisan('demo:seed')->expectsOutputToContain('ArabicFoodSeeder')->assertFailed();
 
         $this->assertNull(User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->first());
+    }
+
+    public function test_the_demo_shows_the_follow_up_features(): void
+    {
+        $this->artisan('demo:seed')->assertSuccessful();
+
+        [$p1, , , $p4] = $this->demoPatients();
+
+        $this->assertSame(1, Appointment::where('subscriber_id', $p4->id)->where('status', 'booked')->where('starts_at', '>', now())->count());
+        $this->assertSame(1, ProfileProposal::where('subscriber_id', $p4->id)->where('kind', 'allergy')->where('status', 'pending')->count());
+        $this->assertNotNull(FollowUpReview::where('subscriber_id', $p1->id)->value('acknowledged_at'));
+        $this->assertSame(2, FollowUpTask::where('subscriber_id', $p4->id)->count());
+        $this->assertGreaterThanOrEqual(1, PatientNotification::where('user_id', $p4->user_id)->count());
+        $this->assertNotNull($p4->patientGoal);
+        $this->assertSame(['sesame'], Food::where('seed_key', 'hummus')->value('allergens'));
+
+        // Re-running stays clean.
+        $this->artisan('demo:seed')->assertSuccessful();
+        $this->assertSame(1, Appointment::where('status', 'booked')->count());
     }
 }

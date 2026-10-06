@@ -9,6 +9,7 @@ use App\Models\Subscriber;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Firebase\JWT\JWT;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
@@ -53,13 +54,13 @@ class AppointmentTest extends TestCase
     /** firebase/jwt checks iat/exp against its own clock; keep it on the test's travelled clock. */
     protected function tearDown(): void
     {
-        \Firebase\JWT\JWT::$timestamp = null;
+        JWT::$timestamp = null;
         parent::tearDown();
     }
 
     private function jwtClock(): void
     {
-        \Firebase\JWT\JWT::$timestamp = now()->timestamp;
+        JWT::$timestamp = now()->timestamp;
     }
 
     private function nurse(): array
