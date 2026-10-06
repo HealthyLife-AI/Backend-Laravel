@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\Admin\AdminNutritionistController;
 use App\Http\Controllers\Api\Admin\AdminOverviewController;
 use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
+use App\Http\Controllers\Api\Appointments\MyAppointmentController;
+use App\Http\Controllers\Api\Appointments\NutritionistAppointmentController;
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientFollowUpController;
@@ -110,6 +112,15 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::delete('clients/{subscriber}/reviews/{review}', [ClientReviewController::class, 'destroy'])->whereNumber('review')->middleware('follow-up')->name('clients.reviews.destroy');
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
+
+        // Step 2: appointments and the nutritionist's weekly availability.
+        Route::get('me/availability', [NutritionistAppointmentController::class, 'availability'])->name('me.availability.show');
+        Route::put('me/availability', [NutritionistAppointmentController::class, 'updateAvailability'])->name('me.availability.update');
+        Route::get('appointments', [NutritionistAppointmentController::class, 'index'])->name('appointments.index');
+        Route::patch('appointments/{appointment}', [NutritionistAppointmentController::class, 'update'])->whereNumber('appointment')->name('appointments.update');
+        Route::post('appointments/{appointment}/cancel', [NutritionistAppointmentController::class, 'cancel'])->whereNumber('appointment')->name('appointments.cancel');
+        Route::post('appointments/{appointment}/complete', [NutritionistAppointmentController::class, 'complete'])->whereNumber('appointment')->name('appointments.complete');
+        Route::post('appointments/{appointment}/no-show', [NutritionistAppointmentController::class, 'noShow'])->whereNumber('appointment')->name('appointments.no-show');
     });
 
     Route::middleware(['jwt', 'permission:health_profile.manage'])->group(function () {
@@ -245,6 +256,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/health-profile', [MyHealthRecordsController::class, 'show'])->name('me.health-profile.show');
         Route::post('me/proposals', [MyHealthRecordsController::class, 'propose'])->name('me.proposals.store');
         Route::delete('me/proposals/{proposal}', [MyHealthRecordsController::class, 'withdraw'])->whereNumber('proposal')->name('me.proposals.destroy');
+
+        Route::get('me/appointments/slots', [MyAppointmentController::class, 'slots'])->name('me.appointments.slots');
+        Route::get('me/appointments', [MyAppointmentController::class, 'index'])->name('me.appointments.index');
+        Route::post('me/appointments', [MyAppointmentController::class, 'store'])->name('me.appointments.store');
+        Route::patch('me/appointments/{appointment}', [MyAppointmentController::class, 'update'])->whereNumber('appointment')->name('me.appointments.update');
+        Route::delete('me/appointments/{appointment}', [MyAppointmentController::class, 'destroy'])->whereNumber('appointment')->name('me.appointments.destroy');
 
         Route::get('me/reviews', [MyReviewController::class, 'index'])->name('me.reviews.index');
         Route::post('me/reviews/{review}/acknowledge', [MyReviewController::class, 'acknowledge'])->whereNumber('review')->name('me.reviews.acknowledge');

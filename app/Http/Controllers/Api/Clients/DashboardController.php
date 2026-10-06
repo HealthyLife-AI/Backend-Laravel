@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Clients;
 
 use App\Http\Controllers\Controller;
+use App\Models\Appointment;
 use App\Models\ProfileProposal;
 use App\Models\Subscriber;
 use Illuminate\Http\JsonResponse;
@@ -52,6 +53,8 @@ class DashboardController extends Controller
             'stopped_logging' => (int) $row->stopped_logging,
             'not_logged_today' => (int) $row->not_logged_today,
             'archived' => Subscriber::query()->archived()->count(),
+            'appointments_today' => Appointment::query()->where('nutritionist_id', $request->user()->id)->where('status', 'booked')
+                ->whereBetween('starts_at', [now(config('scheduling.timezone'))->startOfDay()->setTimezone(config('app.timezone')), now(config('scheduling.timezone'))->endOfDay()->setTimezone(config('app.timezone'))])->count(),
             'pending_proposals' => ProfileProposal::query()->where('status', 'pending')->whereIn('subscriber_id', Subscriber::query()->select('id'))->count(),
         ]);
     }

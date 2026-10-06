@@ -6,6 +6,7 @@ use App\Models\ClientInvite;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Adherence\AdherenceService;
+use App\Services\Appointments\AppointmentService;
 use App\Services\Auth\RefreshTokenService;
 use Illuminate\Support\Facades\DB;
 
@@ -34,6 +35,9 @@ class FollowUpService
 
         DB::transaction(function () use ($subscriber) {
             $subscriber->forceFill(['archived_at' => now()])->save();
+
+            // Future appointments are cancelled and the patient told once.
+            app(AppointmentService::class)->cancelFutureFor($subscriber);
 
             // Ends every session: the app can't refresh its access token.
             $this->refreshTokens->revokeAllForUser($subscriber->user);
