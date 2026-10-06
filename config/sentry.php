@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\SentryScrubber;
+
 /**
  * Sentry Laravel SDK configuration file.
  *
@@ -54,7 +56,7 @@ return [
     // Never on: no IP, user or headers by default. See App\Support\SentryScrubber.
     'send_default_pii' => false,
 
-    'before_send' => [\App\Support\SentryScrubber::class, 'beforeSend'],
+    'before_send' => [SentryScrubber::class, 'beforeSend'],
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore_exceptions
     // 'ignore_exceptions' => [],

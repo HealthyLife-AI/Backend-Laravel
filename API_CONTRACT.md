@@ -761,6 +761,7 @@ envelope).
 | `adherence` | `stable` \| `declining` \| `stopped_logging` |
 | `search` | matches client name or code, **prefix only** (`"sar"` matches "Sara", not "Ansara") |
 | `archived` | `1` / `true`: only archived patients. Omitted or `0`: only patients still followed up (the default roster never mixes the two) |
+| `pending_proposals` | `1` / `true`: only patients with profile proposals awaiting approval (each row carries `pending_proposals_count`) |
 | `per_page` | 1–100, default 20 |
 
 ### `GET /clients/{id}`

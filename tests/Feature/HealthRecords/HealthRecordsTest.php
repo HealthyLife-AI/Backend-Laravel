@@ -200,6 +200,7 @@ class HealthRecordsTest extends TestCase
 
         $this->getJson('/api/v1/clients', $this->nurse())->assertOk()->assertJsonPath('data.0.pending_proposals_count', 2);
         $this->getJson('/api/v1/dashboard/overview', $this->nurse())->assertOk()->assertJsonPath('pending_proposals', 2);
+        $this->getJson('/api/v1/clients?pending_proposals=1', $this->nurse())->assertOk()->assertJsonCount(1, 'data');
     }
 
     // ---- nutritionist edits ---------------------------------------------------

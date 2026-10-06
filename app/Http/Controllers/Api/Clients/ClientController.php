@@ -55,6 +55,10 @@ class ClientController extends Controller
             $query->where('status', $request->string('status'));
         }
 
+        if ($request->boolean('pending_proposals')) {
+            $query->whereHas('proposals', fn ($q) => $q->where('status', 'pending'));
+        }
+
         if ($request->filled('adherence')) {
             $query->where('adherence_status', $request->string('adherence'));
         }
