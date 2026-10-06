@@ -77,6 +77,11 @@ class AiDraftPlanService
      */
     private const MAX_CANDIDATE_FOODS = 80;
 
+    private const MAX_COMPLETION_TOKENS = 6000;
+
+    /** A plated meal: a main dish and up to three sides. */
+    private const MAX_ITEMS_PER_MEAL = 4;
+
     /** Longest a nutritionist is kept waiting for a rate-limit retry before the draft falls back. */
     private const MAX_INTERACTIVE_WAIT_SECONDS = 10;
 
@@ -135,12 +140,14 @@ class AiDraftPlanService
         ];
 
         // One retry for a passing hiccup, so a single click doesn't fall back:
-        // a 429 whose Retry-After is short (the nutritionist is waiting), or a
-        // 400 where the model's own JSON failed the provider's check.
+        // a 429 whose Retry-After is short (the nutritionist is waiting), a 400
+        // where the model's own JSON failed the provider's check, or an answer
+        // that failed our validation (e.g. an alternative not on the menu).
+        // A failed answer is never partially kept: any unknown food_id still
+        // discards the whole response.
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = $this->llm->chatJson($messages);
-                break;
+                $response = $this->llm->chatJson($messages, $this->requestOptions());
             } catch (AiGenerationException $e) {
                 $retryable = $attempt === 1 && (
                     ($e->getCode() === 429 && $e->retryAfter !== null && $e->retryAfter <= self::MAX_INTERACTIVE_WAIT_SECONDS)
@@ -156,17 +163,22 @@ class AiDraftPlanService
                 if ($e->getCode() === 429) {
                     Sleep::for(max(1, $e->retryAfter))->seconds();
                 }
+
+                continue;
+            }
+
+            $validated = $this->validateLlmMeals($response, $candidates);
+
+            if ($validated !== null) {
+                break;
+            }
+
+            if ($attempt >= 2) {
+                Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'response' => $response]);
+
+                return null;
             }
         }
-
-        $validated = $this->validateLlmMeals($response, $candidates);
-
-        if ($validated === null) {
-            Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'response' => $response]);
-
-            return null;
-        }
-
         Log::info('AI draft: generated via LLM.', ['meal_count' => count($validated)]);
 
         return $validated;
@@ -261,19 +273,43 @@ class AiDraftPlanService
 
         Respond with a single JSON object, no prose, no markdown, matching
         exactly:
-        {"meals": [{"name": "breakfast", "items": [{"food_id": 1, "quantity_grams": 150, "alternatives": [{"food_id": 2, "quantity_grams": 120}]}]}]}
+        {"meals": [{"name": "breakfast", "items": [
+          {"food_id": 1, "quantity_grams": 200, "alternatives": [{"food_id": 2, "quantity_grams": 150}, {"food_id": 3, "quantity_grams": 120}]},
+          {"food_id": 4, "quantity_grams": 60, "alternatives": [{"food_id": 5, "quantity_grams": 60}, {"food_id": 6, "quantity_grams": 50}]}
+        ]}]}
 
         Rules:
         - "name" must be exactly one of: breakfast, snack, lunch, dinner — one meal per name, in that order.
-        - Every meal needs exactly one item (the planned choice) with 0-2 alternatives.
-        - "food_id" must be an id from the provided list.
-        - "quantity_grams" must be a number between 50 and 500.
-        - Use a DIFFERENT food_id as the planned item in every meal — do not repeat the same headline food across meals (alternatives may repeat).
-        - Try to make each meal's planned item's calories land close to that meal's target calories given in the user message.
+        - Build each meal like a real plate: breakfast, lunch and dinner have 2-3 items (a main dish plus sides such as bread, salad, yogurt or vegetables); the snack has 1-2 items.
+        - EVERY item must have EXACTLY 2 alternatives: different foods from the list that can replace it at that meal time, with quantities chosen so their calories are close to the item they replace.
+        - EVERY "food_id" — planned items AND alternatives — must be an id from "available_foods". A food that is not in that list must never appear anywhere in the answer, even as an alternative; the whole answer is rejected if one does.
+        - "quantity_grams" must be a number between 10 and 500.
+        - Never use the same food_id twice as a planned item anywhere in the day, and never repeat a food inside one meal (an alternative may reappear in another meal).
+        - The calories of a meal's planned items together should land close to that meal's target calories given in the user message.
         - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
         - Never choose a food that contains or derives from anything in must_avoid_allergies (rule 6).
         - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
         PROMPT;
+    }
+
+    /**
+     * A plated day (up to ~36 foods with alternatives) is a long answer. A
+     * reasoning model spends tokens thinking first; with the provider's
+     * default output limit the JSON was cut off and Groq refused it (400
+     * "Failed to validate JSON"). Room for the answer, and low reasoning effort
+     * on gpt-oss models (fewer tokens, faster, less of the per-minute quota).
+     *
+     * @return array<string, mixed>
+     */
+    private function requestOptions(): array
+    {
+        $options = ['max_completion_tokens' => self::MAX_COMPLETION_TOKENS];
+
+        if (str_contains((string) config('ai.model'), 'gpt-oss')) {
+            $options['reasoning_effort'] = 'low';
+        }
+
+        return $options;
     }
 
     /**
@@ -390,30 +426,40 @@ class AiDraftPlanService
             }
 
             $rawItems = $rawMeal['items'] ?? null;
-            if (! is_array($rawItems) || count($rawItems) !== 1) {
+            if (! is_array($rawItems) || $rawItems === [] || count($rawItems) > self::MAX_ITEMS_PER_MEAL) {
                 return null;
             }
 
-            $item = $this->validateLlmItem($rawItems[0] ?? null, $validFoodIds);
-            if ($item === null || in_array($item['food_id'], $plannedFoodIds, true)) {
-                return null;
-            }
-
-            $alternatives = [];
-            foreach (($rawItems[0]['alternatives'] ?? []) as $rawAlt) {
-                if (count($alternatives) >= 2) {
-                    break;
-                }
-                $alt = $this->validateLlmItem($rawAlt, $validFoodIds);
-                if ($alt === null) {
+            $items = [];
+            $inThisMeal = [];
+            foreach ($rawItems as $rawItem) {
+                $item = $this->validateLlmItem($rawItem, $validFoodIds);
+                if ($item === null || in_array($item['food_id'], $plannedFoodIds, true) || in_array($item['food_id'], $inThisMeal, true)) {
                     return null;
                 }
-                $alternatives[] = $alt;
-            }
 
+                $alternatives = [];
+                foreach (($rawItem['alternatives'] ?? []) as $rawAlt) {
+                    if (count($alternatives) >= 2) {
+                        break;
+                    }
+                    $alt = $this->validateLlmItem($rawAlt, $validFoodIds);
+                    if ($alt === null) {
+                        return null;
+                    }
+                    // A duplicate or self-alternative is dropped, not a reason to discard the plan.
+                    if ($alt['food_id'] === $item['food_id'] || in_array($alt['food_id'], array_column($alternatives, 'food_id'), true)) {
+                        continue;
+                    }
+                    $alternatives[] = $alt;
+                }
+
+                $plannedFoodIds[] = $item['food_id'];
+                $inThisMeal[] = $item['food_id'];
+                $items[] = ['food_id' => $item['food_id'], 'quantity_grams' => $item['quantity_grams'], 'alternatives' => $alternatives];
+            }
             $seenMealNames[] = $name;
-            $plannedFoodIds[] = $item['food_id'];
-            $meals[] = ['name' => $name, 'items' => [['food_id' => $item['food_id'], 'quantity_grams' => $item['quantity_grams'], 'alternatives' => $alternatives]]];
+            $meals[] = ['name' => $name, 'items' => $items];
         }
 
         return $meals;
@@ -441,7 +487,7 @@ class AiDraftPlanService
             return null;
         }
 
-        if (! is_numeric($quantity) || $quantity < 50 || $quantity > 500) {
+        if (! is_numeric($quantity) || $quantity < 10 || $quantity > 500) {
             return null;
         }
 

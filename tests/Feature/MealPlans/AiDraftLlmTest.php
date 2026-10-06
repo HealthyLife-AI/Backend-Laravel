@@ -276,4 +276,40 @@ class AiDraftLlmTest extends TestCase
 
         Http::assertNothingSent();
     }
+
+    public function test_a_plated_meal_with_sides_and_two_alternatives_each_is_kept(): void
+    {
+        [$subscriber, $nutritionist] = $this->makeSubscriberWithProfile();
+        [$ful, $bread, $hummus, $labneh, $pita, $manakish] = Food::factory()->count(6)->create(['calories_per_100g' => 150])->all();
+
+        Http::fake(['*' => Http::response($this->chatCompletion(['meals' => [
+            ['name' => 'breakfast', 'items' => [
+                ['food_id' => $ful->id, 'quantity_grams' => 200, 'alternatives' => [['food_id' => $hummus->id, 'quantity_grams' => 150], ['food_id' => $labneh->id, 'quantity_grams' => 120]]],
+                ['food_id' => $bread->id, 'quantity_grams' => 30, 'alternatives' => [['food_id' => $pita->id, 'quantity_grams' => 30], ['food_id' => $manakish->id, 'quantity_grams' => 25]]],
+            ]],
+        ]]))]);
+
+        $response = $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft", [], $this->bearerFor($nutritionist))->assertCreated();
+
+        $response->assertJsonPath('is_ai_fallback', false);
+        $items = $response->json('meals.0.items');
+        $this->assertSame([$ful->id, $bread->id], array_column(array_column($items, 'food'), 'id'));
+        $this->assertSame([2, 2], array_map(fn ($item) => count($item['alternatives']), $items));
+    }
+
+    public function test_the_same_food_twice_as_a_planned_item_discards_the_response(): void
+    {
+        [$subscriber, $nutritionist] = $this->makeSubscriberWithProfile();
+        $food = Food::factory()->create(['calories_per_100g' => 150]);
+
+        Http::fake(['*' => Http::response($this->chatCompletion(['meals' => [
+            ['name' => 'breakfast', 'items' => [
+                ['food_id' => $food->id, 'quantity_grams' => 200, 'alternatives' => []],
+                ['food_id' => $food->id, 'quantity_grams' => 100, 'alternatives' => []],
+            ]],
+        ]]))]);
+
+        $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft", [], $this->bearerFor($nutritionist))
+            ->assertCreated()->assertJsonPath('is_ai_fallback', true);
+    }
 }

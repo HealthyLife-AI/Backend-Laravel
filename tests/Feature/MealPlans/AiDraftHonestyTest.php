@@ -236,4 +236,31 @@ class AiDraftHonestyTest extends TestCase
         $this->draft()->assertJsonPath('is_ai_fallback', true);
         Http::assertSentCount(2);
     }
+
+    public function test_the_draft_call_leaves_room_for_a_full_answer(): void
+    {
+        config(['ai.model' => 'openai/gpt-oss-120b']);
+        $food = Food::factory()->create(['name_en' => 'Foul', 'calories_per_100g' => 110]);
+        Http::fake(['*' => Http::response($this->validLlmResponse($food))]);
+
+        $this->draft();
+
+        Http::assertSent(fn (Request $request) => $request->data()['max_completion_tokens'] === 6000
+            && $request->data()['reasoning_effort'] === 'low');
+    }
+
+    public function test_an_answer_with_an_unknown_food_is_asked_again_once_then_falls_back(): void
+    {
+        $food = Food::factory()->create(['name_en' => 'Foul', 'calories_per_100g' => 110]);
+        $bad = ['choices' => [['message' => ['content' => json_encode(['meals' => [['name' => 'breakfast', 'items' => [
+            ['food_id' => $food->id, 'quantity_grams' => 200, 'alternatives' => [['food_id' => $food->id + 999, 'quantity_grams' => 100]]],
+        ]]]])]]]];
+
+        Http::fakeSequence()->push($bad)->push($this->validLlmResponse($food));
+        $this->draft()->assertJsonPath('is_ai_fallback', false);
+        Http::assertSentCount(2);
+
+        Http::fake(['*' => Http::response($bad)]);
+        $this->draft()->assertJsonPath('is_ai_fallback', true);
+    }
 }

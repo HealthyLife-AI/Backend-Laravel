@@ -48,7 +48,10 @@ class OpenAiCompatibleClient
      * @param  array<int, array{role: string, content: string}>  $messages
      * @return array<string, mixed>
      */
-    public function chatJson(array $messages): array
+    /**
+     * @param  array<string, mixed>  $options  extra request fields for this call (e.g. max_completion_tokens)
+     */
+    public function chatJson(array $messages, array $options = []): array
     {
         if (! $this->isConfigured()) {
             throw new AiGenerationException('No AI provider is configured (OPENAI_BASE_URL/OPENAI_API_KEY, or the OPENAI_SUMMARY_* equivalents).');
@@ -63,7 +66,7 @@ class OpenAiCompatibleClient
                     'messages' => $messages,
                     'response_format' => ['type' => 'json_object'],
                     'temperature' => 0.4,
-                ]);
+                ] + $options);
         } catch (Throwable $e) {
             throw new AiGenerationException('Could not reach the AI provider.', previous: $e);
         }
