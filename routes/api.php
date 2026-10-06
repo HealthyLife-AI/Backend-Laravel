@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\FollowUp\MyReviewController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\HealthRecords\ClientHealthRecordsController;
+use App\Http\Controllers\Api\HealthRecords\MyHealthRecordsController;
 use App\Http\Controllers\Api\Logs\ClientMealLogController;
 use App\Http\Controllers\Api\Logs\MealLogController;
 use App\Http\Controllers\Api\Logs\MeasurementController;
@@ -122,6 +124,22 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/body-composition-readings', [BodyCompositionReadingController::class, 'store'])
             ->middleware('follow-up')
             ->name('clients.body-composition-readings.store');
+
+        // Step 1: goal, medications, allergies, and deciding the patient's proposals.
+        Route::get('clients/{subscriber}/health-records', [ClientHealthRecordsController::class, 'show'])->name('clients.health-records.show');
+        Route::get('clients/{subscriber}/proposals', [ClientHealthRecordsController::class, 'proposals'])->name('clients.proposals.index');
+        Route::middleware('follow-up')->group(function () {
+            Route::put('clients/{subscriber}/goal', [ClientHealthRecordsController::class, 'updateGoal'])->name('clients.goal.update');
+            Route::post('clients/{subscriber}/medications', [ClientHealthRecordsController::class, 'storeMedication'])->name('clients.medications.store');
+            Route::put('clients/{subscriber}/medications/{medication}', [ClientHealthRecordsController::class, 'updateMedication'])->whereNumber('medication')->name('clients.medications.update');
+            Route::delete('clients/{subscriber}/medications/{medication}', [ClientHealthRecordsController::class, 'destroyMedication'])->whereNumber('medication')->name('clients.medications.destroy');
+            Route::post('clients/{subscriber}/medications/{medication}/review', [ClientHealthRecordsController::class, 'reviewMedication'])->whereNumber('medication')->name('clients.medications.review');
+            Route::post('clients/{subscriber}/allergies', [ClientHealthRecordsController::class, 'storeAllergy'])->name('clients.allergies.store');
+            Route::put('clients/{subscriber}/allergies/{allergy}', [ClientHealthRecordsController::class, 'updateAllergy'])->whereNumber('allergy')->name('clients.allergies.update');
+            Route::delete('clients/{subscriber}/allergies/{allergy}', [ClientHealthRecordsController::class, 'destroyAllergy'])->whereNumber('allergy')->name('clients.allergies.destroy');
+            Route::post('clients/{subscriber}/proposals/{proposal}/approve', [ClientHealthRecordsController::class, 'approve'])->whereNumber('proposal')->name('clients.proposals.approve');
+            Route::post('clients/{subscriber}/proposals/{proposal}/reject', [ClientHealthRecordsController::class, 'reject'])->whereNumber('proposal')->name('clients.proposals.reject');
+        });
     });
 
     // FR-25: read-only reference data — no permission gate beyond being
@@ -224,6 +242,10 @@ Route::prefix('v1')->name('api.')->group(function () {
     // Phase 2, the patient's side. Same gates as the other patient data
     // endpoints: follow_up_ended (jwt), then consent_required.
     Route::middleware(['jwt', 'consent', 'role:client'])->group(function () {
+        Route::get('me/health-profile', [MyHealthRecordsController::class, 'show'])->name('me.health-profile.show');
+        Route::post('me/proposals', [MyHealthRecordsController::class, 'propose'])->name('me.proposals.store');
+        Route::delete('me/proposals/{proposal}', [MyHealthRecordsController::class, 'withdraw'])->whereNumber('proposal')->name('me.proposals.destroy');
+
         Route::get('me/reviews', [MyReviewController::class, 'index'])->name('me.reviews.index');
         Route::post('me/reviews/{review}/acknowledge', [MyReviewController::class, 'acknowledge'])->whereNumber('review')->name('me.reviews.acknowledge');
         Route::post('me/tasks/{task}/done', [MyReviewController::class, 'done'])->whereNumber('task')->name('me.tasks.done');

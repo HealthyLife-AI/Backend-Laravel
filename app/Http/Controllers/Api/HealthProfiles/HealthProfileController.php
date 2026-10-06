@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\HealthProfiles\UpdateHealthProfileRequest;
 use App\Http\Resources\HealthProfileResource;
 use App\Models\Subscriber;
+use App\Services\HealthRecords\HealthRecordService;
 use App\Services\Nutrition\NutritionCalculatorService;
 use Illuminate\Http\Response;
 
@@ -51,11 +52,22 @@ class HealthProfileController extends Controller
             activityLevel: $data['activity_level'],
         );
 
+        // The structured records own medications and allergies now. An older
+        // client may still send the JSON arrays: they are merged by name (never
+        // a wipe), then the JSON is rewritten from the records.
+        $legacyMedications = array_key_exists('medications', $data) ? ($data['medications'] ?? []) : null;
+        $legacyAllergies = array_key_exists('allergies', $data) ? ($data['allergies'] ?? []) : null;
+        unset($data['medications'], $data['allergies']);
+
         $profile = $subscriber->healthProfile()->updateOrCreate(
             ['subscriber_id' => $subscriber->id],
             $data,
         );
 
-        return new HealthProfileResource($profile);
+        $records = app(HealthRecordService::class);
+        $records->syncLegacyArrays($subscriber, $legacyMedications, $legacyAllergies);
+        $records->mirror($subscriber);
+
+        return new HealthProfileResource($profile->refresh());
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Clients\ListClientsRequest;
 use App\Http\Requests\Clients\StoreClientRequest;
 use App\Http\Resources\SubscriberResource;
+use App\Models\PatientGoal;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Clients\ClientCodeAllocator;
@@ -41,7 +42,7 @@ class ClientController extends Controller
      */
     public function index(ListClientsRequest $request): AnonymousResourceCollection
     {
-        $query = Subscriber::query()->with('user');
+        $query = Subscriber::query()->with('user')->withCount(['proposals as pending_proposals_count' => fn ($q) => $q->where('status', 'pending')]);
 
         // Archived patients are a separate list, never mixed into the roster.
         if ($request->boolean('archived')) {
@@ -109,6 +110,12 @@ class ClientController extends Controller
                 // line serializes this same instance into the
                 // response, so it must already be correct.
                 'status' => 'pending',
+            ]);
+
+            // The structured goal starts from the one chosen when adding the patient.
+            PatientGoal::create([
+                'subscriber_id' => $subscriber->id,
+                'goal_type' => array_search($subscriber->goal, ['weight_loss' => 'weight_loss', 'weight_gain' => 'weight_gain', 'weight_maintenance' => 'weight_maintenance', 'health_energy' => 'health_monitoring'], true) ?: 'other',
             ]);
 
             $invite = $this->invites->issue($subscriber);

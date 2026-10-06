@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\ArabicText;
+use App\Support\FoodTagger;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'name_en',
     'name_ar',
     'usda_fdc_id',
+    'allergens',
+    'shopping_section',
     'seed_key',
     'calories_per_100g',
     'protein_g_per_100g',
@@ -38,11 +41,23 @@ class Food extends Model
         static::saving(function (Food $food) {
             $food->name_ar_normalized = ArabicText::normalize($food->name_ar);
         });
+
+        // A new food is tagged (allergen groups, shopping section) unless the
+        // caller set them; see FoodTagger.
+        static::creating(function (Food $food) {
+            if ($food->allergens === null) {
+                $tags = app(FoodTagger::class)->tagsFor($food);
+                $food->allergens = $tags['allergens'];
+                $food->shopping_section ??= $tags['section'];
+            }
+            $food->shopping_section ??= 'other';
+        });
     }
 
     protected function casts(): array
     {
         return [
+            'allergens' => 'array',
             'calories_per_100g' => 'decimal:1',
             'protein_g_per_100g' => 'decimal:1',
             'carbs_g_per_100g' => 'decimal:1',

@@ -42,6 +42,8 @@ class SubscriberResource extends JsonResource
             'adherence_status' => $this->adherence_status,
             'last_logged_at' => $this->last_logged_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
+            // Patient-proposed profile changes awaiting the nutritionist (only on the roster).
+            $this->mergeWhen(isset($this->pending_proposals_count), fn () => ['pending_proposals_count' => (int) $this->pending_proposals_count]),
             $this->mergeWhen($this->withConsent, fn () => [
                 'consent' => app(ConsentService::class)->dashboardStatus($this->user),
             ]),

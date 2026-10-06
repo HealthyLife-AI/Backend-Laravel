@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Clients;
 
 use App\Http\Controllers\Controller;
+use App\Models\ProfileProposal;
 use App\Models\Subscriber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -51,6 +52,7 @@ class DashboardController extends Controller
             'stopped_logging' => (int) $row->stopped_logging,
             'not_logged_today' => (int) $row->not_logged_today,
             'archived' => Subscriber::query()->archived()->count(),
+            'pending_proposals' => ProfileProposal::query()->where('status', 'pending')->whereIn('subscriber_id', Subscriber::query()->select('id'))->count(),
         ]);
     }
 }

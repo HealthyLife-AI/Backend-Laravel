@@ -1,0 +1,203 @@
+key_type,key,name_ar,name_en,allergens,shopping_section
+seed,white-rice-cooked-arabic-style,"أرز أبيض مطبوخ","White Rice, Cooked (Arabic style)",,grains_starches
+seed,basmati-rice-cooked,"أرز بسمتي مطبوخ","Basmati Rice, Cooked",,grains_starches
+seed,mujaddara-rice-and-lentils,مجدرة,"Mujaddara (Rice & Lentils)",,grains_starches
+seed,chicken-kabsa,"كبسة دجاج","Chicken Kabsa",,meat_poultry_fish
+seed,beef-biryani,"برياني لحم","Beef Biryani",milk_lactose,meat_poultry_fish
+seed,musakhan-sumac-chicken,"مسخن دجاج","Musakhan (Sumac Chicken)",wheat_gluten;tree_nuts,meat_poultry_fish
+seed,fatteh-with-chickpeas,"فتة حمص","Fatteh with Chickpeas",wheat_gluten;milk_lactose;sesame;tree_nuts,legumes_nuts
+seed,hummus,"حمص بطحينة",Hummus,sesame,legumes_nuts
+seed,baba-ghanoush,"متبل باذنجان","Baba Ghanoush",sesame,produce
+seed,tabbouleh,تبولة,Tabbouleh,wheat_gluten,produce
+seed,fattoush,فتوش,Fattoush,wheat_gluten,produce
+seed,stuffed-grape-leaves-vegetarian,"ورق عنب بزيت الزيتون","Stuffed Grape Leaves (Vegetarian)",,produce
+seed,fried-kibbeh,"كبة مقلية","Fried Kibbeh",wheat_gluten;tree_nuts,meat_poultry_fish
+seed,raw-kibbeh-kibbeh-nayyeh,"كبة نية","Raw Kibbeh (Kibbeh Nayyeh)",wheat_gluten,meat_poultry_fish
+seed,chicken-shawarma,"شاورما دجاج","Chicken Shawarma",milk_lactose,meat_poultry_fish
+seed,beef-shawarma,"شاورما لحم","Beef Shawarma",sesame,meat_poultry_fish
+seed,falafel,فلافل,Falafel,sesame,legumes_nuts
+seed,moussaka-eggplant,"مسقعة باذنجان","Moussaka (Eggplant)",,produce
+seed,molokhia-with-chicken,"ملوخية بدجاج","Molokhia with Chicken",,produce
+seed,molokhia-plain,"ملوخية سادة","Molokhia, Plain",,produce
+seed,maqluba-with-chicken,"مقلوبة دجاج","Maqluba with Chicken",tree_nuts,grains_starches
+seed,mansaf,منسف,Mansaf,milk_lactose;wheat_gluten;tree_nuts,meat_poultry_fish
+seed,shish-tawook,"شيش طاووق","Shish Tawook",milk_lactose,meat_poultry_fish
+seed,grilled-kofta,"كفتة مشوية","Grilled Kofta",,meat_poultry_fish
+seed,grilled-fish-general,"سمك مشوي","Grilled Fish (General)",fish,meat_poultry_fish
+seed,spinach-with-olive-oil,"سبانخ بزيت الزيتون","Spinach with Olive Oil",,produce
+seed,green-beans-with-olive-oil,"فاصولياء خضراء بزيت الزيتون","Green Beans with Olive Oil",,produce
+seed,white-bean-stew,"لوبيا بالزيت","White Bean Stew",,legumes_nuts
+seed,lentil-soup,"شوربة عدس","Lentil Soup",,legumes_nuts
+seed,ful-medames,"فول مدمس","Ful Medames",sesame,legumes_nuts
+seed,boiled-egg-arabic-breakfast,"بيض مسلوق","Boiled Egg (Arabic breakfast)",egg,dairy_eggs
+seed,akkawi-white-cheese,"جبنة عكاوي","Akkawi White Cheese",milk_lactose,dairy_eggs
+seed,labneh,لبنة,Labneh,milk_lactose,dairy_eggs
+seed,zaatar-with-olive-oil,"زعتر وزيت","Zaatar with Olive Oil",sesame,oils_spices
+seed,zaatar-manakish,"مناقيش زعتر","Zaatar Manakish",wheat_gluten;sesame,grains_starches
+seed,arabic-pita-bread,"خبز عربي","Arabic Pita Bread",wheat_gluten,grains_starches
+seed,whole-wheat-bread-arabic-style,"خبز حبوب كاملة","Whole Wheat Bread (Arabic style)",wheat_gluten,grains_starches
+seed,shakshuka,شكشوكة,Shakshuka,egg,dairy_eggs
+seed,musabaha,"مسبحة حمص",Musabaha,sesame,legumes_nuts
+seed,zucchini-mutabbal,"متبلة كوسا","Zucchini Mutabbal",sesame;milk_lactose,produce
+seed,okra-stew,"يخنة بامية","Okra Stew",,produce
+seed,kidney-bean-stew,"يخنة فاصولياء حمراء","Kidney Bean Stew",,legumes_nuts
+seed,bulgur-with-tomato,"برغل بالبندورة","Bulgur with Tomato",wheat_gluten,grains_starches
+seed,egyptian-koshari,"كشري مصري","Egyptian Koshari",wheat_gluten,grains_starches
+seed,egyptian-taameya,"طعمية مصرية","Egyptian Taameya",sesame,legumes_nuts
+seed,okra-with-meat,"بامية باللحم","Okra with Meat",,meat_poultry_fish
+seed,saleeg-chicken-rice,"سليق دجاج","Saleeg Chicken Rice",milk_lactose,grains_starches
+seed,jareesh-cracked-wheat-porridge,جريش,"Jareesh (Cracked Wheat Porridge)",wheat_gluten;milk_lactose,grains_starches
+seed,thareed,ثريد,Thareed,wheat_gluten,meat_poultry_fish
+seed,halawet-el-jibn,"حلاوة الجبن","Halawet El Jibn",milk_lactose;wheat_gluten;tree_nuts,other
+seed,kunafa,كنافة,Kunafa,milk_lactose;wheat_gluten;tree_nuts,other
+seed,baklava,بقلاوة,Baklava,wheat_gluten;tree_nuts;milk_lactose,other
+seed,om-ali,"أم علي","Om Ali",milk_lactose;wheat_gluten;tree_nuts,other
+seed,muhallabia,مهلبية,Muhallabia,milk_lactose;tree_nuts,dairy_eggs
+seed,dates,تمر,Dates,,produce
+seed,plain-yogurt-arabic-style,زبادي,"Plain Yogurt (Arabic style)",milk_lactose,dairy_eggs
+seed,greek-style-salad-arabic-version,"سلطة يونانية","Greek-Style Salad (Arabic version)",milk_lactose,produce
+seed,cheese-rolls-riqaq,"رقاق بالجبنة","Cheese Rolls (Riqaq)",milk_lactose;wheat_gluten,grains_starches
+fdc,171688,"تفاح طازج بالقشر","Apples, raw, with skin (Includes foods for USDA's Food Distribution Program)",,produce
+fdc,173944,"موز طازج","Bananas, raw",,produce
+fdc,169097,"برتقال طازج","Oranges, raw, all commercial varieties",,produce
+fdc,169105,"يوسفي طازج (مندلينا)","Tangerines, (mandarin oranges), raw",,produce
+fdc,174683,"عنب طازج","Grapes, red or green (European type, such as Thompson seedless), raw",,produce
+fdc,167762,"فراولة طازجة","Strawberries, raw",,produce
+fdc,167765,"بطيخ أحمر طازج","Watermelon, raw",,produce
+fdc,169092,"شمام طازج","Melons, cantaloupe, raw",,produce
+fdc,169910,"مانجو طازجة","Mangos, raw",,produce
+fdc,169124,"أناناس طازج","Pineapple, raw, all varieties",,produce
+fdc,169118,"كمثرى طازجة (إجاص)","Pears, raw",,produce
+fdc,169928,"خوخ طازج","Peaches, yellow, raw",,produce
+fdc,171697,"مشمش طازج","Apricots, raw",,produce
+fdc,171719,"كرز طازج","Cherries, sweet, raw",,produce
+fdc,169134,"رمان طازج","Pomegranates, raw",,produce
+fdc,173021,"تين طازج","Figs, raw",,produce
+fdc,174665,"تين مجفف","Figs, dried, uncooked",,produce
+fdc,168153,"كيوي طازج","Kiwifruit, green, raw",,produce
+fdc,173044,"جوافة طازجة","Guavas, common, raw",,produce
+fdc,167746,"ليمون طازج بدون قشر","Lemons, raw, without peel",,produce
+fdc,173033,"جريب فروت طازج","Grapefruit, raw, pink and red and white, all areas",,produce
+fdc,171705,"أفوكادو طازج","Avocados, raw, all commercial varieties",,produce
+fdc,171711,"توت أزرق طازج","Blueberries, raw",,produce
+fdc,168191,"تمر مجدول","Dates, medjool",,produce
+fdc,171726,"تمر دقلة نور","Dates, deglet noor",,produce
+fdc,168165,زبيب,"Raisins, dark, seedless (Includes foods for USDA's Food Distribution Program)",,produce
+fdc,173941,"مشمش مجفف","Apricots, dried, sulfured, uncooked",,produce
+fdc,168162,"برقوق مجفف","Plums, dried (prunes), uncooked",,produce
+fdc,170170,"جوز هند مبشور مجفف","Nuts, coconut meat, dried (desiccated), not sweetened",,legumes_nuts
+fdc,168409,"خيار طازج بالقشر","Cucumber, with peel, raw",,produce
+fdc,170457,"طماطم طازجة","Tomatoes, red, ripe, raw, year round average",,produce
+fdc,169247,"خس طازج","Lettuce, cos or romaine, raw",,produce
+fdc,170393,"جزر نيء","Carrots, raw",,produce
+fdc,170000,"بصل نيء","Onions, raw",,produce
+fdc,169230,"ثوم نيء","Garlic, raw",,produce
+fdc,170427,"فلفل رومي أخضر نيء","Peppers, sweet, green, raw",,produce
+fdc,170108,"فلفل رومي أحمر نيء","Peppers, sweet, red, raw",,produce
+fdc,170440,"بطاطا مسلوقة","Potatoes, boiled, cooked without skin, flesh, without salt",,produce
+fdc,170093,"بطاطا مشوية بالفرن","Potatoes, baked, flesh and skin, without salt",,produce
+fdc,168483,"بطاطا حلوة مشوية","Sweet potato, cooked, baked in skin, flesh, without salt",,produce
+fdc,169228,"باذنجان نيء","Eggplant, raw",,produce
+fdc,169291,"كوسا نيئة","Squash, summer, zucchini, includes skin, raw",,produce
+fdc,170379,"بروكلي نيء","Broccoli, raw",,produce
+fdc,169986,"قرنبيط نيء (زهرة)","Cauliflower, raw",,produce
+fdc,169975,"ملفوف نيء","Cabbage, raw",,produce
+fdc,168462,"سبانخ نيئة","Spinach, raw",,produce
+fdc,170416,"بقدونس طازج","Parsley, fresh",,produce
+fdc,173475,"نعناع طازج","Spearmint, fresh",,produce
+fdc,169961,"فاصولياء خضراء نيئة","Beans, snap, green, raw",,produce
+fdc,170419,"بازيلاء خضراء نيئة","Peas, green, raw",,produce
+fdc,169998,"ذرة حلوة نيئة","Corn, sweet, yellow, raw",,produce
+fdc,169251,"فطر نيء","Mushrooms, white, raw",,produce
+fdc,169145,"شمندر نيء (بنجر)","Beets, raw",,produce
+fdc,169276,"فجل طازج","Radishes, raw",,produce
+fdc,169260,"بامية نيئة","Okra, raw",,produce
+fdc,168420,"ملوخية مطبوخة","Jute, potherb, cooked, boiled, drained, without salt",,produce
+fdc,169387,"جرجير طازج","Arugula, raw",,produce
+fdc,169988,"كرفس طازج","Celery, raw",,produce
+fdc,169094,"زيتون أسود","Olives, ripe, canned (small-extra large)",,produce
+fdc,168878,"أرز أبيض طويل الحبة مطبوخ","Rice, white, long-grain, regular, enriched, cooked",,grains_starches
+fdc,169704,"أرز بني مطبوخ","Rice, brown, long-grain, cooked (Includes foods for USDA's Food Distribution Program)",,grains_starches
+fdc,170287,"برغل مطبوخ","Bulgur, cooked",wheat_gluten,grains_starches
+fdc,173904,"شوفان جاف (غير مطبوخ)","Cereals, oats, regular and quick, not fortified, dry",wheat_gluten,grains_starches
+fdc,169737,"معكرونة مطبوخة","Pasta, cooked, enriched, without added salt",wheat_gluten,grains_starches
+fdc,168910,"معكرونة قمح كامل مطبوخة","Pasta, whole-wheat, cooked (Includes foods for USDA's Food Distribution Program)",wheat_gluten,grains_starches
+fdc,168917,"كينوا مطبوخة","Quinoa, cooked",,grains_starches
+fdc,169700,"كسكس مطبوخ","Couscous, cooked",wheat_gluten,grains_starches
+fdc,174915,"خبز عربي أبيض","Bread, pita, white, enriched",wheat_gluten,grains_starches
+fdc,174916,"خبز عربي قمح كامل","Bread, pita, whole-wheat",wheat_gluten,grains_starches
+fdc,174924,"خبز توست أبيض","Bread, white, commercially prepared (includes soft bread crumbs)",wheat_gluten,grains_starches
+fdc,172688,"خبز توست قمح كامل","Bread, whole-wheat, commercially prepared",wheat_gluten,grains_starches
+fdc,168894,"دقيق قمح أبيض","Wheat flour, white, all-purpose, enriched, bleached",wheat_gluten,grains_starches
+fdc,168893,"دقيق قمح كامل","Wheat flour, whole-grain (Includes foods for USDA's Food Distribution Program)",wheat_gluten,grains_starches
+fdc,174648,"رقائق الذرة (كورن فليكس)","Cereals ready-to-eat, RALSTON Corn Flakes",wheat_gluten,grains_starches
+fdc,167959,فشار,"Snacks, popcorn, air-popped",,other
+fdc,172421,"عدس مطبوخ","Lentils, mature seeds, cooked, boiled, without salt",,legumes_nuts
+fdc,173757,"حمص مطبوخ","Chickpeas (garbanzo beans, bengal gram), mature seeds, cooked, boiled, without salt",,legumes_nuts
+fdc,173753,"فول مطبوخ","Broadbeans (fava beans), mature seeds, cooked, boiled, without salt",,legumes_nuts
+fdc,175194,"فاصولياء حمراء مطبوخة","Beans, kidney, red, mature seeds, cooked, boiled, without salt",,legumes_nuts
+fdc,175203,"فاصولياء بيضاء مطبوخة","Beans, white, mature seeds, cooked, boiled, without salt",,legumes_nuts
+fdc,172455,"فلافل محضرة منزليا","Falafel, home-prepared",wheat_gluten;sesame,legumes_nuts
+fdc,170189,طحينة,"Seeds, sesame butter, tahini, from roasted and toasted kernels (most common type)",sesame,oils_spices
+fdc,171477,"صدر دجاج مشوي بدون جلد","Chicken, broilers or fryers, breast, meat only, cooked, roasted",,meat_poultry_fish
+fdc,172388,"فخذ دجاج مشوي بدون جلد","Chicken, broilers or fryers, thigh, meat only, cooked, roasted",,meat_poultry_fish
+fdc,171450,"دجاج كامل مشوي مع الجلد","Chicken, broilers or fryers, meat and skin, cooked, roasted",,meat_poultry_fish
+fdc,174032,"لحم بقري مفروم مطبوخ (15% دهون)","Beef, ground, 85% lean meat / 15% fat, patty, cooked, broiled",,meat_poultry_fish
+fdc,174031,"لحم بقري مفروم مطبوخ (10% دهون)","Beef, ground, 90% lean meat / 10% fat, patty, cooked, broiled",,meat_poultry_fish
+fdc,173118,"ستيك لحم بقري مشوي","Beef, top sirloin, steak, separable lean only, trimmed to 1/8"" fat, choice, cooked, broiled",,meat_poultry_fish
+fdc,168627,"كبدة بقر مطبوخة","Beef, variety meats and by-products, liver, cooked, pan-fried",,meat_poultry_fish
+fdc,171481,"ديك رومي (حبش) مطبوخ","Turkey, whole, meat only, cooked, roasted",,meat_poultry_fish
+fdc,175168,"سمك سلمون مطبوخ","Fish, salmon, Atlantic, farmed, cooked, dry heat",fish,meat_poultry_fish
+fdc,173709,"سمك تونا معلب بالماء","Fish, tuna, light, canned in water, drained solids (Includes foods for USDA's Food Distribution Program)",fish,meat_poultry_fish
+fdc,173708,"سمك تونا معلب بالزيت","Fish, tuna, light, canned in oil, drained solids",fish,meat_poultry_fish
+fdc,175177,"سمك البلطي مطبوخ","Fish, tilapia, cooked, dry heat",fish,meat_poultry_fish
+fdc,171963,"سمك الهامور مطبوخ","Fish, grouper, mixed species, cooked, dry heat",fish,meat_poultry_fish
+fdc,175139,"سردين معلب بالزيت","Fish, sardine, Atlantic, canned in oil, drained solids with bone",fish,meat_poultry_fish
+fdc,171971,"روبيان (جمبري) مطبوخ","Crustaceans, shrimp, mixed species, cooked, moist heat (may contain additives to retain moisture)",shellfish,meat_poultry_fish
+fdc,173424,"بيض كامل مسلوق","Egg, whole, cooked, hard-boiled",egg,dairy_eggs
+fdc,171287,"بيض كامل نيء","Egg, whole, raw, fresh",egg,dairy_eggs
+fdc,172183,"بياض بيض نيء","Egg, white, raw, fresh",egg,dairy_eggs
+fdc,173423,"بيض مقلي","Egg, whole, cooked, fried",egg,dairy_eggs
+fdc,171265,"حليب كامل الدسم","Milk, whole, 3.25% milkfat, with added vitamin D",milk_lactose,dairy_eggs
+fdc,171267,"حليب قليل الدسم (2%)","Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",milk_lactose,dairy_eggs
+fdc,171269,"حليب خالي الدسم","Milk, nonfat, fluid, with added vitamin A and vitamin D (fat free or skim)",milk_lactose,dairy_eggs
+fdc,171284,"لبن زبادي كامل الدسم","Yogurt, plain, whole milk",milk_lactose,dairy_eggs
+fdc,170886,"لبن زبادي قليل الدسم","Yogurt, plain, low fat",milk_lactose,dairy_eggs
+fdc,170894,"زبادي يوناني خالي الدسم","Yogurt, Greek, plain, nonfat (Includes foods for USDA's Food Distribution Program)",milk_lactose,dairy_eggs
+fdc,173420,"جبنة بيضاء (فيتا)","Cheese, feta",milk_lactose,dairy_eggs
+fdc,172182,"جبنة قريش (كوتيج)","Cheese, cottage, lowfat, 2% milkfat",milk_lactose,dairy_eggs
+fdc,170845,"جبنة موزاريلا","Cheese, mozzarella, whole milk",milk_lactose,dairy_eggs
+fdc,170899,"جبنة شيدر","Cheese, cheddar, sharp, sliced",milk_lactose,dairy_eggs
+fdc,170874,"لبن رائب (عيران)","Milk, buttermilk, fluid, cultured, lowfat",milk_lactose,dairy_eggs
+fdc,173410,زبدة,"Butter, salted",milk_lactose,dairy_eggs
+fdc,173412,سمن,"Butter oil, anhydrous",milk_lactose,oils_spices
+fdc,170567,لوز,"Nuts, almonds",tree_nuts,legumes_nuts
+fdc,170187,"جوز (عين الجمل)","Nuts, walnuts, english",tree_nuts,legumes_nuts
+fdc,170184,"فستق حلبي نيء (غير محمص)","Nuts, pistachio nuts, raw",tree_nuts,legumes_nuts
+fdc,170162,"كاجو نيء (غير محمص)","Nuts, cashew nuts, raw",tree_nuts,legumes_nuts
+fdc,172430,"فول سوداني نيء (غير محمص)","Peanuts, all types, raw",peanuts,legumes_nuts
+fdc,172470,"زبدة الفول السوداني","Peanut butter, smooth style, without salt",peanuts,legumes_nuts
+fdc,170554,"بذور الشيا المجففة","Seeds, chia seeds, dried",,legumes_nuts
+fdc,169414,"بذور الكتان","Seeds, flaxseed",,legumes_nuts
+fdc,170562,"بذور دوار الشمس المجففة","Seeds, sunflower seed kernels, dried",,legumes_nuts
+fdc,170556,"بذور اليقطين المجففة","Seeds, pumpkin and squash seed kernels, dried",,legumes_nuts
+fdc,170150,"سمسم مجفف","Seeds, sesame seeds, whole, dried",sesame,legumes_nuts
+fdc,171413,"زيت زيتون","Oil, olive, salad or cooking",,oils_spices
+fdc,171017,"زيت دوار الشمس","Oil, sunflower, linoleic (less than 60%)",,oils_spices
+fdc,171029,"زيت ذرة","Oil, corn, industrial and retail, all purpose salad or cooking",,oils_spices
+fdc,169655,"سكر أبيض","Sugars, granulated",,other
+fdc,169640,عسل,Honey,,other
+fdc,169641,مربى,"Jams and preserves",,other
+fdc,170273,"شوكولاتة داكنة (70-85%)","Chocolate, dark, 70-85% cacao solids",soy;milk_lactose,other
+fdc,167587,"شوكولاتة بالحليب","Candies, milk chocolate",milk_lactose;soy,other
+fdc,174950,"بسكويت سادة","Cookies, butter, commercially prepared, enriched",wheat_gluten;milk_lactose;egg,grains_starches
+fdc,172704,"كيك سادة","Cake, pound, commercially prepared, butter (includes fresh and frozen)",wheat_gluten;milk_lactose;egg,grains_starches
+fdc,167575,"آيس كريم فانيلا","Ice creams, vanilla",milk_lactose;egg,dairy_eggs
+fdc,167996,"حلاوة طحينية","Candies, halavah, plain",sesame,other
+fdc,169098,"عصير برتقال طازج","Orange juice, raw (Includes foods for USDA's Food Distribution Program)",,produce
+fdc,173933,"عصير تفاح","Apple juice, canned or bottled, unsweetened, without added ascorbic acid",,produce
+fdc,171890,"قهوة سوداء","Beverages, coffee, brewed, prepared with tap water",,other
+fdc,173227,"شاي أسود","Beverages, tea, black, brewed, prepared with tap water",,other
+fdc,174852,"مشروب غازي","Beverages, carbonated, cola, regular",,other
+fdc,170879,"حليب بالشوكولاتة","Milk, chocolate, fluid, commercial, whole, with added vitamin A and vitamin D",milk_lactose,dairy_eggs
+fdc,170174,"مياه جوز الهند","Nuts, coconut water (liquid from coconuts)",,other
