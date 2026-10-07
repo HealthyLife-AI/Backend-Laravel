@@ -25,6 +25,8 @@ class ListClientsRequest extends FormRequest
             'search' => ['sometimes', 'string', 'max:255'],
             // true: only patients whose follow-up ended; default: only the rest.
             'archived' => ['sometimes', 'boolean'],
+            // true: only patients with profile proposals awaiting approval.
+            'pending_proposals' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];
     }

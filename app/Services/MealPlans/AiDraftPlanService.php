@@ -9,6 +9,7 @@ use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Ai\OpenAiCompatibleClient;
+use App\Services\HealthRecords\HealthRecordService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -97,17 +98,21 @@ class AiDraftPlanService
         abort_if($profile === null, 422, 'This client needs a health profile (calorie needs, allergies) before an AI draft can be generated.');
 
         $dailyCalories = (int) $profile->daily_calorie_needs;
-        $allergyTerms = array_map('mb_strtolower', $profile->allergies ?? []);
+        // Approved data only. Foods are excluded by allergen group (every class:
+        // allergy, intolerance, avoid) and, for free text, by name.
+        $records = app(HealthRecordService::class);
+        $groups = $records->allergyGroups($subscriber);
+        $allergyTerms = array_values(array_unique(array_map('mb_strtolower', array_merge($profile->allergies ?? [], $records->otherAllergyTexts($subscriber)))));
 
         $approvedFoods = Food::approved()->get();
-        $safeFoods = $approvedFoods->reject(fn (Food $food) => $this->containsAllergen($food, $allergyTerms));
+        $safeFoods = $approvedFoods->reject(fn (Food $food) => array_intersect($food->allergens ?? [], $groups) !== [] || $this->containsAllergen($food, $allergyTerms));
 
         abort_if($safeFoods->isEmpty(), 422, 'No approved foods are free of this client\'s allergies — add more foods to the database before drafting.');
 
         $meals = null;
 
         if ($this->llm->isConfigured()) {
-            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->goal);
+            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups);
         } else {
             Log::info('AI draft: no provider configured, using rule-based generation.', ['reason' => 'not_configured']);
         }
@@ -130,13 +135,13 @@ class AiDraftPlanService
      *
      * @return array<int, array<string, mixed>>|null
      */
-    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): ?array
+    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = []): ?array
     {
         $candidates = $this->menuFor($safeFoods);
 
         $messages = [
             ['role' => 'system', 'content' => $this->systemPrompt()],
-            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal)],
+            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups)],
         ];
 
         // One retry for a passing hiccup, so a single click doesn't fall back:
@@ -197,12 +202,17 @@ class AiDraftPlanService
         Use every piece of the "client_profile" in the user message to
         make intelligent, clinically sound food choices:
 
-        1. GOAL — adapt food choices:
-           - Weight loss → favour high-protein, high-fibre,
+        1. GOAL (client_profile.goal) — adapt food choices:
+           - weight_loss → favour high-protein, high-fibre,
              lower-calorie-density foods; prefer grilled/baked over fried.
-           - Weight gain / muscle building → include calorie-dense
-             nutritious foods, larger portions of complex carbs & protein.
-           - Maintenance → balanced variety across macronutrients.
+           - weight_gain → include calorie-dense nutritious foods, larger
+             portions of complex carbs & protein.
+           - muscle_gain → protein at every meal, complex carbs around
+             training; see training_days_per_week / training_type.
+           - weight_maintenance / health_energy → balanced variety across
+             macronutrients, steady energy through the day.
+           - medical_condition / other → follow the health conditions and the
+             nutritionist notes closely; be conservative.
 
         2. HEALTH CONDITIONS — critical dietary adjustments:
            - Diabetes / insulin resistance → low glycaemic-index carbs,
@@ -336,7 +346,7 @@ class AiDraftPlanService
             ->values();
     }
 
-    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal): string
+    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = []): string
     {
         // Compact rows, one array per food, in the order of food_columns.
         $foods = $candidateFoods->map(fn (Food $food) => [
@@ -357,6 +367,9 @@ class AiDraftPlanService
         // professional nutritionist — not just calorie-fit.
         $clientProfile = array_filter([
             'goal' => $goal,
+            'target_weight_kg' => $profile->subscriber?->patientGoal?->target_weight_kg !== null ? (float) $profile->subscriber->patientGoal->target_weight_kg : null,
+            'training_days_per_week' => $profile->subscriber?->patientGoal?->training_days_per_week,
+            'training_type' => $profile->subscriber?->patientGoal?->training_type,
             'gender' => $profile->gender,
             'age' => $profile->age,
             'weight_kg' => $profile->weight_kg !== null ? (float) $profile->weight_kg : null,
@@ -383,8 +396,9 @@ class AiDraftPlanService
         }
 
         // Stated again on its own, as a hard rule rather than context (system prompt rule 6).
-        if (! empty($profile->allergies)) {
-            $payload = ['must_avoid_allergies' => array_values($profile->allergies)] + $payload;
+        $avoid = array_values(array_unique(array_merge($profile->allergies ?? [], array_map(fn ($g) => str_replace('_', ' / ', $g), $groups))));
+        if ($avoid !== []) {
+            $payload = ['must_avoid_allergies' => $avoid] + $payload;
         }
 
         return json_encode($payload, JSON_UNESCAPED_UNICODE);

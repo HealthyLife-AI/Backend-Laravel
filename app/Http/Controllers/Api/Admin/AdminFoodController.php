@@ -60,7 +60,11 @@ class AdminFoodController extends Controller
     {
         $usage = $this->usage($food);
 
-        if (($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
+        // Only nutrition values affect plans and logs; re-tagging (allergens,
+        // shopping section) needs no in-use confirmation.
+        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section'])->all())->isDirty();
+
+        if ($changesValues && ($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
             return response()->json([
                 'message' => 'This food is used in meal plans or client logs. Resend with confirm_in_use to save.',
                 'code' => 'food_in_use_confirm',

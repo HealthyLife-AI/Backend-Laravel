@@ -28,7 +28,107 @@ never in plain prefs/localStorage.
 
 ## Patient app changes
 
-### Phase 2, batch 1 (follow-up between sessions) — latest
+### Phase 2, rest (health profile, appointments, shopping list) — latest
+
+#### Step 1 — هدفي، أدويتي، الحساسيات
+
+The patient **reads** the approved profile and **proposes** changes; nothing
+they send takes effect until the nutritionist approves it.
+
+| Screen | Call |
+|---|---|
+| Read the profile | `GET /me/health-profile` → `{goal, medications[], allergies[], proposals[]}` (proposals: the patient's own from the last 60 days, any status) |
+| Propose | `POST /me/proposals` `{kind: goal\|medication\|allergy, action: add\|edit\|remove, target_id?, data}` → `201` the proposal (`status: pending`). Goal is always `edit` (no `target_id`). Edit/remove of a medication or allergy needs its `target_id` |
+| Withdraw | `DELETE /me/proposals/{id}` while still `pending` |
+
+`data` per kind:
+- **goal**: `goal_type` (`weight_loss`, `weight_gain`, `muscle_gain`, `weight_maintenance`, `health_energy`, `medical_condition`, `other` — the patient may pick any), `target_weight_kg?`, `target_date?` (future), `activity_level?`, `training_days_per_week?` (0–7), and for `muscle_gain` only `training_level?` (`beginner`/`intermediate`/`advanced`), `training_type?` (`strength`/`cardio`/`mixed`/`sports`), `details?` (≤ 300).
+- **medication**: `name` (≤ 100), `dose?` (free text), `frequency?`, `timing?` (`before`/`with`/`after`/`empty_stomach`/`any`), `reason?`, `status?` (`ongoing` default, or `until` + `until_date`).
+- **allergy**: `group` (`tree_nuts`, `peanuts`, `milk_lactose`, `egg`, `wheat_gluten`, `sesame`, `fish`, `shellfish`, `soy`, or `other` + `other_text`), `class` (`confirmed_allergy`/`intolerance`/`avoid`), `note?`.
+
+Show each pending proposal as «بانتظار اعتماد الأخصائي»; when decided the
+patient gets one generic notification (`type: proposal_decided`, category
+`nutritionist`, `data.proposal_id`) — re-read the profile. A medication can
+carry `reviewed_at` / `review_note` from the nutritionist: show it as their
+note, never as advice from the app.
+
+**Foods now carry `allergens`** (subset of the nine groups) and
+`shopping_section` everywhere a food appears (search, plan, logs). When a
+plan food's `allergens` intersect the patient's approved allergy groups, show
+«قد يحتوي مسبب حساسيتك» next to it.
+
+#### Step 2 — الجدولة والمكالمات
+
+| Call | Notes |
+|---|---|
+| `GET /me/appointments/slots?type=` | `type`: `follow_up` (30 min), `results_review` (30), `quick_consult` (15). → `{duration_minutes, timezone, video_available, days: [{date, times: [ISO 8601]}]}`; from 12 h ahead to 30 days |
+| `POST /me/appointments` | `{type, starts_at (one of the times), channel: whatsapp\|phone\|video, topics?: [weight, meals, plan_change, results, medications, other], note? (≤ 300)}` → `201` |
+| `PATCH /me/appointments/{id}` | `{starts_at}` reschedule |
+| `DELETE /me/appointments/{id}` | cancel → the appointment with `status: cancelled` |
+| `GET /me/appointments?scope=upcoming\|past` | plain array |
+
+Appointment: `{id, type, channel, starts_at, ends_at, status (booked/cancelled/completed/no_show), topics, note, cancelled_by, cancel_reason, meeting_link (video only)}`.
+**Reminders (24 h, 1 h, 5 min) are local notifications you schedule**; the
+server pushes only `appointment_cancelled` / `appointment_rescheduled` when
+the nutritionist changes it (category `nutritionist`, `data.appointment_id`).
+
+#### Step 3 — قائمة التسوق
+
+`GET /me/meal-plan` carries `shopping_section` and `allergens` per food. Build
+the list in the app: sum grams per food across the plan, group by section:
+`produce` خضار وفواكه، `meat_poultry_fish` لحوم ودواجن وأسماك، `dairy_eggs`
+ألبان وبيض، `grains_starches` حبوب ونشويات، `legumes_nuts` بقوليات ومكسرات،
+`oils_spices` زيوت وتوابل، `other` أخرى.
+
+#### New error codes
+
+| Code | Show (Arabic) | Way forward |
+|---|---|---|
+| `proposal_exists` (409) | «لديك طلب معلّق لهذا العنصر بانتظار الأخصائي.» | Wait, or withdraw it first |
+| `proposal_invalid` (422) | «حدّد العنصر الذي تريد تعديله أو حذفه.» | Send `target_id` |
+| `proposal_not_pending` (409) | «تمت مراجعة هذا الطلب بالفعل.» | Refresh the profile |
+| `already_recorded` (409) | «هذه الحساسية مسجّلة في ملفك.» | Edit the existing one |
+| `appointment_exists` (409) | «لديك موعد قادم بالفعل. يمكنك تعديله أو إلغاؤه.» | Open the upcoming appointment |
+| `slot_unavailable` (422) / `slot_taken` (409) | «هذا الوقت لم يعد متاحًا، اختر وقتًا آخر.» | Reload the slots |
+| `appointment_locked` (422) | «لا يمكن تعديل الموعد أو إلغاؤه قبل أقل من 12 ساعة. تواصل مع أخصائيك.» | WhatsApp `nutritionist_whatsapp` from the error |
+| `video_unavailable` (422) | «مكالمات الفيديو غير متاحة مع أخصائيك حاليًا.» | Pick WhatsApp or phone |
+| `appointment_closed` (409) | «هذا الموعد لم يعد قائمًا.» | Refresh the list |
+
+#### Arabic texts for medications and allergies — ⚠️ للمراجعة السريرية
+
+Every patient-facing label below must be checked by a nutritionist before launch.
+
+| Key | Arabic |
+|---|---|
+| allergy group `tree_nuts` | المكسرات |
+| `peanuts` | الفول السوداني |
+| `milk_lactose` | الحليب ومشتقاته (اللاكتوز) |
+| `egg` | البيض |
+| `wheat_gluten` | القمح والجلوتين |
+| `sesame` | السمسم |
+| `fish` | السمك |
+| `shellfish` | القشريات والمأكولات البحرية |
+| `soy` | الصويا |
+| `other` | أخرى (اكتبها) |
+| class `confirmed_allergy` | حساسية مؤكدة |
+| `intolerance` | عدم تحمّل |
+| `avoid` | أتجنبه |
+| timing `before` | قبل الأكل |
+| `with` | مع الأكل |
+| `after` | بعد الأكل |
+| `empty_stomach` | على معدة فارغة |
+| `any` | في أي وقت |
+| status `ongoing` / `until` | مستمر / حتى تاريخ |
+| reviewed medication | «راجعها أخصائيك» + the note |
+| food warning | «قد يحتوي مسبب حساسيتك» |
+| medication disclaimer (show on أدويتي) | «هذه المعلومات لمتابعة أخصائيك فقط ولا تُعد نصيحة دوائية. لا تغيّر أدويتك دون استشارة طبيبك.» |
+| pending proposal | «بانتظار اعتماد الأخصائي» |
+
+The food allergen tags are rule-based for most of the catalog; the curated
+Arabic items are hand-tagged in `database/data/food_tags_curated.csv` for a
+nutritionist to review.
+
+### Phase 2, batch 1 (follow-up between sessions)
 
 Screens: «ملاحظات الأخصائي» (notes, rating, key points, tasks), the
 notifications inbox «التنبيهات», notification settings «الإشعارات», and the
@@ -661,6 +761,7 @@ envelope).
 | `adherence` | `stable` \| `declining` \| `stopped_logging` |
 | `search` | matches client name or code, **prefix only** (`"sar"` matches "Sara", not "Ansara") |
 | `archived` | `1` / `true`: only archived patients. Omitted or `0`: only patients still followed up (the default roster never mixes the two) |
+| `pending_proposals` | `1` / `true`: only patients with profile proposals awaiting approval (each row carries `pending_proposals_count`) |
 | `per_page` | 1–100, default 20 |
 
 ### `GET /clients/{id}`
@@ -2386,3 +2487,36 @@ Patient endpoints (`/me/reviews`, `/me/tasks/*`, `/me/notifications*`,
 [Patient app changes](#patient-app-changes). Deleting the patient (by the
 nutritionist or `DELETE /me/account`) deletes their reviews, tasks,
 notifications and preferences.
+
+---
+
+## Health profile records & proposals (Phase 2, Step 1)
+
+Nutritionist (`clients.manage`, own patient; writes `409 follow_up_ended` while paused):
+
+- `GET /clients/{id}/health-records` — goal, medications, allergies, pending proposals.
+- `PUT /clients/{id}/goal` — same fields as the patient's goal `data`. Also sets the legacy `subscribers.goal` (`muscle_gain` → `weight_gain`; `health_energy`, `medical_condition`, `other` → `health_monitoring`, so no weight milestone fires) and `health_profiles.activity_level` (calorie needs recomputed).
+- `POST|PUT|DELETE /clients/{id}/medications[/{medId}]` (delete archives), `POST /clients/{id}/medications/{medId}/review` `{note?}`.
+- `POST|PUT|DELETE /clients/{id}/allergies[/{allergyId}]`.
+- `GET /clients/{id}/proposals?status=pending|approved|rejected|withdrawn`.
+- `POST /clients/{id}/proposals/{p}/approve` and `/reject` `{note?}`. Approving applies the change in one transaction; if the item changed after the proposal was made → `409 proposal_stale`; decided already → `409 proposal_not_pending`.
+- `GET /clients` rows carry `pending_proposals_count`; `GET /dashboard/overview` carries `pending_proposals` and `appointments_today`.
+
+Legacy: `PUT /clients/{id}/health-profile` still accepts the `medications` / `allergies` arrays from older clients, but never wipes structured data — items are matched by name (allergies by group), unchanged ones keep every structured field, new names are added, only names really missing are removed. Omit the arrays to leave the records alone. The JSON columns are rewritten from the records after every change.
+
+AI draft: uses only approved data. Foods whose `allergens` intersect the patient's approved groups (all three classes) are excluded from both the AI menu and the rule-based fallback; `other` free text keeps the name match. The draft response carries `warnings: ["pending_allergy_proposal"]` while an allergy proposal is pending.
+
+## Appointments (Phase 2, Step 2)
+
+Nutritionist (`clients.manage`):
+
+- `GET|PUT /me/availability` `{windows: [{weekday (0 = Sunday), start, end}], days_off: [Y-m-d], meeting_link?}`. Times in `SCHEDULE_TIMEZONE`, on 15-minute boundaries (`422` otherwise; `window_invalid` if end ≤ start).
+- `GET /appointments?from&to` (default the next 14 days), each with `patient {id, name, code}`.
+- `PATCH /appointments/{id}` `{starts_at}` — the 12-hour rule is waived, availability and overlap are not (`422 slot_unavailable`); the patient is notified once.
+- `POST /appointments/{id}/cancel` `{reason?}` (patient notified), `/complete`, `/no-show`.
+
+No double booking: each appointment holds its 15-minute cells under a unique (nutritionist, cell) index, inside a transaction that locks the nutritionist row (`409 slot_taken` on a race). Ending follow-up cancels future appointments (`cancelled_by: system`) and notifies once; deleting the patient removes them.
+
+## Foods: allergens and shopping section (Phase 2, Steps 1 & 3)
+
+Every food carries `allergens` (subset of `tree_nuts, peanuts, milk_lactose, egg, wheat_gluten, sesame, fish, shellfish, soy`) and `shopping_section`. Sources: `database/data/food_tags_curated.csv` (curated Arabic dishes and Arabic-named items, by hand), USDA SR Legacy food category (`database/data/usda_fdc_categories.csv`, FoodData Central SR Legacy, April 2018) plus name rules for the rest; new foods are tagged on creation. The admin can edit both on `PUT /admin/foods/{id}` (`allergens[]`, `shopping_section`) without the in-use confirmation, which only nutrition values need.

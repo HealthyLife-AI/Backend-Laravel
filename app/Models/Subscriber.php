@@ -89,6 +89,26 @@ class Subscriber extends Model
     }
 
     /** Activated (invite accepted) and still followed up — not archived. */
+    public function patientGoal(): HasOne
+    {
+        return $this->hasOne(PatientGoal::class);
+    }
+
+    public function medications(): HasMany
+    {
+        return $this->hasMany(PatientMedication::class)->orderBy('id');
+    }
+
+    public function allergyItems(): HasMany
+    {
+        return $this->hasMany(PatientAllergy::class)->orderBy('id');
+    }
+
+    public function proposals(): HasMany
+    {
+        return $this->hasMany(ProfileProposal::class);
+    }
+
     public function followUpReviews(): HasMany
     {
         return $this->hasMany(FollowUpReview::class)->orderByDesc('created_at')->orderByDesc('id');

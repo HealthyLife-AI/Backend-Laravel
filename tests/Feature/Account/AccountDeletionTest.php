@@ -90,6 +90,9 @@ class AccountDeletionTest extends TestCase
         DB::table('follow_up_tasks')->insert(['review_id' => $reviewId, 'subscriber_id' => $subscriber->id, 'title' => 'walk', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('patient_notifications')->insert(['user_id' => $user->id, 'category' => 'plan', 'type' => 'plan_activated', 'title' => 't', 'body' => 'b', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('notification_preferences')->insert(['user_id' => $user->id, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('patient_medications')->insert(['subscriber_id' => $subscriber->id, 'name' => 'x', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('patient_allergies')->insert(['subscriber_id' => $subscriber->id, 'group' => 'egg', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('profile_proposals')->insert(['subscriber_id' => $subscriber->id, 'kind' => 'goal', 'action' => 'edit', 'created_at' => now(), 'updated_at' => now()]);
         MealItem::create(['meal_id' => $mealId, 'food_id' => $food->id, 'parent_item_id' => $item->id, 'quantity_grams' => 90, 'sort_order' => 1]);
         MealLog::create(['subscriber_id' => $subscriber->id, 'food_id' => $food->id, 'meal_item_id' => $item->id, 'meal_type' => 'lunch', 'quantity_grams' => 100, 'logged_at' => now()]);
         MealLog::create(['subscriber_id' => $subscriber->id, 'food_id' => $food->id, 'meal_type' => 'snack', 'quantity_grams' => 50, 'logged_at' => now()]);
@@ -198,7 +201,8 @@ class AccountDeletionTest extends TestCase
             'patient_consents', 'refresh_tokens', 'sessions', 'password_reset_tokens', 'model_has_roles', 'model_has_permissions', 'users',
             'meals', 'meal_items', 'nutritionist_profiles', 'foods', 'patient_deletion_notices', 'permissions', 'roles', 'role_has_permissions',
             'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations',
-            'follow_up_reviews', 'follow_up_tasks', 'patient_notifications', 'notification_preferences'];
+            'follow_up_reviews', 'follow_up_tasks', 'patient_notifications', 'notification_preferences',
+            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds'];
         foreach (Schema::getTables() as $table) {
             $name = $table['name'];
             $columns = Schema::getColumnListing($name);
@@ -208,7 +212,7 @@ class AccountDeletionTest extends TestCase
         }
 
         $this->assertSame(0, DB::table('subscribers')->where('id', $subscriberId)->count());
-        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks'] as $table) {
+        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals'] as $table) {
             $this->assertSame(0, DB::table($table)->where('subscriber_id', $subscriberId)->count(), "{$table} still has the patient's rows");
         }
         $this->assertSame(0, DB::table('meals')->whereIn('meal_plan_id', $planIds)->count());

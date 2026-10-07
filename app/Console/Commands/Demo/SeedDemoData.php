@@ -6,14 +6,19 @@ use App\Models\Alert;
 use App\Models\Food;
 use App\Models\MealItem;
 use App\Models\MealPlan;
+use App\Models\NutritionistAvailability;
+use App\Models\PatientGoal;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Adherence\AdherenceService;
 use App\Services\AiSummaries\WeeklySummaryService;
 use App\Services\Alerts\AlertEvaluationService;
+use App\Services\Appointments\AppointmentService;
 use App\Services\Clients\ClientCodeAllocator;
 use App\Services\Clients\ClientDeletionService;
 use App\Services\Clients\ClientInviteService;
+use App\Services\FollowUp\ReviewService;
+use App\Services\HealthRecords\HealthRecordService;
 use App\Services\Logs\PatientEntryService;
 use App\Services\MealPlans\MealPlanService;
 use App\Services\Nutrition\MealPlanCalculatorService;
@@ -202,6 +207,8 @@ class SeedDemoData extends Command
             }
         }
 
+        $this->seedFollowUp($nutritionist, $patients);
+
         $this->report($nutritionist, $patients, $active->count(), $fallbacks, $weekStart);
 
         return self::SUCCESS;
@@ -304,6 +311,12 @@ class SeedDemoData extends Command
                 activityLevel: $spec['activity_level'],
             );
             $subscriber->healthProfile()->create($profile);
+            PatientGoal::create([
+                'subscriber_id' => $subscriber->id,
+                'goal_type' => $spec['goal_type'] ?? ['weight_loss' => 'weight_loss', 'weight_gain' => 'weight_gain', 'weight_maintenance' => 'weight_maintenance', 'health_monitoring' => 'health_energy'][$spec['goal']],
+                'target_weight_kg' => $spec['goal'] === 'weight_loss' ? round($spec['weight_kg'] * 0.9, 1) : null,
+            ]);
+            app(HealthRecordService::class)->syncLegacyArrays($subscriber, $spec['medications'], $spec['allergies']);
 
             if (! $isNew) {
                 $plan = $plans->create($subscriber, [
@@ -476,5 +489,47 @@ class SeedDemoData extends Command
         $this->table(['#', 'Code', 'Name', 'Pattern', 'Account', 'Adherence', 'Alerts'], $rows);
 
         $this->line(sprintf('Weekly summaries (week of %s): %d written, %d via fallback.', $weekStart->toDateString(), $summarised, $fallbacks));
+    }
+
+    /**
+     * What the demo (and an app reviewer) needs to see the follow-up
+     * features: availability and an upcoming appointment, reviews with tasks
+     * (one acknowledged), notifications, and a pending allergy proposal for
+     * the patient the video follows.
+     *
+     * @param  list<Subscriber>  $patients
+     */
+    private function seedFollowUp(User $nutritionist, array $patients): void
+    {
+        $declining = $patients[array_search('declining', array_column(self::PATIENTS, 'pattern'), true)];
+        $stable = $patients[0];
+
+        foreach (range(0, 4) as $weekday) {
+            NutritionistAvailability::create(['nutritionist_id' => $nutritionist->id, 'weekday' => $weekday, 'start_time' => '09:00', 'end_time' => '14:00']);
+        }
+        $nutritionist->nutritionistProfile()->update(['reply_hours' => 'الأحد–الخميس 9–5']);
+
+        $appointments = app(AppointmentService::class);
+        foreach ($appointments->slots($nutritionist, 'follow_up') as $times) {
+            $appointments->book($declining, ['type' => 'follow_up', 'starts_at' => $times[0], 'channel' => 'whatsapp', 'topics' => ['weight', 'meals'], 'note' => 'أريد مراجعة وجبات العشاء.']);
+            break;
+        }
+
+        $reviews = app(ReviewService::class);
+        $reviews->create($declining, $nutritionist, [
+            'rating' => 'review_together',
+            'note' => 'لاحظت ارتفاع السعرات في آخر ثلاثة أيام، خصوصًا الحلويات المسائية. لنراجع وجبة العشاء معًا في الموعد القادم.',
+            'key_points' => ['استبدل الحلويات المسائية بفاكهة أو لبن', 'التزم بوجبة العشاء من الخطة'],
+            'tasks' => [['title' => 'سجّل كل الوجبات لمدة 3 أيام'], ['title' => 'مشي 20 دقيقة بعد العشاء']],
+        ]);
+        $done = $reviews->create($stable, $nutritionist, [
+            'rating' => 'on_track',
+            'note' => 'أداء ممتاز هذا الأسبوع، استمري على نفس النمط.',
+            'tasks' => [['title' => 'لترين ماء يوميًا']],
+        ]);
+        $done->forceFill(['acknowledged_at' => now()->subHours(3)])->save();
+        $done->tasks()->first()?->forceFill(['done_at' => now()->subHours(2)])->save();
+
+        app(HealthRecordService::class)->propose($declining, 'allergy', 'add', null, ['group' => 'sesame', 'class' => 'intolerance', 'note' => 'انتفاخ بعد الحمص والطحينة']);
     }
 }

@@ -8,9 +8,11 @@ use App\Http\Requests\MealPlans\UpdateMealPlanRequest;
 use App\Http\Resources\MealPlanResource;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
+use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
 use App\Services\MealPlans\MealPlanService;
 use App\Services\Notifications\NotificationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -104,12 +106,18 @@ class MealPlanController extends Controller
     }
 
     /** F-5 (PRD, P1): "Suggest a starting plan." Always a draft — see AiDraftPlanService. */
-    public function generateAiDraft(Subscriber $subscriber): MealPlanResource
+    public function generateAiDraft(Subscriber $subscriber): JsonResponse
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
         $plan = $this->aiDraft->generateDraft($subscriber, request()->user());
 
-        return new MealPlanResource($plan->load(self::EAGER_LOAD));
+        // An allergy the patient proposed is not used until approved: say so before the plan is approved.
+        $warnings = app(HealthRecordService::class)->hasPendingAllergyProposal($subscriber) ? ['pending_allergy_proposal'] : [];
+
+        $response = (new MealPlanResource($plan->load(self::EAGER_LOAD)))->response();
+        $response->setData(['warnings' => $warnings] + $response->getData(true));
+
+        return $response;
     }
 }

@@ -27,6 +27,9 @@ class FoodResource extends JsonResource
             'carbs_g_per_100g' => (float) $this->carbs_g_per_100g,
             'fat_g_per_100g' => (float) $this->fat_g_per_100g,
             'fiber_g_per_100g' => $this->fiber_g_per_100g !== null ? (float) $this->fiber_g_per_100g : null,
+            // Allergen groups (FoodTagger::GROUPS) and the shopping-list section.
+            'allergens' => $this->allergens ?? [],
+            'shopping_section' => $this->shopping_section ?? 'other',
         ];
     }
 }
