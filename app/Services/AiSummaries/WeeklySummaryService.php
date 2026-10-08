@@ -123,8 +123,8 @@ class WeeklySummaryService
 
         $readings = $subscriber->bodyCompositionReadings()
             ->whereBetween('recorded_at', [$weekStart->toDateString(), $weekEnd->toDateString()])
-            ->reorder('recorded_at')
-            ->get(['weight_kg']);
+            ->reorder('recorded_at')->orderBy('id')
+            ->get(['id', 'weight_kg']);
 
         return [
             'adherence_percent' => $adherence['adherence_percent'],

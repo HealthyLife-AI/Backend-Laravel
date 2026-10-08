@@ -117,8 +117,8 @@ class AlertEvaluationService
 
         $readings = $subscriber->bodyCompositionReadings()
             ->where('recorded_at', '>=', $windowStart->toDateString())
-            ->reorder('recorded_at')
-            ->get(['recorded_at', 'weight_kg']);
+            ->reorder('recorded_at')->orderBy('id')
+            ->get(['id', 'recorded_at', 'weight_kg']);
 
         if ($readings->count() < 2) {
             return;

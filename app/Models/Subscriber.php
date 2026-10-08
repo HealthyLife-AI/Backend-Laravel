@@ -61,7 +61,7 @@ class Subscriber extends Model
 
     public function bodyCompositionReadings(): HasMany
     {
-        return $this->hasMany(BodyCompositionReading::class)->orderByDesc('recorded_at');
+        return $this->hasMany(BodyCompositionReading::class)->orderByDesc('recorded_at')->orderByDesc('id');
     }
 
     public function invites(): HasMany

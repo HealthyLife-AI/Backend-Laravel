@@ -61,7 +61,7 @@ class MeasurementController extends Controller
                     ->whereDate('recorded_at', '<=', $request->string('to')->toString()),
             )
             // The relation is newest-first by default; this list is oldest-first.
-            ->reorder('recorded_at')
+            ->reorder('recorded_at')->orderBy('id')
             ->orderBy('id')
             ->get();
 
@@ -111,7 +111,11 @@ class MeasurementController extends Controller
         // the string Eloquent writes is not byte-identical across drivers,
         // so equality finds the row on MySQL and misses it on SQLite —
         // appending a duplicate in tests while passing in production.
+        // B3: only the patient's OWN reading of that day. A clinic-analyser
+        // reading on the same date is never touched from this endpoint; the
+        // two simply share the date (there is no unique index).
         $reading = $subscriber->bodyCompositionReadings()
+            ->where('source', BodyCompositionReading::SOURCE_SELF)
             ->whereDate('recorded_at', $recordedAt)
             ->first();
 
@@ -137,11 +141,6 @@ class MeasurementController extends Controller
             $this->window->throwLocked();
         }
 
-        // A client correcting their own entry keeps it self-reported. A
-        // client re-sending a day the nutritionist already measured in
-        // clinic must NOT downgrade that row's source to self-reported —
-        // the analyser figures on it stay analyser figures, so `source`
-        // is left as it is rather than re-stamped.
         $reading->fill($measurements);
 
         // BR-15: the patient changed a saved reading — shown to the
