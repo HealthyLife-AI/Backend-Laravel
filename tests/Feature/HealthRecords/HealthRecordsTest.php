@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\HealthRecords;
 
+use App\Exceptions\ApiCodeException;
 use App\Models\Food;
 use App\Models\HealthProfile;
 use App\Models\NotificationPreference;
@@ -12,6 +13,7 @@ use App\Models\PatientNotification;
 use App\Models\ProfileProposal;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\HealthRecords\HealthRecordService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -321,5 +323,32 @@ class HealthRecordsTest extends TestCase
 
         $this->getJson('/api/v1/me/meal-plan', $this->me())->assertOk()
             ->assertJsonPath('meals.0.items.0.food.allergens', ['soy'])->assertJsonPath('meals.0.items.0.food.shopping_section', 'grains_starches');
+    }
+
+    /**
+     * B7: a second decision working from a copy read before the first one
+     * committed (a double click) is refused inside the transaction and
+     * applies nothing.
+     */
+    public function test_a_stale_double_decision_applies_nothing(): void
+    {
+        $id = $this->propose(['kind' => 'allergy', 'action' => 'add', 'data' => ['group' => 'soy', 'class' => 'avoid']])->assertCreated()->json('id');
+        $stale = ProfileProposal::findOrFail($id);
+        $service = app(HealthRecordService::class);
+
+        $service->approve(ProfileProposal::findOrFail($id), $this->nutritionist, null);
+
+        foreach (['approve', 'reject'] as $decision) {
+            try {
+                $service->{$decision}($stale, $this->nutritionist, 'again');
+                $this->fail("{$decision} applied a decided proposal");
+            } catch (ApiCodeException $e) {
+                $this->assertSame('proposal_not_pending', $e->errorCode);
+            }
+        }
+
+        $this->assertSame(1, PatientAllergy::where('subscriber_id', $this->patient->id)->where('group', 'soy')->count());
+        $this->assertSame('approved', ProfileProposal::findOrFail($id)->status);
+        $this->assertNull(ProfileProposal::findOrFail($id)->decision_note);
     }
 }
