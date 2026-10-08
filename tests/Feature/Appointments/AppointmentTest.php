@@ -181,6 +181,22 @@ class AppointmentTest extends TestCase
         $this->assertStringNotContainsString('11:00', json_encode($this->pushes[0]));
     }
 
+    /** B5: a cancel two minutes after a reschedule is its own notice, and is pushed. */
+    public function test_a_cancel_right_after_a_reschedule_is_its_own_notice_and_pushed(): void
+    {
+        $id = $this->book('2026-10-13 10:00')->json('id');
+
+        $this->patchJson("/api/v1/appointments/{$id}", ['starts_at' => $this->at('2026-10-13 11:00')], $this->nurse())->assertOk();
+        $this->travel(2)->minutes();
+        $this->patchJson("/api/v1/appointments/{$id}", ['starts_at' => $this->at('2026-10-13 10:30')], $this->nurse())->assertOk();
+        $this->travel(2)->minutes();
+        $this->postJson("/api/v1/appointments/{$id}/cancel", ['reason' => 'ظرف'], $this->nurse())->assertOk();
+
+        // Two moves merge into one row (intended); the cancellation is separate.
+        $this->assertSame(['appointment_cancelled', 'appointment_rescheduled'], PatientNotification::where('user_id', $this->patient->user_id)->orderByDesc('id')->pluck('type')->all());
+        $this->assertCount(2, $this->pushes, 'one push for the move, one for the cancellation');
+    }
+
     public function test_the_nutritionist_lists_cancels_completes_and_marks_no_show(): void
     {
         $a = $this->book('2026-10-13 10:00')->json('id');

@@ -267,7 +267,9 @@ class AppointmentService
         $user = Subscriber::withoutGlobalScopes()->find($appointment->subscriber_id)?->user()->first();
 
         if ($user !== null) {
-            $this->notifications->notify($user, 'nutritionist', $type, ['appointment_id' => $appointment->id], "appointment:{$appointment->id}");
+            // B5: one key per type. A shared key let a cancel within 5 minutes of a
+            // reschedule refresh the «تغيّر موعدك» row and never push the cancellation.
+            $this->notifications->notify($user, 'nutritionist', $type, ['appointment_id' => $appointment->id], "appointment:{$appointment->id}:{$type}");
         }
     }
 }
