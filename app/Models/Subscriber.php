@@ -45,6 +45,7 @@ class Subscriber extends Model
         return [
             'last_logged_at' => 'datetime',
             'archived_at' => 'datetime',
+            'activated_at' => 'datetime',
         ];
     }
 

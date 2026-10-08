@@ -15,6 +15,7 @@ use App\Http\Requests\Auth\RefreshTokenRequest;
 use App\Http\Requests\Auth\RegisterNutritionistRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Resources\UserResource;
+use App\Models\Subscriber;
 use App\Models\User;
 use App\Notifications\Auth\ResetPasswordNotification;
 use App\Services\Auth\GoogleAuthService;
@@ -23,14 +24,15 @@ use App\Services\Auth\RefreshTokenService;
 use App\Services\Clients\FollowUpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 
 /**
  * F-1 / FR-01, FR-04, FR-05: nutritionist registration, login (with
- * lockout), and JWT access/refresh issuance. Client login uses the same
- * endpoints once Sprint 2's invite-link activation creates the account —
- * this controller doesn't distinguish by role.
+ * lockout), and JWT access/refresh issuance. Patients sign in through the
+ * same login with the username and generated password their nutritionist
+ * sent them (Part A).
  */
 class AuthController extends Controller
 {
@@ -57,34 +59,33 @@ class AuthController extends Controller
     }
 
     /**
-     * Authenticate with (email or phone) + password — a nutritionist has
-     * an email, a client (added by name + phone only, no email) logs in
-     * by phone instead. Locks the account for `jwt.lockout_minutes` after
-     * `jwt.max_login_attempts` consecutive failures (FR-04).
+     * Patients sign in with username + password (Part A), nutritionists
+     * with email + password. phone + password still works until the
+     * patient app ships username login. Locks an account for
+     * `jwt.lockout_minutes` after `jwt.max_login_attempts` consecutive
+     * failures (FR-04). A pending patient becomes active at their first
+     * successful sign-in.
      */
     public function login(LoginRequest $request): JsonResponse
     {
-        $user = $request->filled('email')
-            ? User::where('email', $request->string('email'))->first()
-            : User::where('phone', $request->string('phone'))->first();
+        if ($request->filled('username')) {
+            $candidates = User::where('username', $request->input('username'))->get();
+        } elseif ($request->filled('email')) {
+            $candidates = User::where('email', $request->string('email'))->get();
+        } else {
+            // TEMPORARY: remove after patient app ships username login.
+            // A phone is unique per nutritionist only, so several accounts can
+            // share it: the password is checked against each of them.
+            $candidates = User::where('phone', $request->string('phone')->toString())->get();
+        }
 
-        // Same generic error whether the email doesn't exist or the
+        $user = $this->authenticate($candidates, $request->string('password')->toString());
+
+        // Same generic error whether the account doesn't exist or the
         // password is wrong — don't leak which one it was.
         if ($user === null) {
             return $this->invalidCredentialsResponse();
         }
-
-        if ($user->isLocked()) {
-            throw new AccountLockedException($user->locked_until);
-        }
-
-        if (! Hash::check($request->string('password'), $user->password)) {
-            $user->registerFailedLogin();
-
-            return $this->invalidCredentialsResponse();
-        }
-
-        $user->resetFailedLogins();
 
         // Checked only after the password matched, so the response never
         // reveals to a stranger that an account exists or is archived.
@@ -92,7 +93,47 @@ class AuthController extends Controller
             throw new FollowUpEndedException(app(FollowUpService::class)->endedDetails($user));
         }
 
+        // "pending" means "hasn't signed in yet": the first sign-in activates.
+        Subscriber::withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'active', 'activated_at' => now()]);
+
         return $this->tokenResponse($user, $request, 200);
+    }
+
+    /**
+     * The account among $candidates whose password matches, or null. A
+     * locked account never signs in: when every candidate is locked the
+     * answer is 423 (as for a single account); otherwise a wrong password
+     * counts as a failed attempt on every unlocked candidate — knowing a
+     * shared number is not a way around the lockout.
+     *
+     * @param  Collection<int, User>  $candidates
+     */
+    private function authenticate(Collection $candidates, string $password): ?User
+    {
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        $unlocked = $candidates->reject(fn (User $user) => $user->isLocked());
+
+        if ($unlocked->isEmpty()) {
+            throw new AccountLockedException($candidates->min('locked_until'));
+        }
+
+        $match = $unlocked->first(fn (User $user) => Hash::check($password, $user->password));
+
+        if ($match === null) {
+            $unlocked->each(fn (User $user) => $user->registerFailedLogin());
+
+            return null;
+        }
+
+        $match->resetFailedLogins();
+
+        return $match;
     }
 
     /**

@@ -36,6 +36,8 @@ class SubscriberResource extends JsonResource
             'code' => $this->code,
             'name' => $this->user->name,
             'phone' => $this->user->phone,
+            // Patients sign in with it; null for patients added before usernames.
+            'username' => $this->user->username,
             'goal' => $this->goal,
             'status' => $this->status,
             'archived_at' => $this->archived_at?->toIso8601String(),

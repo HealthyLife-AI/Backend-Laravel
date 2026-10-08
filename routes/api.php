@@ -12,7 +12,7 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientFollowUpController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
-use App\Http\Controllers\Api\Clients\ClientSignInLinkController;
+use App\Http\Controllers\Api\Clients\ClientPasswordResetController;
 use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Consent\ConsentController;
 use App\Http\Controllers\Api\FollowUp\ClientReviewController;
@@ -97,10 +97,11 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/archive', [ClientFollowUpController::class, 'archive'])->name('clients.archive');
         Route::post('clients/{subscriber}/resume', [ClientFollowUpController::class, 'resume'])->name('clients.resume');
 
-        // A new one-time sign-in link for a patient who can't sign in (sent over WhatsApp).
-        Route::post('clients/{subscriber}/sign-in-link', [ClientSignInLinkController::class, 'store'])
-            ->middleware('follow-up')
-            ->name('clients.sign-in-link.store');
+        // Part A: a new generated password (and the username, if missing or changed),
+        // shown once for the nutritionist to send on WhatsApp. Ends every session.
+        Route::post('clients/{subscriber}/reset-password', [ClientPasswordResetController::class, 'store'])
+            ->middleware(['follow-up', 'throttle:credentials-reset'])
+            ->name('clients.reset-password.store');
 
         // Phase 2: the patient's meal log day by day, with each log's kind.
         Route::get('clients/{subscriber}/meal-logs/daily', [ClientMealLogController::class, 'daily'])->name('clients.meal-logs.daily');

@@ -114,5 +114,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai-draft', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()->id);
         });
+
+        // Part A: each reset mints a new password; cap it per nutritionist.
+        RateLimiter::for('credentials-reset', function (Request $request) {
+            return Limit::perMinute(20)->by($request->user()->id);
+        });
     }
 }

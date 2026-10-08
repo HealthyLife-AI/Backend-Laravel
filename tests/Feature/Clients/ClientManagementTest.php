@@ -24,21 +24,21 @@ class ClientManagementTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
     }
 
-    public function test_a_nutritionist_can_add_a_client_and_receives_an_invite_token(): void
+    public function test_a_nutritionist_can_add_a_client_and_receives_credentials(): void
     {
         $nutritionist = User::factory()->nutritionist()->create();
 
         $response = $this->postJson('/api/v1/clients', [
             'name' => 'Sara Ahmad',
             'phone' => '0501234567',
+            'username' => 'sara.ahmad',
             'goal' => 'weight_loss',
         ], $this->bearerFor($nutritionist));
 
         $response->assertCreated()->assertJsonStructure([
-            'client' => ['id', 'code', 'name', 'phone', 'goal', 'status'],
-            'invite_token',
-            'invite_expires_at',
-        ]);
+            'client' => ['id', 'code', 'name', 'phone', 'username', 'goal', 'status'],
+            'credentials' => ['username', 'password'],
+        ])->assertJsonMissingPath('invite_token');
 
         $this->assertSame('Sara Ahmad', $response->json('client.name'));
         $this->assertSame('pending', $response->json('client.status'));
@@ -48,7 +48,8 @@ class ClientManagementTest extends TestCase
         $this->assertTrue($subscriber->user->hasRole('client'));
         $this->assertSame($nutritionist->id, $subscriber->nutritionist_id);
 
-        $this->assertDatabaseCount('client_invites', 1);
+        // Part A: no invite link any more.
+        $this->assertDatabaseCount('client_invites', 0);
     }
 
     public function test_adding_a_client_rejects_a_duplicate_phone_for_the_same_nutritionist(): void
@@ -59,6 +60,7 @@ class ClientManagementTest extends TestCase
         $response = $this->postJson('/api/v1/clients', [
             'name' => 'Another Client',
             'phone' => '0501234567',
+            'username' => 'another.client',
             'goal' => 'weight_loss',
         ], $this->bearerFor($nutritionist));
 
@@ -74,6 +76,7 @@ class ClientManagementTest extends TestCase
         $response = $this->postJson('/api/v1/clients', [
             'name' => 'Client Of B',
             'phone' => '0501234567',
+            'username' => 'client.of.b',
             'goal' => 'weight_loss',
         ], $this->bearerFor($nutritionistB));
 
@@ -84,8 +87,8 @@ class ClientManagementTest extends TestCase
     {
         $nutritionist = User::factory()->nutritionist()->create();
 
-        $first = $this->postJson('/api/v1/clients', ['name' => 'A', 'phone' => '111', 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
-        $second = $this->postJson('/api/v1/clients', ['name' => 'B', 'phone' => '222', 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
+        $first = $this->postJson('/api/v1/clients', ['name' => 'A', 'phone' => '111', 'username' => 'client.a', 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
+        $second = $this->postJson('/api/v1/clients', ['name' => 'B', 'phone' => '222', 'username' => 'client.b', 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
 
         $this->assertSame('PT-101', $first->json('client.code'));
         $this->assertSame('PT-102', $second->json('client.code'));

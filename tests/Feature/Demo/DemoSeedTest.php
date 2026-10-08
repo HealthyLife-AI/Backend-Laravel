@@ -6,6 +6,7 @@ use App\Console\Commands\Demo\SeedDemoData;
 use App\Models\AiSummary;
 use App\Models\Alert;
 use App\Models\Appointment;
+use App\Models\ClientInvite;
 use App\Models\FollowUpReview;
 use App\Models\FollowUpTask;
 use App\Models\Food;
@@ -139,6 +140,19 @@ class DemoSeedTest extends TestCase
         $this->assertFalse($real->fresh()->is_demo);
         $this->assertNotNull(Subscriber::withoutGlobalScopes()->find($theirPatient->id));
         $this->assertSame(1, User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->count());
+    }
+
+    public function test_demo_patients_have_usernames_and_the_review_patient_signs_in_with_demo_password(): void
+    {
+        $this->artisan('demo:seed')->assertSuccessful();
+
+        $nutritionist = User::where('email', SeedDemoData::NUTRITIONIST_EMAIL)->first();
+        $usernames = User::where('nutritionist_id', $nutritionist->id)->pluck('username');
+        $this->assertCount(7, $usernames->filter(fn ($u) => str_starts_with((string) $u, 'demo.')));
+        $this->assertSame(0, ClientInvite::count());
+
+        $this->postJson('/api/v1/auth/login', ['username' => 'demo.khaled', 'password' => 'demo-test-password'])->assertOk();
+        $this->postJson('/api/v1/auth/login', ['phone' => '+15555550104', 'password' => 'demo-test-password'])->assertOk();
     }
 
     public function test_only_demo_flagged_accounts_are_created(): void

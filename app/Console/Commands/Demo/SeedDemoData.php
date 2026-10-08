@@ -16,7 +16,6 @@ use App\Services\Alerts\AlertEvaluationService;
 use App\Services\Appointments\AppointmentService;
 use App\Services\Clients\ClientCodeAllocator;
 use App\Services\Clients\ClientDeletionService;
-use App\Services\Clients\ClientInviteService;
 use App\Services\FollowUp\ReviewService;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\Logs\PatientEntryService;
@@ -83,36 +82,36 @@ class SeedDemoData extends Command
      * for fiction, so they never collide with a real number.
      */
     private const PATIENTS = [
-        ['pattern' => 'stable', 'name' => 'سارة الخطيب', 'phone' => '+15555550101', 'gender' => 'female', 'goal' => 'weight_maintenance',
+        ['pattern' => 'stable', 'name' => 'سارة الخطيب', 'phone' => '+15555550101', 'username' => 'demo.sara', 'gender' => 'female', 'goal' => 'weight_maintenance',
             'age' => 34, 'height_cm' => 163, 'weight_kg' => 64.0, 'weight_step' => 0.1, 'activity_level' => 'moderate',
             'health_conditions' => [], 'medications' => [], 'allergies' => ['المكسرات'], 'food_preferences' => ['تفضّل الأطباق المنزلية'],
             'surgery_history' => null, 'lab_notes' => 'فيتامين د 28 ng/mL (أقل من المثالي).', 'nutritionist_notes' => 'متابعة للحفاظ على الوزن بعد برنامج سابق.'],
-        ['pattern' => 'stable', 'name' => 'محمد العلي', 'phone' => '+15555550102', 'gender' => 'male', 'goal' => 'weight_loss',
+        ['pattern' => 'stable', 'name' => 'محمد العلي', 'phone' => '+15555550102', 'username' => 'demo.mohammad', 'gender' => 'male', 'goal' => 'weight_loss',
             'age' => 41, 'height_cm' => 176, 'weight_kg' => 96.0, 'weight_step' => -0.2, 'activity_level' => 'light',
             'health_conditions' => ['ارتفاع ضغط الدم'], 'medications' => [['name' => 'أملوديبين', 'dose' => '5 ملغ', 'schedule' => 'مرة يوميًا صباحًا']],
             'allergies' => [], 'food_preferences' => ['لا يحب السمك'],
             'surgery_history' => null, 'lab_notes' => 'الكوليسترول الكلي 215 mg/dL.', 'nutritionist_notes' => 'تقليل الملح والخبز الأبيض.'],
-        ['pattern' => 'stable', 'name' => 'نور الهدى سليمان', 'phone' => '+15555550103', 'gender' => 'female', 'goal' => 'health_monitoring',
+        ['pattern' => 'stable', 'name' => 'نور الهدى سليمان', 'phone' => '+15555550103', 'username' => 'demo.nour', 'gender' => 'female', 'goal' => 'health_monitoring',
             'age' => 52, 'height_cm' => 158, 'weight_kg' => 70.0, 'weight_step' => 0.0, 'activity_level' => 'light',
             'health_conditions' => ['سكري من النوع الثاني'], 'medications' => [['name' => 'ميتفورمين', 'dose' => '500 ملغ', 'schedule' => 'مرتين يوميًا مع الطعام']],
             'allergies' => [], 'food_preferences' => ['نباتية في أيام الصيام'],
             'surgery_history' => 'استئصال المرارة (2019).', 'lab_notes' => 'HbA1c 7.1%.', 'nutritionist_notes' => 'توزيع الكربوهيدرات على الوجبات.'],
-        ['pattern' => 'declining', 'name' => 'خالد منصور', 'phone' => '+15555550104', 'gender' => 'male', 'goal' => 'weight_loss',
+        ['pattern' => 'declining', 'name' => 'خالد منصور', 'phone' => '+15555550104', 'username' => 'demo.khaled', 'gender' => 'male', 'goal' => 'weight_loss',
             'age' => 38, 'height_cm' => 180, 'weight_kg' => 104.0, 'weight_step' => -0.15, 'activity_level' => 'light',
             'health_conditions' => ['مقاومة الإنسولين'], 'medications' => [],
             'allergies' => [], 'food_preferences' => ['يحب الحلويات الشرقية', 'يأكل خارج المنزل في نهاية الأسبوع'],
             'surgery_history' => null, 'lab_notes' => 'سكر صائم 108 mg/dL.', 'nutritionist_notes' => 'بدأ بحماس، يحتاج متابعة أسبوعية.'],
-        ['pattern' => 'stopped', 'name' => 'ريم عبد الله', 'phone' => '+15555550105', 'gender' => 'female', 'goal' => 'weight_loss',
+        ['pattern' => 'stopped', 'name' => 'ريم عبد الله', 'phone' => '+15555550105', 'username' => 'demo.reem', 'gender' => 'female', 'goal' => 'weight_loss',
             'age' => 27, 'height_cm' => 165, 'weight_kg' => 78.0, 'weight_step' => -0.2, 'activity_level' => 'moderate',
             'health_conditions' => [], 'medications' => [],
             'allergies' => ['الفراولة'], 'food_preferences' => ['تفضّل الوجبات السريعة التحضير'],
             'surgery_history' => null, 'lab_notes' => 'مخزون الحديد (فيريتين) 15 ng/mL.', 'nutritionist_notes' => 'دوام عمل طويل، الوجبات غير منتظمة.'],
-        ['pattern' => 'milestone', 'name' => 'يوسف الحسيني', 'phone' => '+15555550106', 'gender' => 'male', 'goal' => 'weight_loss',
+        ['pattern' => 'milestone', 'name' => 'يوسف الحسيني', 'phone' => '+15555550106', 'username' => 'demo.yousef', 'gender' => 'male', 'goal' => 'weight_loss',
             'age' => 45, 'height_cm' => 172, 'weight_kg' => 92.0, 'weight_step' => -0.6, 'activity_level' => 'moderate',
             'health_conditions' => ['دهون على الكبد'], 'medications' => [],
             'allergies' => [], 'food_preferences' => ['يمشي 30 دقيقة يوميًا'],
             'surgery_history' => null, 'lab_notes' => 'ALT 52 U/L.', 'nutritionist_notes' => 'ملتزم جدًا، نزول ثابت في الوزن.'],
-        ['pattern' => 'new', 'name' => 'هبة ناصر', 'phone' => '+15555550107', 'gender' => 'female', 'goal' => 'weight_gain',
+        ['pattern' => 'new', 'name' => 'هبة ناصر', 'phone' => '+15555550107', 'username' => 'demo.heba', 'gender' => 'female', 'goal' => 'weight_gain',
             'age' => 23, 'height_cm' => 167, 'weight_kg' => 49.0, 'weight_step' => 0.0, 'activity_level' => 'moderate',
             'health_conditions' => ['فقر دم'], 'medications' => [['name' => 'حديد', 'dose' => '65 ملغ', 'schedule' => 'مرة يوميًا']],
             'allergies' => ['اللاكتوز'], 'food_preferences' => ['تحب الأرز والدجاج'],
@@ -129,7 +128,6 @@ class SeedDemoData extends Command
         MealPlanService $plans,
         ClientCodeAllocator $codes,
         ClientDeletionService $deletion,
-        ClientInviteService $invites,
         NutritionCalculatorService $nutrition,
         MealPlanCalculatorService $calculator,
         AdherenceService $adherence,
@@ -181,10 +179,10 @@ class SeedDemoData extends Command
         config(['scheduling.self_trigger' => false]);
 
         try {
-            [$nutritionist, $patients] = DB::transaction(function () use ($password, $entries, $plans, $codes, $deletion, $invites, $nutrition, $calculator) {
+            [$nutritionist, $patients] = DB::transaction(function () use ($password, $entries, $plans, $codes, $deletion, $nutrition, $calculator) {
                 $this->removePrevious($deletion);
 
-                return $this->build($password, $entries, $plans, $codes, $invites, $nutrition, $calculator);
+                return $this->build($password, $entries, $plans, $codes, $nutrition, $calculator);
             });
         } finally {
             Carbon::setTestNow();
@@ -250,7 +248,6 @@ class SeedDemoData extends Command
         PatientEntryService $entries,
         MealPlanService $plans,
         ClientCodeAllocator $codes,
-        ClientInviteService $invites,
         NutritionCalculatorService $nutrition,
         MealPlanCalculatorService $calculator,
     ): array {
@@ -282,6 +279,8 @@ class SeedDemoData extends Command
             $user = User::create([
                 'name' => $spec['name'],
                 'phone' => $spec['phone'],
+                // Prefixed "demo." so a real patient's username is never taken by the demo.
+                'username' => $spec['username'],
                 // The video follows patient 4 in the app; the others can't sign in.
                 'password' => Hash::make($spec['pattern'] === 'declining' ? $password : Str::random(40)),
                 'nutritionist_id' => $nutritionist->id,
@@ -296,9 +295,9 @@ class SeedDemoData extends Command
                 'goal' => $spec['goal'],
                 'status' => $isNew ? 'pending' : 'active',
             ]);
-
-            if ($isNew) {
-                $invites->issue($subscriber);
+            // "pending" = hasn't signed in yet; the others signed in the day they were added.
+            if (! $isNew) {
+                $subscriber->forceFill(['activated_at' => now()])->save();
             }
 
             $profile = collect($spec)->only(['weight_kg', 'height_cm', 'age', 'gender', 'activity_level', 'health_conditions',
@@ -476,7 +475,7 @@ class SeedDemoData extends Command
         $this->info('Demo data ready.');
         $this->line('Dashboard login:   '.self::NUTRITIONIST_EMAIL.' / password = DEMO_PASSWORD');
         $declining = collect($patients)->search(fn (Subscriber $s, int $i) => self::PATIENTS[$i]['pattern'] === 'declining');
-        $this->line('Patient app login: phone '.self::PATIENTS[$declining]['phone'].' / password = DEMO_PASSWORD ('.self::PATIENTS[$declining]['name'].')');
+        $this->line('Patient app login: username '.self::PATIENTS[$declining]['username'].' (or phone '.self::PATIENTS[$declining]['phone'].') / password = DEMO_PASSWORD ('.self::PATIENTS[$declining]['name'].')');
         $this->newLine();
 
         $rows = [];
