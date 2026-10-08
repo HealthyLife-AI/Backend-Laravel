@@ -9,6 +9,7 @@ use App\Models\Subscriber;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\AiSummaries\WeeklySummaryService;
 use App\Services\Alerts\AlertEvaluationService;
+use App\Support\TrustedProxies;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -41,6 +42,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // B1: only the configured proxy's X-Forwarded-* headers are believed.
+        // Parsed (and "*" refused) here, so a bad TRUSTED_PROXIES stops the
+        // app at boot instead of silently trusting everyone.
+        config(['trustedproxy.proxies' => TrustedProxies::parse(config('trustedproxy.proxies'))]);
+
         // Re-evaluate a client's alerts right after new data about them is
         // saved, instead of waiting for tomorrow's 06:00 run: logging a
         // meal clears an open "no log" alert, a new weight reading can
