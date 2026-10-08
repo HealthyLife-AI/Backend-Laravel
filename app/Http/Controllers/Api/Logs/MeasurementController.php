@@ -10,6 +10,7 @@ use App\Http\Resources\BodyCompositionReadingResource;
 use App\Models\BodyCompositionReading;
 use App\Services\Logs\LogWindow;
 use App\Services\Logs\PatientEntryService;
+use App\Support\ClinicDay;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -99,7 +100,8 @@ class MeasurementController extends Controller
 
         abort_if($subscriber === null, 403, 'This account is not set up as a client.');
 
-        $recordedAt = $request->date('recorded_at')?->toDateString() ?? now()->toDateString();
+        // B4: "today" is the clinic's day, not UTC's.
+        $recordedAt = $request->filled('recorded_at') ? $request->string('recorded_at')->toString() : ClinicDay::today()->toDateString();
 
         // Only the fields BR-11 allows a client to submit. Taken from the
         // model's own list rather than re-typed here, so the rule has one
@@ -124,7 +126,7 @@ class MeasurementController extends Controller
             // accepted and marked late; only one beyond the rejection limit
             // is refused. Only a NEW one — re-sending a day that is already
             // saved is a replay and is handled below.
-            $reading = $this->entries->recordNewReading($subscriber, $request->date('recorded_at') ?? now(), $measurements);
+            $reading = $this->entries->recordNewReading($subscriber, ClinicDay::date($recordedAt), $measurements);
 
             return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
         }
