@@ -230,7 +230,12 @@ class AppointmentTest extends TestCase
         $this->getJson('/api/v1/appointments?from=2026-10-13&to=2026-10-13', $this->nurse())->assertOk()
             ->assertJsonPath('0.id', $a)->assertJsonPath('0.patient.code', $this->patient->code);
 
+        // B8: not before it starts (this used to be allowed days ahead).
+        $this->postJson("/api/v1/appointments/{$a}/complete", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_not_started');
+        $this->postJson("/api/v1/appointments/{$a}/no-show", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_not_started');
+        $this->travelTo(CarbonImmutable::parse('2026-10-13 10:00', $this->tz));
         $this->postJson("/api/v1/appointments/{$a}/complete", [], $this->nurse())->assertOk()->assertJsonPath('status', 'completed');
+        $this->travelTo(CarbonImmutable::parse('2026-10-11 08:00', $this->tz));
         $this->postJson("/api/v1/appointments/{$a}/cancel", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_closed');
 
         $b = $this->book('2026-10-14 10:00')->json('id');

@@ -174,6 +174,11 @@ class AppointmentService
     public function close(Appointment $appointment, string $status): Appointment
     {
         $this->assertBooked($appointment);
+
+        // B8: done / no-show describe something that happened; not before it starts.
+        if ($appointment->starts_at->isFuture()) {
+            throw new ApiCodeException('This appointment has not started yet.', 'appointment_not_started', 409);
+        }
         DB::table('appointment_holds')->where('appointment_id', $appointment->id)->delete();
         $appointment->forceFill(['status' => $status])->save();
 
