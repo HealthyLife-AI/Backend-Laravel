@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Clients;
 
 use App\Rules\PatientUsername;
+use App\Support\Phone;
 use App\Support\Username;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -26,6 +27,11 @@ class StoreClientRequest extends FormRequest
         if (is_string($this->input('username'))) {
             $this->merge(['username' => Username::normalize($this->input('username'))]);
         }
+
+        // Stored in international format so WhatsApp can open the chat directly.
+        if (is_string($this->input('phone'))) {
+            $this->merge(['phone' => Phone::clean($this->input('phone'))]);
+        }
     }
 
     /**
@@ -39,6 +45,7 @@ class StoreClientRequest extends FormRequest
                 'required',
                 'string',
                 'max:32',
+                'regex:'.Phone::E164,
                 Rule::unique('users', 'phone')->where('nutritionist_id', $this->user()->id),
             ],
             'username' => ['required', 'string', new PatientUsername, Rule::unique('users', 'username')],
@@ -50,6 +57,9 @@ class StoreClientRequest extends FormRequest
     public function messages(): array
     {
         // Says only that it is taken: nothing about whose it is.
-        return ['username.unique' => 'This username is taken.'];
+        return [
+            'username.unique' => 'This username is taken.',
+            'phone.regex' => 'Enter the phone in international format with the country code, e.g. +970599123456.',
+        ];
     }
 }

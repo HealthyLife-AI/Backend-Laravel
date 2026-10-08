@@ -22,6 +22,7 @@ use App\Services\Auth\GoogleAuthService;
 use App\Services\Auth\JwtService;
 use App\Services\Auth\RefreshTokenService;
 use App\Services\Clients\FollowUpService;
+use App\Support\Phone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -76,7 +77,9 @@ class AuthController extends Controller
             // TEMPORARY: remove after patient app ships username login.
             // A phone is unique per nutritionist only, so several accounts can
             // share it: the password is checked against each of them.
-            $candidates = User::where('phone', $request->string('phone')->toString())->get();
+            // Numbers saved before A5 may be stored as typed, so both forms are tried.
+            $phone = $request->string('phone')->toString();
+            $candidates = User::whereIn('phone', array_unique([$phone, Phone::clean($phone)]))->get();
         }
 
         $user = $this->authenticate($candidates, $request->string('password')->toString());
