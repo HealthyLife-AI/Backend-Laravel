@@ -63,16 +63,44 @@ class NutritionistAppointmentController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $data = $request->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from']]);
+        $data = $request->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+            // B9: one patient's appointments (the patient page). Scoped by
+            // nutritionist_id below, so another nutritionist's patient id
+            // simply matches nothing: an empty list, never a 403.
+            'subscriber_id' => ['nullable', 'integer'],
+        ]);
         $tz = (string) config('scheduling.timezone');
         $from = CarbonImmutable::parse($data['from'] ?? 'today', $tz)->startOfDay();
         $to = CarbonImmutable::parse($data['to'] ?? $from->addDays(13)->toDateString(), $tz)->endOfDay();
 
         return AppointmentResource::collection(
             Appointment::query()->where('nutritionist_id', Auth::id())
+                ->when(isset($data['subscriber_id']), fn ($q) => $q->where('subscriber_id', $data['subscriber_id']))
                 ->whereBetween('starts_at', [$from->setTimezone(config('app.timezone')), $to->setTimezone(config('app.timezone'))])
                 ->with('subscriber.user')->orderBy('starts_at')->get()
         );
+    }
+
+    /**
+     * B9: free times to move this appointment to — its own type, its own
+     * cells not counted as taken, and no 12-hour lead (the nutritionist is
+     * exempt). Same shape as GET /me/appointments/slots.
+     */
+    public function slots(string $appointment): JsonResponse
+    {
+        $appointment = $this->own($appointment);
+        $nutritionist = Auth::user();
+
+        return response()->json([
+            'type' => $appointment->type,
+            'duration_minutes' => Appointment::DURATIONS[$appointment->type],
+            'timezone' => config('scheduling.timezone'),
+            'video_available' => filled($nutritionist->nutritionistProfile?->meeting_link),
+            'days' => collect($this->appointments->slots($nutritionist, $appointment->type, $appointment->id, applyLead: false))
+                ->map(fn ($times, $date) => ['date' => $date, 'times' => $times])->values(),
+        ]);
     }
 
     public function update(string $appointment, Request $request): AppointmentResource

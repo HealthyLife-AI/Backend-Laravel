@@ -121,6 +121,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/availability', [NutritionistAppointmentController::class, 'availability'])->name('me.availability.show');
         Route::put('me/availability', [NutritionistAppointmentController::class, 'updateAvailability'])->name('me.availability.update');
         Route::get('appointments', [NutritionistAppointmentController::class, 'index'])->name('appointments.index');
+        Route::get('appointments/{appointment}/slots', [NutritionistAppointmentController::class, 'slots'])->whereNumber('appointment')->name('appointments.slots');
         Route::patch('appointments/{appointment}', [NutritionistAppointmentController::class, 'update'])->whereNumber('appointment')->name('appointments.update');
         Route::post('appointments/{appointment}/cancel', [NutritionistAppointmentController::class, 'cancel'])->whereNumber('appointment')->name('appointments.cancel');
         Route::post('appointments/{appointment}/complete', [NutritionistAppointmentController::class, 'complete'])->whereNumber('appointment')->name('appointments.complete');

@@ -224,6 +224,42 @@ class AppointmentTest extends TestCase
         $this->book('2026-10-14 10:00')->assertStatus(409)->assertJsonPath('code', 'appointment_exists');
     }
 
+    /** B9: the nutritionist's own slot list for moving an appointment. */
+    public function test_the_nutritionist_gets_free_times_for_moving_an_appointment(): void
+    {
+        $id = $this->book('2026-10-13 10:00')->json('id');
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->book('2026-10-14 09:00', 'follow_up', $other)->assertCreated();
+
+        $days = collect($this->getJson("/api/v1/appointments/{$id}/slots", $this->nurse())->assertOk()
+            ->assertJsonPath('type', 'follow_up')->assertJsonPath('duration_minutes', 30)->json('days'))->keyBy('date');
+
+        // No 12-hour lead: today 09:00-12:00 is offered (it is 08:00 now).
+        $this->assertSame($this->at('2026-10-11 09:00'), $days['2026-10-11']['times'][0]);
+        // Its own time stays free; another patient's 09:00-09:30 does not (nor 08:45-09:15 overlaps).
+        $this->assertContains($this->at('2026-10-13 10:00'), $days['2026-10-13']['times']);
+        $this->assertNotContains($this->at('2026-10-14 09:00'), $days['2026-10-14']['times']);
+        $this->assertNotContains($this->at('2026-10-14 09:15'), $days['2026-10-14']['times']);
+        $this->assertFalse($days->has('2026-10-12'), 'day off');
+
+        $stranger = User::factory()->nutritionist()->create();
+        $this->getJson("/api/v1/appointments/{$id}/slots", $this->bearerFor($stranger))->assertNotFound();
+        $this->getJson("/api/v1/appointments/{$id}/slots", $this->me())->assertForbidden();
+    }
+
+    public function test_the_list_filters_by_patient_without_leaking_others(): void
+    {
+        $mine = $this->book('2026-10-13 10:00')->json('id');
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->book('2026-10-14 09:00', 'follow_up', $other)->assertCreated();
+
+        $this->getJson("/api/v1/appointments?subscriber_id={$this->patient->id}", $this->nurse())->assertOk()
+            ->assertJsonCount(1)->assertJsonPath('0.id', $mine);
+
+        $stranger = User::factory()->nutritionist()->create();
+        $this->getJson("/api/v1/appointments?subscriber_id={$this->patient->id}", $this->bearerFor($stranger))->assertOk()->assertJsonCount(0);
+    }
+
     public function test_the_nutritionist_lists_cancels_completes_and_marks_no_show(): void
     {
         $a = $this->book('2026-10-13 10:00')->json('id');
