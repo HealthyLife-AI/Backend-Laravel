@@ -45,16 +45,19 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.')->group(function () {
 
     Route::prefix('auth')->name('auth.')->group(function () {
+        // B2: every throttle here is a named limiter with its own counter
+        // (AppServiceProvider). The bare `throttle:N,1` form shared ONE counter
+        // per IP across all of these routes.
         Route::post('register', [AuthController::class, 'register'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:register')
             ->name('register');
 
         Route::post('login', [AuthController::class, 'login'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:login')
             ->name('login');
 
         Route::post('refresh', [AuthController::class, 'refresh'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:refresh')
             ->name('refresh');
 
         Route::post('logout', [AuthController::class, 'logout'])->name('logout');
@@ -62,16 +65,16 @@ Route::prefix('v1')->name('api.')->group(function () {
         // "Continue with Google": the browser hands over a Google access
         // token, the API verifies it with Google (GoogleAuthService).
         Route::post('google', [AuthController::class, 'google'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:google')
             ->name('google');
 
         // Forgot / reset password. Forgot always answers 200 so the
         // endpoint can't be used to probe which e-mails have accounts.
         Route::post('forgot-password', [AuthController::class, 'forgotPassword'])
-            ->middleware('throttle:5,1')
+            ->middleware('throttle:forgot-password')
             ->name('forgot-password');
         Route::post('reset-password', [AuthController::class, 'resetPassword'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:reset-password')
             ->name('reset-password');
 
         Route::get('me', [AuthController::class, 'me'])
@@ -81,12 +84,12 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     // Change one's own password; ends every other session. Throttled like login.
     Route::put('me/password', [AuthController::class, 'changePassword'])
-        ->middleware(['jwt', 'throttle:10,1'])
+        ->middleware(['jwt', 'throttle:password-change'])
         ->name('me.password.update');
 
     // FR-03: public — the invite token itself is the credential.
     Route::post('invites/{token}/activate', [ClientInviteController::class, 'activate'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:invite-activate')
         ->name('invites.activate');
 
     Route::middleware(['jwt', 'permission:clients.manage'])->group(function () {
