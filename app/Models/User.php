@@ -42,6 +42,7 @@ class User extends Authenticatable
             'locked_until' => 'datetime',
             'session_version' => 'integer',
             'is_demo' => 'boolean',
+            'password_is_temporary' => 'boolean',
         ];
     }
 

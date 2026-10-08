@@ -42,6 +42,9 @@ class UserResource extends JsonResource
                 'gender' => $this->subscriberProfile?->healthProfile?->gender,
                 // The patient's own code (e.g. PT-104), shown on the app's account screen.
                 'patient_code' => $this->subscriberProfile?->code,
+                // True while the patient still uses the password the system
+                // generated: the app shows a gentle "change your password" reminder.
+                'password_is_temporary' => (bool) $this->password_is_temporary,
             ]),
         ];
     }

@@ -234,7 +234,8 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        $user->forceFill(['password' => $request->string('password')->toString()])->save();
+        // The patient chose their own password: the generated one is gone.
+        $user->forceFill(['password' => $request->string('password')->toString(), 'password_is_temporary' => false])->save();
         $this->refreshTokens->endAllSessions($user);
 
         return $this->tokenResponse($user, $request, 200);
