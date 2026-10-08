@@ -10,8 +10,11 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Firebase\JWT\JWT;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\Concerns\FakesPush;
@@ -195,6 +198,30 @@ class AppointmentTest extends TestCase
         // Two moves merge into one row (intended); the cancellation is separate.
         $this->assertSame(['appointment_cancelled', 'appointment_rescheduled'], PatientNotification::where('user_id', $this->patient->user_id)->orderByDesc('id')->pluck('type')->all());
         $this->assertCount(2, $this->pushes, 'one push for the move, one for the cancellation');
+    }
+
+    /**
+     * B6: the "one upcoming appointment" check runs again INSIDE the booking
+     * transaction (after the row locks). SQLite can't run two requests at
+     * once, so this checks the order of events rather than a real race.
+     */
+    public function test_the_one_upcoming_check_runs_inside_the_booking_transaction(): void
+    {
+        $events = [];
+        Event::listen(TransactionBeginning::class, function () use (&$events) {
+            $events[] = 'begin';
+        });
+        DB::listen(function ($query) use (&$events) {
+            if (str_contains($query->sql, '"appointments"') && str_contains($query->sql, 'exists')) {
+                $events[] = 'check';
+            }
+        });
+
+        $this->book('2026-10-13 10:00')->assertCreated();
+
+        // The last thing before the insert: the booking transaction opens, then the check runs inside it.
+        $this->assertSame(['begin', 'check'], array_slice(array_values(array_filter($events, fn ($e) => in_array($e, ['begin', 'check'], true))), -2));
+        $this->book('2026-10-14 10:00')->assertStatus(409)->assertJsonPath('code', 'appointment_exists');
     }
 
     public function test_the_nutritionist_lists_cancels_completes_and_marks_no_show(): void
