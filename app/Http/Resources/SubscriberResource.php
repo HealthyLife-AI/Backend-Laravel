@@ -38,7 +38,10 @@ class SubscriberResource extends JsonResource
             'phone' => $this->user->phone,
             // Patients sign in with it; null for patients added before usernames.
             'username' => $this->user->username,
+            // Legacy 4-value goal (the milestone alert reads it); show goal_type when set.
             'goal' => $this->goal,
+            // B10: the structured goal (7 types) the nutritionist and patient edit.
+            'goal_type' => $this->patientGoal?->goal_type,
             'status' => $this->status,
             'archived_at' => $this->archived_at?->toIso8601String(),
             'adherence_status' => $this->adherence_status,

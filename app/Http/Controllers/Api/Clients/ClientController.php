@@ -39,7 +39,7 @@ class ClientController extends Controller
      */
     public function index(ListClientsRequest $request): AnonymousResourceCollection
     {
-        $query = Subscriber::query()->with('user')->withCount(['proposals as pending_proposals_count' => fn ($q) => $q->where('status', 'pending')]);
+        $query = Subscriber::query()->with(['user', 'patientGoal'])->withCount(['proposals as pending_proposals_count' => fn ($q) => $q->where('status', 'pending')]);
 
         // Archived patients are a separate list, never mixed into the roster.
         if ($request->boolean('archived')) {
@@ -107,7 +107,10 @@ class ClientController extends Controller
             $subscriber = Subscriber::create([
                 'user_id' => $user->id,
                 'code' => $this->codes->next($nutritionist),
-                'goal' => $request->string('goal'),
+                // Legacy column from the structured goal (B10). A plain string:
+                // the Stringable from $request->string() made the goal_type
+                // below always 'other' (B12).
+                'goal' => PatientGoal::LEGACY_GOAL[$request->string('goal')->toString()],
                 // Explicit, even though the migration defaults to
                 // 'pending' at the DB level: Eloquent doesn't know
                 // about schema-level defaults on a freshly built
@@ -121,11 +124,11 @@ class ClientController extends Controller
             // The structured goal starts from the one chosen when adding the patient.
             PatientGoal::create([
                 'subscriber_id' => $subscriber->id,
-                'goal_type' => array_search($subscriber->goal, ['weight_loss' => 'weight_loss', 'weight_gain' => 'weight_gain', 'weight_maintenance' => 'weight_maintenance', 'health_energy' => 'health_monitoring'], true) ?: 'other',
+                'goal_type' => $request->string('goal')->toString(),
             ]);
 
             return response()->json([
-                'client' => new SubscriberResource($subscriber->load('user')),
+                'client' => new SubscriberResource($subscriber->load(['user', 'patientGoal'])),
                 'credentials' => ['username' => $user->username, 'password' => $password],
             ], 201);
         }, 3);
@@ -135,7 +138,7 @@ class ClientController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        return (new SubscriberResource($subscriber->load('user')))->withConsent();
+        return (new SubscriberResource($subscriber->load(['user', 'patientGoal'])))->withConsent();
     }
 
     /**

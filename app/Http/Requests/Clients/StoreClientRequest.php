@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Clients;
 
+use App\Models\PatientGoal;
 use App\Rules\PatientUsername;
 use App\Support\Phone;
 use App\Support\Username;
@@ -28,6 +29,12 @@ class StoreClientRequest extends FormRequest
             $this->merge(['username' => Username::normalize($this->input('username'))]);
         }
 
+        // B10: the 7 structured types; the old 4-value form is still accepted
+        // (older dashboards) and health_monitoring read as health_energy.
+        if ($this->input('goal') === 'health_monitoring') {
+            $this->merge(['goal' => 'health_energy']);
+        }
+
         // Stored in international format so WhatsApp can open the chat directly.
         if (is_string($this->input('phone'))) {
             $this->merge(['phone' => Phone::clean($this->input('phone'))]);
@@ -49,7 +56,7 @@ class StoreClientRequest extends FormRequest
                 Rule::unique('users', 'phone')->where('nutritionist_id', $this->user()->id),
             ],
             'username' => ['required', 'string', new PatientUsername, Rule::unique('users', 'username')],
-            'goal' => ['required', Rule::in(['weight_loss', 'weight_gain', 'weight_maintenance', 'health_monitoring'])],
+            'goal' => ['required', Rule::in(PatientGoal::TYPES)],
         ];
     }
 
