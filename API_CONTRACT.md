@@ -28,6 +28,25 @@ never in plain prefs/localStorage.
 
 ## Patient app changes
 
+### Pre-launch (username sign-in) — latest
+
+**What the app must change.** Patients no longer get an activation link. The
+nutritionist adds the patient with a **username**; the system generates a
+password; the nutritionist sends both on WhatsApp.
+
+| Screen | Change |
+|---|---|
+| **Sign in** | Send `{username, password}` to `POST /auth/login`. The username is case-insensitive and Arabic-Indic / Persian digits are converted, so send what the user typed. `{phone, password}` still works **temporarily** (remove from the app; the server path will be deleted once the app ships) |
+| **First sign-in** | Nothing to call: a patient who has never signed in is `pending` and the first successful login makes them `active` |
+| **Activation screen** | **Remove it.** No new invite links are issued. `healthylifeai://activate/{token}` and `POST /invites/{token}/activate` only redeem links sent before this release (they expire within 7 days) — **deprecated** |
+| **Account** | The user object (login, refresh, `GET /auth/me`) carries `username` and `password_is_temporary`. While `password_is_temporary` is `true` show a gentle reminder to change the password (الحساب ← كلمة المرور); never force it. `PUT /me/password` sets it to `false` |
+| **Forgot password** | Unchanged: no self-service reset. New text: «اطلب من أخصائيك إعادة تعيين كلمة المرور. سيرسل لك اسم المستخدم وكلمة مرور جديدة عبر واتساب.» The nutritionist's **reset** replaces the old sign-in link: it ends every session of the patient (their app gets `401` and goes to the sign-in screen) |
+| **Meal-log dates** | `from` / `to` on `GET /me/meal-logs` are **dates in the clinic's time zone** (`SCHEDULE_TIMEZONE`, e.g. Asia/Gaza), not UTC (Part C). `recorded_at` of a reading is validated against the clinic's today |
+| **Reading on a clinic day** | A reading the patient adds for a date that has a clinic reading is a **separate** `self-reported` row; the clinic row is never changed. Two readings can share a date |
+
+Login errors are unchanged: `401` wrong username/password, `423` locked
+(`locked_until`), `403 follow_up_ended`, `429` too many attempts.
+
 ### Phase 2, rest (health profile, appointments, shopping list) — latest
 
 #### Step 1 — هدفي، أدويتي، الحساسيات
@@ -38,7 +57,7 @@ they send takes effect until the nutritionist approves it.
 | Screen | Call |
 |---|---|
 | Read the profile | `GET /me/health-profile` → `{goal, medications[], allergies[], proposals[]}` (proposals: the patient's own from the last 60 days, any status) |
-| Propose | `POST /me/proposals` `{kind: goal\|medication\|allergy, action: add\|edit\|remove, target_id?, data}` → `201` the proposal (`status: pending`). Goal is always `edit` (no `target_id`). Edit/remove of a medication or allergy needs its `target_id` |
+| Propose | `POST /me/proposals` `{kind: goal\|medication\|allergy, action: add\|edit\|remove, target_id?, data}` → `201` the proposal (`status: pending`; the submitted `data` comes back as **`payload`**). Goal is always `edit` (no `target_id`). Edit/remove of a medication or allergy needs its `target_id` |
 | Withdraw | `DELETE /me/proposals/{id}` while still `pending` |
 
 `data` per kind:
@@ -61,7 +80,7 @@ plan food's `allergens` intersect the patient's approved allergy groups, show
 
 | Call | Notes |
 |---|---|
-| `GET /me/appointments/slots?type=` | `type`: `follow_up` (30 min), `results_review` (30), `quick_consult` (15). → `{duration_minutes, timezone, video_available, days: [{date, times: [ISO 8601]}]}`; from 12 h ahead to 30 days |
+| `GET /me/appointments/slots?type=` | `type`: `follow_up` (30 min), `results_review` (30), `quick_consult` (15). → `{type, duration_minutes, timezone, video_available, days: [{date, times: [ISO 8601]}]}`; from 12 h ahead to 30 days |
 | `POST /me/appointments` | `{type, starts_at (one of the times), channel: whatsapp\|phone\|video, topics?: [weight, meals, plan_change, results, medications, other], note? (≤ 300)}` → `201` |
 | `PATCH /me/appointments/{id}` | `{starts_at}` reschedule |
 | `DELETE /me/appointments/{id}` | cancel → the appointment with `status: cancelled` |
@@ -141,13 +160,14 @@ edit window on meal logs and readings. Details in
 | **«فهمت»** | `POST /me/reviews/{id}/acknowledge` → the review. Safe to repeat. If the nutritionist edits it afterwards, `acknowledged_at` goes back to `null` and the patient gets one notification: show «فهمت» again |
 | **Tasks** | `POST /me/tasks/{id}/done` to tick, `DELETE /me/tasks/{id}/done` to untick → `{id, title, done_at}`. Both safe to repeat |
 | **Inbox** | `GET /me/notifications?category=&unread=1` (20 per page: `{data, meta}`), `GET /me/notifications/unread-count` → `{unread}`, `POST /me/notifications/{id}/read`, `POST /me/notifications/read-all` → `{marked}`. Each row: `{id, category, type, title, body, data, read_at, created_at, updated_at}`; sort by `updated_at` (a debounced row moves back to the top) |
-| **Settings** | `GET` / `PUT /me/notification-preferences`. Send any of `locale` (`ar`\|`en`), `meals`, `measurements`, `nutritionist`, `plan` (booleans), `quiet_hours_enabled`, `quiet_start`, `quiet_end` (`HH:MM`), `timezone`. **Send the device's IANA timezone** (e.g. `Asia/Gaza`) whenever the app starts or the device zone changes; until then the server uses its own (`effective_timezone` in the response) |
+| **Settings** | `GET` / `PUT /me/notification-preferences`. The **request is flat** — send any of `locale` (`ar`\|`en`), `meals`, `measurements`, `nutritionist`, `plan` (booleans), `quiet_hours_enabled`, `quiet_start`, `quiet_end` (`HH:MM`), `timezone`. **Send the device's IANA timezone** (e.g. `Asia/Gaza`) whenever the app starts or the device zone changes; until then the server uses its own. The **response is nested**: `{locale, timezone, effective_timezone, categories: {meals, measurements, nutritionist, plan}, quiet_hours: {enabled, start, end}}` |
 
 **Inbox filters ↔ categories** (the design's chips): الوجبات = `meals`,
 القياسات = `measurements`, الأخصائي = `nutritionist`, تحديثات الخطة = `plan`,
 plus `system` (always on, no chip needed). `type` is one of `plan_activated`,
 `plan_updated`, `follow_up_resumed`, `review_new`, `review_updated`,
-`log_reminder`.
+`log_reminder`, `proposal_decided`, `appointment_cancelled`,
+`appointment_rescheduled`.
 
 **Deep links** — `data` (also in every FCM push's data, as strings):
 `plan_activated` / `plan_updated` → `{plan_id}` (open «خطتي»);
@@ -336,6 +356,7 @@ by UTC hours.
   "phone": null,
   "role": "nutritionist",
   "nutritionist_id": null,
+  "avatar_url": null,
   "subscriber_id": null
 }
 ```
@@ -343,8 +364,11 @@ by UTC hours.
 `role` is one of `nutritionist` / `client` / `admin`. For a `client` the object
 also carries **`gender`** (`"male"` | `"female"`, or `null`): the patient's own
 gender from their health profile, `null` until one has been filled in — and
-**`patient_code`** (e.g. `"PT-104"`), the code the nutritionist knows them by.
-Both keys are absent for nutritionists and admins.
+**`patient_code`** (e.g. `"PT-104"`), the code the nutritionist knows them by,
+**`username`** (what they sign in with; `null` for patients added before
+usernames) and **`password_is_temporary`** (`true` until they set their own
+password). These keys are absent for nutritionists and admins. `avatar_url` is
+on every user (`null` unless set, e.g. by Google sign-in).
  `nutritionist_id` is only
 non-null for a `client`-role user (the nutritionist that owns them — BR-1).
 `subscriber_id` is only non-null for a `client`-role user too — it's this
@@ -490,21 +514,23 @@ here — a nutritionist creates them via invite link (Sprint 2, US-02).
 
 ## `POST /auth/login`
 
-**Request** — a nutritionist logs in by email; a client has no email (added by
-name + phone only — Clients section below) and logs in by phone instead.
-Exactly one of `email`/`phone` is required:
+Body, one of:
 
-```json
-{ "email": "jane@example.com", "password": "Passw0rd!" }
-```
+- patients: `{ "username": "sara.k", "password": "…" }` — case-insensitive after
+  normalising (trim, lower-case, Arabic-Indic digits);
+- nutritionists and admins: `{ "email": "…", "password": "…" }`;
+- **temporary**, until the patient app ships username login:
+  `{ "phone": "+970599123456", "password": "…" }`. A phone is unique per
+  nutritionist only, so the password is checked against every account with
+  that number, and a wrong password counts as a failed attempt on each.
 
-```json
-{ "phone": "0501234567", "password": "ClientPass1!" }
-```
+The first successful sign-in of a `pending` patient makes them `active`.
+Rate limits: 10 a minute per address and account, and 60 a minute per address.
+Errors and the 5-failure lockout (`423`) are as before.
 
 **200 OK** — same body shape as register's 201 (no `password_confirmation` involved).
 
-**401 Unauthorized** — wrong password OR unknown email. Deliberately identical
+**401 Unauthorized** — wrong password OR unknown username/email/phone. Deliberately identical
 either way, to avoid leaking which one was wrong:
 
 ```json
@@ -526,7 +552,8 @@ ended this patient's follow-up. See "Follow-up ended" in Common shapes. A wrong
 password still gets the generic `401`, so the archive is never revealed to
 someone who doesn't know the password.
 
-**422** — missing `email`/`password`.
+**422** — missing identifier (`username`, `email` or `phone`) or `password`.
+**429** — too many attempts (limits above).
 
 ---
 
@@ -705,50 +732,55 @@ internal model name, the API and UI both say "client"):
 
 ### `POST /clients`
 
-Add a client (FR-02) — by name + phone only, no email (PRD F-1). Issues a
-single-use invite in the same call.
+Add a client (FR-02): name, phone, **username** and goal. The system
+generates the password; **no invite link** (Part A).
 
 **Request**
 
 ```json
-{ "name": "Sara Ahmad", "phone": "0501234567", "goal": "weight_loss" }
+{ "name": "Sara Ahmad", "phone": "+970599123456", "username": "sara.k", "goal": "weight_loss" }
 ```
 
-`phone` unique **per nutritionist**, not globally (BR-1) — two different
-nutritionists can each have a client with the same phone number.
+- `phone`: stored in **international format** (`+970599123456`). Spaces,
+  dashes, dots, brackets and Arabic-Indic digits are cleaned; a leading `00`
+  becomes `+`; a local number without a country code is `422`. Unique **per
+  nutritionist**, not globally (BR-1). Numbers saved before this rule are left
+  as they were (they can differ in format from a new one: look for duplicates
+  by hand).
+- `username`: trimmed, lower-cased, Arabic-Indic / Persian digits converted;
+  then 3–30 characters of `a-z 0-9 . _ -`, starting with a letter or digit.
+  Unique across **all** users (login is global). `422` on `username`: «This
+  username is taken.» (nothing more), or a message about Arabic letters / the
+  format. There is no availability endpoint on purpose (it would let anyone
+  list usernames).
+- `goal`: one of the 7 structured types `weight_loss`, `weight_gain`,
+  `muscle_gain`, `weight_maintenance`, `health_energy`, `medical_condition`,
+  `other` (`health_monitoring` is still accepted and read as `health_energy`).
+  Saved as the patient's goal; `client.goal` (the legacy 4-value column the
+  milestone alert reads) follows it: `muscle_gain` → `weight_gain`;
+  `health_energy`, `medical_condition`, `other` → `health_monitoring`.
 
 `code` (`PT-101`, `PT-102`, …) comes from a per-nutritionist counter that only
-goes up (BR-21), allocated under a row lock: a code is **never reused**, not even after
-the highest-numbered client is deleted, and two clients added at the same
-instant cannot collide.
+goes up (BR-21), allocated under a row lock: a code is **never reused**.
 
 **201 Created**
 
 ```json
 {
-  "client": { "id": 12, "code": "PT-101", "name": "Sara Ahmad", "phone": "0501234567", "goal": "weight_loss", "status": "pending", "adherence_status": null, "last_logged_at": null, "created_at": "..." },
-  "invite_token": "GHCnFz3xzIQspdcvJxX8uyYJXUGpS9WYYMh1NQeh",
-  "invite_expires_at": "2026-09-13T09:54:30+00:00"
+  "client": { "id": 12, "code": "PT-101", "name": "Sara Ahmad", "phone": "+970599123456", "username": "sara.k", "goal": "weight_loss", "goal_type": "weight_loss", "status": "pending", "adherence_status": null, "last_logged_at": null, "created_at": "..." },
+  "credentials": { "username": "sara.k", "password": "Kd7mZp3Rtq" }
 }
 ```
 
-`invite_token` is returned **once** — it's not retrievable again (mirrors the
-refresh-token pattern: only its hash is stored). Build the shareable link
-yourself — the API doesn't hardcode a frontend URL scheme since more than one
-frontend consumes it. Default validity 7 days (`INVITE_TOKEN_TTL_DAYS`).
+`credentials.password` is returned **once**, by this call only: 10 characters
+without look-alikes (no `0 O o 1 l I`), with an upper-case letter, a lower-case
+letter and a digit. Only its hash is stored; it is never logged and never
+returned again. `status` is `pending` until the patient first signs in.
+The client object carries `goal_type` (the 7-type goal, `null` if none) next to
+the legacy `goal`; the dashboard shows `goal_type` when present.
 
-As of 2026-09-23, activation is app-only: the Next.js dashboard builds
-`healthylifeai://activate/${invite_token}` (a custom URL scheme, not a web
-route — there is no `/activate` page in the Next.js app). This exact scheme
-string must match what the Flutter client app registers
-(`CFBundleURLSchemes` on iOS, an intent-filter on Android). Known gap: a
-custom scheme has no fallback — if the client hasn't installed the app yet,
-tapping the link does nothing. Accepted for now; an upgrade path exists via
-Universal Links / App Links (a real `https://` URL backed by
-`apple-app-site-association` / `assetlinks.json` on the domain, still free,
-no third-party service) if that gap needs closing later.
-
-**422** — validation (duplicate phone for this nutritionist, invalid `goal`, etc).
+**422** — validation (duplicate phone for this nutritionist, taken/invalid
+`username`, invalid `goal`).
 
 ### `GET /clients`
 
@@ -831,41 +863,36 @@ with their existing password.
 **200 OK**
 
 ```json
-{
-  "client": { "id": 12, "status": "active", "archived_at": null, "...": "..." },
-  "invite_token": null,
-  "invite_expires_at": null
-}
+{ "client": { "id": 12, "status": "active", "archived_at": null, "...": "..." } }
 ```
 
-A patient who never activated (`status: "pending"`) had their invite
-invalidated on archive, so resuming issues a new one: `invite_token` and
-`invite_expires_at` are then filled exactly as in `POST /clients`, and the
-token is returned only this once.
+No invite is issued any more (it used to be, for a patient who had never
+activated): that patient still has the credentials they were sent, or gets
+new ones from `POST /clients/{id}/reset-password`.
 
 **404** — not your client.
 
-### `POST /clients/{id}/sign-in-link`
+### `POST /clients/{id}/reset-password`
 
-A new one-time sign-in link for a patient who can't sign in (forgotten
-password) — the only password recovery a patient has. Dashboard button «إرسال
-رابط دخول جديد»; the nutritionist sends the link over WhatsApp. No body.
+Replaces `POST /clients/{id}/sign-in-link` (**removed**). A new generated
+password for a patient who can't sign in; the nutritionist sends it on
+WhatsApp. Dashboard button «إعادة تعيين كلمة المرور».
 
-It is an invite token: same table, same expiry (`INVITE_TOKEN_TTL_DAYS`, 7 days),
-same deep link `healthylifeai://activate/{token}`, activated with
-[`POST /invites/{token}/activate`](#post-invitestokenactivate), where the
-patient sets a new password. Activation ends every earlier session of that
-patient. Issuing a new link expires any earlier unused one, so only the newest
-works. Works for a pending patient too (it then acts as a fresh invite).
+**Request** (optional body): `{ "username": "sara.k" }`. **Required** when the
+patient has no username yet (patients added before usernames); it may also be
+sent to change the username. Same rules and `422` as on create.
 
-**201 Created**
+**200 OK**
 
 ```json
-{ "token": "BTzHLu9VoleoCApJ1DFgalKJFpjYnpdS0symnl8C", "expires_at": "2026-10-08T09:00:00+00:00" }
+{ "username": "sara.k", "password": "Hq4TnW8cBe" }
 ```
 
-The token is returned only this once. **404** — not your client.
-**409 `follow_up_ended`** — follow-up has ended; resume it first.
+The password is returned only by this call. It ends **every** session of the
+patient (access tokens at once, refresh tokens revoked), clears a lockout,
+voids any unused old invite link and sets `password_is_temporary: true`.
+**404** — not your client. **409 `follow_up_ended`** — resume follow-up first.
+Throttled per nutritionist (20 a minute).
 
 ### Writes refused while follow-up has ended
 
@@ -887,7 +914,9 @@ The token is returned only this once. **404** — not your client.
 
 Another nutritionist's patient still gets `404` here, never this `409`.
 
-### `POST /invites/{token}/activate`
+### `POST /invites/{token}/activate` — deprecated
+
+**Deprecated (Part A):** no new invites are issued; this only redeems tokens already sent (they expire within 7 days). It also marks the patient active and sets `password_is_temporary: false`.
 
 **Public — no `Authorization` header.** FR-03: the client sets their password
 and is logged in immediately, same token shape as login/register.
@@ -1002,11 +1031,12 @@ role, no specific permission (it's read-only reference data, not client data).
 
 | Query param | Values |
 |---|---|
-| `q` | required, 2–255 chars — matches the **start** of either name, not a substring anywhere in it |
+| `q` | required, 2–255 chars — a **substring** match on either name, ranked: the term as a whole word first, then names starting with it, then words starting with it, then anywhere. A search word ending in `ه` or `ا` also matches the other ending (`تونة` finds `تونا`) |
 | `per_page` | 1–50, default 20 |
 
-Searches both `name_en` and `name_ar` as a prefix (`"chick"` matches "Chicken
-Breast", not "Sandwich with Chicken"; `"حمص"` matches "حمص بطحينة"). Only
+Searches both `name_en` and `name_ar` as a substring, best matches first
+(`"salmon"` lists "Fish, salmon, …" before "Salmonberries"; `"حمص"` matches
+"حمص بطحينة"). Only
 `status = "approved"` foods are returned — a nutritionist's own pending
 submission never shows up in search results for anyone (BR-5), themselves
 included, until an admin approves it.
@@ -1442,7 +1472,15 @@ matching `FcmPushService`'s own precedence.
 
 Never returns the JSON/key content, and makes no call to Firebase.
 
-### `GET /system/scheduler-status`
+### `GET /system/scheduler-status` — also: what the app sees of the request (B1)
+
+The response gains a `request` block (admin only, like the whole route):
+`client_ip`, `remote_addr` (the address the request reached PHP from — behind
+Taqat this is the **proxy**, the value for `TRUSTED_PROXIES`), `forwarded_for`,
+`forwarded_proto`, `scheme`, `trusted_proxies` and **`trusted_proxy_match`**
+(`true` when `TRUSTED_PROXIES` covers `remote_addr`; `false` while it is set means
+the proxy's address changed). See DEPLOYMENT.md "Trusted proxy".
+
 
 When each scheduled job last ran, and what the 06:00 run did. The jobs fail
 silently by design, and on Taqat each cron run happens in a one-off
@@ -1545,11 +1583,14 @@ Every patient data endpoint refuses until consent is accepted:
 }
 ```
 
-Gated: `GET /me/meal-plan`, all of `/me/meal-logs*`, all of `/me/measurements*`,
-`GET /me/adherence`, `GET /me/progress`, `GET /foods/search` (for a patient).
+Gated: every patient data route — `GET /me/meal-plan`, `/me/meal-logs*`,
+`/me/measurements*`, `GET /me/adherence`, `GET /me/progress`, `/me/reviews`,
+`/me/tasks/*`, `/me/notifications*`, `/me/notification-preferences`,
+`/me/health-profile`, `/me/proposals*`, `/me/appointments*` and
+`GET /foods/search` (for a patient).
 **Not gated**: `POST /auth/login|refresh|logout`, invite activation,
-`GET /auth/me`, `GET|POST /me/consent`, `GET /me/nutritionist`,
-`PUT /me/fcm-token`, `DELETE /me/account`. Precedence when several apply:
+`GET /auth/me`, **`PUT /me/password`**, `GET|POST /me/consent`,
+`GET /me/nutritionist`, `PUT /me/fcm-token`, `DELETE /me/account`. Precedence when several apply:
 `401` → `403 follow_up_ended` → `403 consent_required`.
 
 ### Configuration warnings (admin)
@@ -1711,7 +1752,7 @@ matched the plan.
 ```
 
 `meal_type` is `null` only on an off-plan log recorded before BR-16.
-`editable_until` is `logged_at` plus the edit window (BR-15, below).
+`editable_until` is **when the log reached the server** (`created_at`) plus the edit window (BR-15, below), not `logged_at` plus it.
 `is_on_plan` is returned so the web and mobile clients do not each
 re-derive BR-9 from `meal_item_id` being null.
 
@@ -1745,15 +1786,19 @@ helping is a different entry — give it a different key.
 
 ### `GET /me/meal-logs?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
-Paginated, newest first. `from`/`to` are optional but must be sent
-**together** — a half-open range returns `422`, rather than silently
+Paginated (**15 items a page**), newest first. `from`/`to` are optional but must be sent
+**together**; they are dates in the clinic's time zone (`SCHEDULE_TIMEZONE`), not UTC — a half-open range returns `422`, rather than silently
 falling back to the full history.
 
 ### `PATCH /me/meal-logs/{id}` and `DELETE /me/meal-logs/{id}`
 
 **BR-15 — the edit window.** A patient can correct or remove their own log
-for **7 days after its `logged_at`** (config `LOG_EDIT_WINDOW_DAYS`; every
-log response carries `editable_until`). After that the log is locked. A `PATCH`
+for **7 days after it reached the server** (`created_at`; config
+`LOG_EDIT_WINDOW_DAYS`; every log response carries `editable_until`). An entry
+queued offline and synced late therefore still gets its full week; a late entry
+is **not** locked on arrival. After that the log is locked. `logged_at` may be
+moved by at most 7 days from where it is now (`422 logged_at_move_too_far`) and
+never beyond 90 days back (`422 entry_too_old`). A `PATCH`
 that changes something sets `edited_at` to the time of the edit (a `PATCH` that
 sends the values already stored changes nothing and leaves it as it was); the
 nutritionist's dashboard marks such an entry "معدّلة". `{id}`
@@ -1854,10 +1899,9 @@ optional and must be sent together (a half-open range is `422`).
 ]
 ```
 
-`deletable_until` (BR-15) is the end of the edit/delete window — 7 days counted
-from the **start of the reading's date** (a reading dated Monday stays
-deletable, and can be corrected by re-sending its day, until the start of the
-next Monday) — and `null` on a clinic reading. `edited_at` is when the patient
+`deletable_until` (BR-15) is the end of the edit/delete window — **arrival
+(`created_at`) plus 7 days**, whatever date the reading is for — and `null` on a
+clinic reading. `edited_at` is when the patient
 last changed the reading's figures (`null` if never).
 
 `DELETE /me/measurements/{id}` — **204**. Only the patient's **own
@@ -2174,7 +2218,7 @@ without one.
 
 | type | condition | resolves when |
 |---|---|---|
-| `no_log` | no meal log in `ADHERENCE_LATE_AFTER_DAYS` days (default 3, shared with adherence — FR-20) | a new log lands |
+| `no_log` | no meal log in `ADHERENCE_LATE_AFTER_DAYS` days (default 3, shared with adherence — FR-20), **counted from when logging is expected** (see below) | a new log lands, or there is no active plan |
 | `calories_exceeded` | daily intake over `daily_calorie_needs` for 3 **consecutive, fully-logged** calendar days ending yesterday | a day falls back under target |
 | `milestone` | weight moved ≥ 2kg in the goal's direction over the last 14 days | never — one-shot, debounced |
 
@@ -2197,6 +2241,19 @@ nothing to resolve — see `is_resolved` below.
 > never counted, so the alert can't fire (or fail to fire) based on what
 > time of day the job happens to run. A day with no logs at all breaks the
 > streak; nothing was actually measured that day.
+
+> ⚠️ **When `no_log` starts counting (B13).** The clock starts at the **later**
+> of the patient's first sign-in (`activated_at`, else `created_at` for
+> patients who were already active) and the day their **current active plan
+> took effect** (`start_date`, else `activated_at`, else `created_at` — the same
+> date adherence uses). A patient with **no active plan**, or a plan whose
+> `start_date` is still in the future, gets **no** `no_log` alert (an open one
+> resolves) and **no 20:00 reminder**. Accepted side effect: activating a new
+> plan restarts the clock, so a lapsed patient's alert goes quiet for up to
+> `ADHERENCE_LATE_AFTER_DAYS` (3) days — the nutritionist is already in touch.
+> **BR-14 is unchanged:** the «توقف عن التسجيل» badge and the home counter still
+> treat a patient who has never logged as stopped, so a brand-new patient shows
+> the badge without an alert.
 
 ### `GET /alerts?is_read=&subscriber_id=`
 
@@ -2512,11 +2569,24 @@ Nutritionist (`clients.manage`):
 
 - `GET|PUT /me/availability` `{windows: [{weekday (0 = Sunday), start, end}], days_off: [Y-m-d], meeting_link?}`. Times in `SCHEDULE_TIMEZONE`, on 15-minute boundaries (`422` otherwise; `window_invalid` if end ≤ start).
 - `GET /appointments?from&to` (default the next 14 days), each with `patient {id, name, code}`.
+- `GET /appointments?subscriber_id=` — one patient's appointments; a patient of another nutritionist simply matches nothing (empty list).
+- `GET /appointments/{id}/slots` — free start times to move that appointment to: its own type and duration, its own cells not counted as taken, **no 12-hour lead**. Same shape as `GET /me/appointments/slots` (`type`, `duration_minutes`, `timezone`, `video_available`, `days`). `404` for another nutritionist's appointment.
 - `PATCH /appointments/{id}` `{starts_at}` — the 12-hour rule is waived, availability and overlap are not (`422 slot_unavailable`); the patient is notified once.
-- `POST /appointments/{id}/cancel` `{reason?}` (patient notified), `/complete`, `/no-show`.
+- `POST /appointments/{id}/cancel` `{reason?}` (patient notified).
+- `POST /appointments/{id}/complete` and `/no-show` — only once the appointment has started: before `starts_at`, `409 appointment_not_started`.
+
+Notification keys are per type (`appointment:{id}:{type}`): moves within 5 minutes merge into one row, but a cancellation right after a move is its own row and push.
 
 No double booking: each appointment holds its 15-minute cells under a unique (nutritionist, cell) index, inside a transaction that locks the nutritionist row (`409 slot_taken` on a race). Ending follow-up cancels future appointments (`cancelled_by: system`) and notifies once; deleting the patient removes them.
 
 ## Foods: allergens and shopping section (Phase 2, Steps 1 & 3)
 
 Every food carries `allergens` (subset of `tree_nuts, peanuts, milk_lactose, egg, wheat_gluten, sesame, fish, shellfish, soy`) and `shopping_section`. Sources: `database/data/food_tags_curated.csv` (curated Arabic dishes and Arabic-named items, by hand), USDA SR Legacy food category (`database/data/usda_fdc_categories.csv`, FoodData Central SR Legacy, April 2018) plus name rules for the rest; new foods are tagged on creation. The admin can edit both on `PUT /admin/foods/{id}` (`allergens[]`, `shopping_section`) without the in-use confirmation, which only nutrition values need.
+
+## Pre-launch: rate limits, days, readings (B2, B3, B4, C)
+
+- **Rate limits** (each its own counter): login 10/min per address + account and 60/min per address; refresh 30/min per refresh token and 300/min per address; register, Google, forgot-password, reset-password and invite-activate 10/10/5/10/10 per minute per address; `PUT /me/password` 10/min per user; `POST /clients/{id}/reset-password` 20/min per nutritionist. Before, one counter was shared by all of them. Behind the proxy these are per real client only once `TRUSTED_PROXIES` is set.
+- **Clinic readings (B3):** `POST /me/measurements` only ever looks up the patient's own `self-reported` reading of that date; it never modifies a `clinic-analyser` row. Both can share a date; lists order by date, then id.
+- **Readings and midnight (B4):** `recorded_at` is validated against **today in `SCHEDULE_TIMEZONE`**, as are its default and the late / too-old day counts.
+- **Days (Part C):** every server-side "day" is a clinic-timezone day: the `from`/`to` of `/me/meal-logs`, `/clients/{id}/meal-logs/daily`, adherence and progress windows, `daily_calories`, the calories-exceeded streak, the 20:00 reminder's "today", the home counter «لم يسجّلوا اليوم» and the weekly summary's week. Timestamps are unchanged (ISO 8601 with offset). A meal at 01:30 Gaza time belongs to that day; before, it counted on the previous (UTC) day.
+- **Goals (B10/B12):** see `POST /clients`. `php artisan health-records:fix-initial-goals [--before=<deploy time>] [--apply]` (dry run by default) recovers goals saved as `other` by the earlier bug, for rows never edited; edited ones are only listed.

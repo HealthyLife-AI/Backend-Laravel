@@ -91,23 +91,14 @@ Frontend, Desktop, and Mobile roles integrating against this API (S1-06).
 Production environment variables, migration/backup notes, and rollback
 caveats: see [DEPLOYMENT.md](DEPLOYMENT.md) (S6-04).
 
-A runnable Postman collection covering every endpoint in this API (Sprints 1–5)
-lives in [`postman/`](postman/) —
-`HealthyLife-AI.postman_collection.json` plus a companion
-`HealthyLife-AI-Local.postman_environment.json`. Import both into Postman, or
-run headless with Newman:
-
-```bash
-npx newman run postman/HealthyLife-AI.postman_collection.json \
-    --environment postman/HealthyLife-AI-Local.postman_environment.json
-```
-
-Requests chain automatically (register → login → add client → activate →
-health profile → body composition → foods → dashboard), saving tokens and
-IDs into collection variables via test/prerequest scripts — no manual
-copy-pasting needed to run the whole collection top-to-bottom. `postman/build_collection.py`
-generates both JSON files and is the source of truth; regenerate with it
-after changing an endpoint, keeping it in sync with `API_CONTRACT.md`.
+The patient app's calls live in [`postman/`](postman/) as
+`HealthyLife-AI.postman_collection.json` (patient app **only**: the
+nutritionist/dashboard endpoints are documented in
+[API_CONTRACT.md](API_CONTRACT.md)), plus the `HealthyLife-AI-Local` and
+`HealthyLife-AI-Production` environments. Set `username` and `password` (the
+generated password the nutritionist sent), run Auth > Login, then Consent;
+requests save the ids they create for the next one. The collection is edited by
+hand (there is no generator).
 
 Every role (nutritionist, client, admin) is a row in the single `users` table,
 distinguished by its Spatie role — there's no separate `nutritionists` /
