@@ -26,7 +26,7 @@ class EvaluateAlertsCommandTest extends TestCase
     public function test_it_evaluates_every_active_subscriber(): void
     {
         $nutritionist = User::factory()->nutritionist()->create();
-        $active = Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id]);
+        $active = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => $nutritionist->id]);
         $pending = Subscriber::factory()->create(['nutritionist_id' => $nutritionist->id]); // not active
 
         $this->artisan('alerts:evaluate')->assertSuccessful();
@@ -38,8 +38,8 @@ class EvaluateAlertsCommandTest extends TestCase
     /** Runs across every nutritionist — no auth context, so NutritionistScope does not narrow it (by design, not by accident). */
     public function test_it_evaluates_active_clients_across_every_nutritionist(): void
     {
-        $first = Subscriber::factory()->active()->create(['nutritionist_id' => User::factory()->nutritionist()->create()->id]);
-        $second = Subscriber::factory()->active()->create(['nutritionist_id' => User::factory()->nutritionist()->create()->id]);
+        $first = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => User::factory()->nutritionist()->create()->id]);
+        $second = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => User::factory()->nutritionist()->create()->id]);
 
         $this->artisan('alerts:evaluate')->assertSuccessful();
 

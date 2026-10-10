@@ -36,10 +36,10 @@ class AlertEvaluationService
 
     private function evaluateNoLog(Subscriber $subscriber): void
     {
-        $staleBefore = CarbonImmutable::now()->subDays((int) config('adherence.late_after_days'));
-        $isStale = $subscriber->last_logged_at === null || $subscriber->last_logged_at->lt($staleBefore);
-
-        if ($isStale) {
+        // B13: counted from when logging is expected (LoggingClock), not from
+        // the epoch: a patient who joined minutes ago, or has no active plan,
+        // has not "stopped logging". No plan resolves an open alert.
+        if (app(LoggingClock::class)->isStale($subscriber)) {
             $this->openIfNotAlready($subscriber, Alert::TYPE_NO_LOG, sprintf(
                 'No meal logged in %d+ days.',
                 (int) config('adherence.late_after_days'),

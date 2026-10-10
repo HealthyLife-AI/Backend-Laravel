@@ -40,8 +40,8 @@ class FollowUpTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
 
         $this->nutritionist = User::factory()->nutritionist()->create();
-        $this->patient = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
-        $this->other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->patient = Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create();
+        $this->other = Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create();
         $this->patient->user->forceFill(['password' => Hash::make('patient-pass'), 'phone' => '+970590000001'])->save();
     }
 
@@ -229,7 +229,8 @@ class FollowUpTest extends TestCase
 
         $this->assertEquals(80, $this->patient->healthProfile()->value('weight_kg'));
         $this->assertDatabaseCount('body_composition_readings', 0);
-        $this->assertDatabaseCount('meal_plans', 0);
+        // The patient fixture now starts with one active plan (B13); the writes below must add none.
+        $this->assertDatabaseCount('meal_plans', 2);
     }
 
     // ---- resume -----------------------------------------------------------

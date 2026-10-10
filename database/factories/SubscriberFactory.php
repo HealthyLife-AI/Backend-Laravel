@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -36,6 +37,24 @@ class SubscriberFactory extends Factory
     public function active(): static
     {
         return $this->state(['status' => 'active']);
+    }
+
+    /**
+     * B13: a patient expected to log — signed in and with an active plan in
+     * force for `$days` days (the no-log alert and the 20:00 reminder only
+     * count from then).
+     */
+    public function withPlanInForce(int $days = 10): static
+    {
+        return $this->state(['activated_at' => now()->subDays($days)])
+            ->afterCreating(function (Subscriber $subscriber) use ($days) {
+                MealPlan::query()->forceCreate([
+                    'subscriber_id' => $subscriber->id,
+                    'created_by' => $subscriber->nutritionist_id,
+                    'status' => 'active',
+                    'activated_at' => now()->subDays($days),
+                ]);
+            });
     }
 
     /**

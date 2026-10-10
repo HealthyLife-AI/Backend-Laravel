@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Notifications;
 
 use App\Models\Subscriber;
+use App\Services\Alerts\LoggingClock;
 use App\Services\Notifications\FcmPushService;
 use App\Services\Notifications\NotificationService;
 use App\Services\Scheduling\SelfScheduler;
@@ -41,6 +42,7 @@ class SendLogReminders extends Command
         }
 
         $today = now()->startOfDay();
+        $clock = app(LoggingClock::class);
 
         // lazy(), not get() — see EvaluateAlerts's identical note. ->with
         // ('user') still eager-loads per page (default 1000 rows), so this
@@ -54,7 +56,12 @@ class SendLogReminders extends Command
             ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
             ->with('user')
             ->lazy()
-            ->each(function (Subscriber $subscriber) use ($notifications, &$total, &$sent, &$failed): void {
+            ->each(function (Subscriber $subscriber) use ($notifications, $clock, &$total, &$sent, &$failed): void {
+                // B13: nothing to remind about without an active plan in force today.
+                if ($clock->start($subscriber) === null) {
+                    return;
+                }
+
                 $total++;
 
                 try {
