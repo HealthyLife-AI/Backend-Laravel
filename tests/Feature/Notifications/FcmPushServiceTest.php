@@ -117,7 +117,8 @@ class FcmPushServiceTest extends TestCase
         $this->assertTrue(app(FcmPushService::class)->isConfigured());
         app(FcmPushService::class)->send('device-token-1', 'Title', 'Body');
 
-        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com'));
+        // No data given: still sent as an object ({}), because FCM rejects a list ([]) for `data`.
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'fcm.googleapis.com') && str_contains($request->body(), '"data":{}'));
     }
 
     /** credentials_json wins when both happen to be set. */
