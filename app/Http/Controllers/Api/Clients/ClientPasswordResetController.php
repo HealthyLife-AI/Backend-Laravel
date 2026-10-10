@@ -33,13 +33,16 @@ class ClientPasswordResetController extends Controller
 
         $data = $request->validate([
             'username' => [
-                $user->username === null ? 'required' : 'nullable',
+                'nullable',
                 'string',
                 new PatientUsername,
                 Rule::unique('users', 'username')->ignore($user->id),
             ],
         ], ['username.unique' => 'This username is taken.']);
 
-        return response()->json($this->credentials->reset($subscriber, $data['username'] ?? null));
+        // A patient with no username (added before usernames) gets one generated when none is given.
+        $username = $data['username'] ?? ($user->username === null ? Username::generate((string) $subscriber->code) : null);
+
+        return response()->json($this->credentials->reset($subscriber, $username));
     }
 }

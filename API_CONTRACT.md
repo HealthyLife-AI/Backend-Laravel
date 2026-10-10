@@ -741,13 +741,22 @@ generates the password; **no invite link** (Part A).
 { "name": "Sara Ahmad", "phone": "+970599123456", "username": "sara.k", "goal": "weight_loss" }
 ```
 
+`username` is **optional**: omit it (or send it empty) and the system generates
+one from the patient's code, e.g. `pt104.k7m2` (letters and digits without
+look-alikes). The generated name comes back in `credentials.username` like a
+typed one.
+
+```json
+{ "name": "Sara Ahmad", "phone": "+970599123456", "goal": "weight_loss" }
+```
+
 - `phone`: stored in **international format** (`+970599123456`). Spaces,
   dashes, dots, brackets and Arabic-Indic digits are cleaned; a leading `00`
   becomes `+`; a local number without a country code is `422`. Unique **per
   nutritionist**, not globally (BR-1). Numbers saved before this rule are left
   as they were (they can differ in format from a new one: look for duplicates
   by hand).
-- `username`: trimmed, lower-cased, Arabic-Indic / Persian digits converted;
+- `username` (optional): trimmed, lower-cased, Arabic-Indic / Persian digits converted;
   then 3–30 characters of `a-z 0-9 . _ -`, starting with a letter or digit.
   Unique across **all** users (login is global). `422` on `username`: «This
   username is taken.» (nothing more), or a message about Arabic letters / the
@@ -878,9 +887,9 @@ Replaces `POST /clients/{id}/sign-in-link` (**removed**). A new generated
 password for a patient who can't sign in; the nutritionist sends it on
 WhatsApp. Dashboard button «إعادة تعيين كلمة المرور».
 
-**Request** (optional body): `{ "username": "sara.k" }`. **Required** when the
-patient has no username yet (patients added before usernames); it may also be
-sent to change the username. Same rules and `422` as on create.
+**Request** (optional body): `{ "username": "sara.k" }`. It may be
+sent to change the username. Same rules and `422` as on create. **Optional even for a
+patient with no username yet**: one is then generated (`pt104.k7m2`).
 
 **200 OK**
 
