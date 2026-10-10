@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\User;
+
 /**
  * Patient usernames: what the nutritionist types and what the patient
  * signs in with. Normalised the same way on save and on login, so
@@ -29,5 +31,26 @@ final class Username
     public static function hasArabicLetters(string $value): bool
     {
         return preg_match('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', Digits::toLatin($value)) === 1;
+    }
+
+    /**
+     * A free username for a patient when the nutritionist gives none: the
+     * patient's code plus four random characters ("pt104.k7m2"). Letters and
+     * digits without look-alikes, so it is easy to read out or retype.
+     */
+    public static function generate(string $patientCode): string
+    {
+        $alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
+        $base = 'pt'.preg_replace('/\D/', '', $patientCode);
+
+        do {
+            $suffix = '';
+            for ($i = 0; $i < 4; $i++) {
+                $suffix .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+            }
+            $candidate = "{$base}.{$suffix}";
+        } while (User::query()->where('username', $candidate)->exists());
+
+        return $candidate;
     }
 }

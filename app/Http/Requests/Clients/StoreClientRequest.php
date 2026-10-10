@@ -55,7 +55,8 @@ class StoreClientRequest extends FormRequest
                 'regex:'.Phone::E164,
                 Rule::unique('users', 'phone')->where('nutritionist_id', $this->user()->id),
             ],
-            'username' => ['required', 'string', new PatientUsername, Rule::unique('users', 'username')],
+            // Optional: left empty, the system generates one (pt104.k7m2).
+            'username' => ['nullable', 'string', new PatientUsername, Rule::unique('users', 'username')],
             'goal' => ['required', Rule::in(PatientGoal::TYPES)],
         ];
     }

@@ -90,7 +90,30 @@ class PatientCredentialsTest extends TestCase
         $this->add(['username' => 'sara k'])->assertUnprocessable()->assertJsonValidationErrors('username');
         $arabic = $this->add(['username' => 'سارة'])->assertUnprocessable();
         $this->assertStringContainsString('no Arabic letters', $arabic->json('errors.username.0'));
-        $this->add(['username' => null])->assertUnprocessable()->assertJsonValidationErrors('username');
+    }
+
+    /** The username is optional: left empty, the system generates one from the patient's code. */
+    public function test_an_empty_username_is_generated_from_the_patient_code(): void
+    {
+        foreach ([null, '', '   '] as $i => $blank) {
+            $r = $this->add(['phone' => '+97059900010'.$i, 'username' => $blank])->assertCreated();
+            $username = $r->json('credentials.username');
+
+            $this->assertMatchesRegularExpression('/^pt\d+\.[a-hj-km-np-z2-9]{4}$/', $username);
+            $this->assertSame($username, $r->json('client.username'));
+            $this->assertSame('pt'.preg_replace('/\D/', '', $r->json('client.code')), explode('.', $username)[0]);
+            $this->login(['username' => $username, 'password' => $r->json('credentials.password')])->assertOk();
+        }
+    }
+
+    public function test_generated_usernames_of_two_nutritionists_with_the_same_code_do_not_collide(): void
+    {
+        $other = User::factory()->nutritionist()->create();
+        $a = $this->add(['username' => null])->assertCreated();
+        $b = $this->add(['username' => null, 'phone' => '+970599000002'], $other)->assertCreated();
+
+        $this->assertSame($a->json('client.code'), $b->json('client.code'));
+        $this->assertNotSame($a->json('credentials.username'), $b->json('credentials.username'));
     }
 
     public function test_arabic_indic_digits_are_normalised(): void
@@ -183,17 +206,23 @@ class PatientCredentialsTest extends TestCase
 
     // ---- reset ------------------------------------------------------------------
 
-    public function test_reset_requires_a_username_for_a_patient_who_has_none(): void
+    public function test_reset_gives_a_patient_without_username_one_or_takes_the_typed_one(): void
     {
         $old = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
         $url = "/api/v1/clients/{$old->id}/reset-password";
 
-        $this->postJson($url, [], $this->bearerFor($this->nutritionist))->assertUnprocessable()->assertJsonValidationErrors('username');
-
+        // Typed: used (normalised).
         $credentials = $this->postJson($url, ['username' => 'Old.Patient'], $this->bearerFor($this->nutritionist))->assertOk()->json();
-
         $this->assertSame('old.patient', $credentials['username']);
         $this->login($credentials)->assertOk()->assertJsonPath('user.password_is_temporary', true);
+
+        // Empty on a patient with none yet: generated.
+        $generated = $this->postJson("/api/v1/clients/{$other->id}/reset-password", [], $this->bearerFor($this->nutritionist))->assertOk()->json();
+        $this->assertMatchesRegularExpression('/^pt\d+\.[a-hj-km-np-z2-9]{4}$/', $generated['username']);
+        $this->login($generated)->assertOk();
+        // A second reset keeps that username.
+        $this->postJson("/api/v1/clients/{$other->id}/reset-password", [], $this->bearerFor($this->nutritionist))->assertOk()->assertJsonPath('username', $generated['username']);
     }
 
     public function test_reset_can_change_the_username_but_not_to_a_taken_one(): void

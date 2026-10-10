@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Clients\ClientCodeAllocator;
 use App\Services\Clients\ClientDeletionService;
 use App\Support\TemporaryPassword;
+use App\Support\Username;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
@@ -93,10 +94,13 @@ class ClientController extends Controller
         $password = TemporaryPassword::generate();
 
         return DB::transaction(function () use ($request, $nutritionist, $password) {
+            $code = $this->codes->next($nutritionist);
+
             $user = User::create([
                 'name' => $request->string('name')->toString(),
                 'phone' => $request->string('phone')->toString(),
-                'username' => $request->string('username')->toString(),
+                // Given by the nutritionist, or generated from the patient's code.
+                'username' => $request->filled('username') ? $request->string('username')->toString() : Username::generate($code),
                 // Hashed by the model's cast; the plain text only goes back in this response.
                 'password' => $password,
                 'nutritionist_id' => $nutritionist->id,
@@ -106,7 +110,7 @@ class ClientController extends Controller
 
             $subscriber = Subscriber::create([
                 'user_id' => $user->id,
-                'code' => $this->codes->next($nutritionist),
+                'code' => $code,
                 // Legacy column from the structured goal (B10). A plain string:
                 // the Stringable from $request->string() made the goal_type
                 // below always 'other' (B12).
