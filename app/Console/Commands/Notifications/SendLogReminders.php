@@ -7,6 +7,7 @@ use App\Services\Alerts\LoggingClock;
 use App\Services\Notifications\FcmPushService;
 use App\Services\Notifications\NotificationService;
 use App\Services\Scheduling\SelfScheduler;
+use App\Support\ClinicDay;
 use Illuminate\Console\Command;
 
 /**
@@ -41,7 +42,7 @@ class SendLogReminders extends Command
             return self::SUCCESS;
         }
 
-        $today = now()->startOfDay();
+        $today = ClinicDay::today()->setTimezone(config('app.timezone'));
         $clock = app(LoggingClock::class);
 
         // lazy(), not get() — see EvaluateAlerts's identical note. ->with

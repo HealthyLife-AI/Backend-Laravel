@@ -22,6 +22,7 @@ use App\Services\Logs\PatientEntryService;
 use App\Services\MealPlans\MealPlanService;
 use App\Services\Nutrition\MealPlanCalculatorService;
 use App\Services\Nutrition\NutritionCalculatorService;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -172,7 +173,7 @@ class SeedDemoData extends Command
             return self::FAILURE;
         }
 
-        $this->today = CarbonImmutable::today();
+        $this->today = ClinicDay::today();
         $selfTrigger = config('scheduling.self_trigger');
         // Alerts are evaluated once, below, at the real time; not on every
         // save while the clock is moved back.

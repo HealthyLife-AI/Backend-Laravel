@@ -7,6 +7,7 @@ use App\Models\AiSummary;
 use App\Models\Subscriber;
 use App\Services\Adherence\AdherenceService;
 use App\Services\Ai\OpenAiCompatibleClient;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -116,7 +117,7 @@ class WeeklySummaryService
         $adherence = $this->adherence->summary($subscriber, $weekStart->toDateString(), $weekEnd->toDateString());
 
         $alertCounts = $subscriber->alerts()
-            ->whereBetween('created_at', [$weekStart, $weekEnd->endOfDay()])
+            ->whereBetween('created_at', [ClinicDay::startUtc($weekStart->toDateString()), ClinicDay::endUtc($weekEnd->toDateString())])
             ->selectRaw('type, count(*) as total')
             ->groupBy('type')
             ->pluck('total', 'type');

@@ -8,6 +8,7 @@ use App\Http\Resources\MealLogResource;
 use App\Models\MealLog;
 use App\Models\Subscriber;
 use App\Services\Adherence\AdherenceService;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,7 +36,7 @@ class ClientMealLogController extends Controller
             'to' => ['nullable', 'date_format:Y-m-d', 'required_with:from', 'after_or_equal:from'],
         ]);
 
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to']) : CarbonImmutable::today();
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to']) : CarbonImmutable::parse(ClinicDay::today()->toDateString());
         $from = isset($data['from']) ? CarbonImmutable::parse($data['from']) : $to->subDays(self::DEFAULT_DAYS - 1);
 
         if ($from->diffInDays($to) + 1 > self::MAX_DAYS) {
@@ -54,7 +55,7 @@ class ClientMealLogController extends Controller
             ->reorder('logged_at')
             ->orderBy('id')
             ->get()
-            ->groupBy(fn (MealLog $log) => $log->logged_at->toDateString());
+            ->groupBy(fn (MealLog $log) => ClinicDay::ymdOf($log->logged_at));
 
         $totals = collect($this->adherence->dailyCalories($subscriber, $from->toDateString(), $to->toDateString()))->keyBy('date');
 

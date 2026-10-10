@@ -4,6 +4,7 @@ namespace App\Services\Alerts;
 
 use App\Models\Alert;
 use App\Models\Subscriber;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -66,18 +67,24 @@ class AlertEvaluationService
         }
 
         $streakDays = (int) config('alerts.calorie_exceeded_streak_days');
-        $today = CarbonImmutable::now()->startOfDay();
+        // C: days are the clinic's (SCHEDULE_TIMEZONE); grouped here, not in SQL
+        // (DATE() would cut at UTC midnight), over a window of a few days.
+        $today = ClinicDay::today();
 
-        $dailyTotals = DB::table('meal_logs')
+        $dailyTotals = [];
+        DB::table('meal_logs')
             ->join('foods', 'foods.id', '=', 'meal_logs.food_id')
             ->where('meal_logs.subscriber_id', $subscriber->id)
-            ->where('meal_logs.logged_at', '<', $today)
+            ->where('meal_logs.logged_at', '<', ClinicDay::startUtc($today->toDateString()))
             // A small buffer beyond the streak window so a gap just past
             // it doesn't need a second query to confirm the streak ends there.
-            ->where('meal_logs.logged_at', '>=', $today->subDays($streakDays + 4))
-            ->selectRaw('DATE(meal_logs.logged_at) as log_date, SUM(meal_logs.quantity_grams / 100 * foods.calories_per_100g) as total_calories')
-            ->groupBy('log_date')
-            ->pluck('total_calories', 'log_date');
+            ->where('meal_logs.logged_at', '>=', ClinicDay::startUtc($today->subDays($streakDays + 4)->toDateString()))
+            ->select('meal_logs.logged_at', 'meal_logs.quantity_grams', 'foods.calories_per_100g')
+            ->get()
+            ->each(function ($row) use (&$dailyTotals) {
+                $date = ClinicDay::ymdOf((string) $row->logged_at);
+                $dailyTotals[$date] = ($dailyTotals[$date] ?? 0.0) + (float) $row->quantity_grams / 100 * (float) $row->calories_per_100g;
+            });
 
         $streakHolds = true;
         for ($i = 1; $i <= $streakDays; $i++) {

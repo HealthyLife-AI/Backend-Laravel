@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\ProfileProposal;
 use App\Models\Subscriber;
+use App\Support\ClinicDay;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,7 +30,8 @@ class DashboardController extends Controller
 {
     public function overview(Request $request): JsonResponse
     {
-        $today = now()->startOfDay();
+        // C: "today" is the clinic's day.
+        $today = ClinicDay::today()->setTimezone(config('app.timezone'));
 
         // Archived patients (follow-up ended) are left out of every count
         // here, adherence included, and reported on their own.

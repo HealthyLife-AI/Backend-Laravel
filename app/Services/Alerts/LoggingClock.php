@@ -4,6 +4,7 @@ namespace App\Services\Alerts;
 
 use App\Models\MealPlan;
 use App\Models\Subscriber;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 
 /**
@@ -27,7 +28,7 @@ class LoggingClock
             return null;
         }
 
-        $planStart = CarbonImmutable::parse($plan->start_date ?? $plan->activated_at ?? $plan->created_at)->startOfDay();
+        $planStart = ClinicDay::date($plan->start_date?->toDateString() ?? ClinicDay::ymdOf($plan->activated_at ?? $plan->created_at));
 
         if ($planStart->isFuture()) {
             return null;
