@@ -58,7 +58,8 @@ class FcmPushService
                     'message' => [
                         'token' => $deviceToken,
                         'notification' => ['title' => $title, 'body' => $body],
-                        'data' => $data,
+                        // An object, so an empty array is sent as {} (FCM rejects a list here).
+                        'data' => (object) $data,
                     ],
                 ]);
         } catch (Throwable $e) {
