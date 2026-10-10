@@ -2,7 +2,6 @@
 
 namespace App\Services\Clients;
 
-use App\Models\ClientInvite;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Adherence\AdherenceService;
@@ -23,7 +22,6 @@ class FollowUpService
 {
     public function __construct(
         private readonly RefreshTokenService $refreshTokens,
-        private readonly ClientInviteService $invites,
         private readonly AdherenceService $adherence,
     ) {}
 
@@ -50,12 +48,6 @@ class FollowUpService
         });
     }
 
-    /**
-     * Returns a new invite when the patient never activated (their old
-     * one was invalidated on archive), otherwise null.
-     *
-     * @return array{plain: string, model: ClientInvite}|null
-     */
     /**
      * What the app's "follow-up ended" screen shows, sent in the 403 body:
      * how to reach the nutritionist, how many whole weeks the follow-up ran
@@ -84,13 +76,18 @@ class FollowUpService
         ];
     }
 
-    public function resume(Subscriber $subscriber): ?array
+    /**
+     * No invite any more (Part A): a patient who never signed in still has
+     * the credentials sent when they were added, or gets new ones from
+     * POST /clients/{id}/reset-password.
+     */
+    public function resume(Subscriber $subscriber): void
     {
         if (! $subscriber->isArchived()) {
-            return null;
+            return;
         }
 
-        return DB::transaction(function () use ($subscriber) {
+        DB::transaction(function () use ($subscriber) {
             $subscriber->forceFill(['archived_at' => null])->save();
 
             // The stored status is from before the archive; bring it up to
@@ -98,8 +95,6 @@ class FollowUpService
             if ($subscriber->status === 'active') {
                 $this->adherence->refreshStatus($subscriber);
             }
-
-            return $subscriber->status === 'pending' ? $this->invites->issue($subscriber) : null;
         });
     }
 }

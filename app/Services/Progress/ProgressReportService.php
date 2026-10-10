@@ -34,7 +34,7 @@ class ProgressReportService
             // date cast as "Y-m-d 00:00:00", which sorts after a bare "Y-m-d"
             // `to` and silently dropped a reading dated on the last day.
             ->when($from && $to, fn ($query) => $query->whereDate('recorded_at', '>=', $from)->whereDate('recorded_at', '<=', $to))
-            ->reorder('recorded_at')
+            ->reorder('recorded_at')->orderBy('id')
             ->get();
 
         return [

@@ -10,8 +10,11 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Firebase\JWT\JWT;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\Concerns\FakesPush;
@@ -181,13 +184,94 @@ class AppointmentTest extends TestCase
         $this->assertStringNotContainsString('11:00', json_encode($this->pushes[0]));
     }
 
+    /** B5: a cancel two minutes after a reschedule is its own notice, and is pushed. */
+    public function test_a_cancel_right_after_a_reschedule_is_its_own_notice_and_pushed(): void
+    {
+        $id = $this->book('2026-10-13 10:00')->json('id');
+
+        $this->patchJson("/api/v1/appointments/{$id}", ['starts_at' => $this->at('2026-10-13 11:00')], $this->nurse())->assertOk();
+        $this->travel(2)->minutes();
+        $this->patchJson("/api/v1/appointments/{$id}", ['starts_at' => $this->at('2026-10-13 10:30')], $this->nurse())->assertOk();
+        $this->travel(2)->minutes();
+        $this->postJson("/api/v1/appointments/{$id}/cancel", ['reason' => 'ظرف'], $this->nurse())->assertOk();
+
+        // Two moves merge into one row (intended); the cancellation is separate.
+        $this->assertSame(['appointment_cancelled', 'appointment_rescheduled'], PatientNotification::where('user_id', $this->patient->user_id)->orderByDesc('id')->pluck('type')->all());
+        $this->assertCount(2, $this->pushes, 'one push for the move, one for the cancellation');
+    }
+
+    /**
+     * B6: the "one upcoming appointment" check runs again INSIDE the booking
+     * transaction (after the row locks). SQLite can't run two requests at
+     * once, so this checks the order of events rather than a real race.
+     */
+    public function test_the_one_upcoming_check_runs_inside_the_booking_transaction(): void
+    {
+        $events = [];
+        Event::listen(TransactionBeginning::class, function () use (&$events) {
+            $events[] = 'begin';
+        });
+        DB::listen(function ($query) use (&$events) {
+            if (str_contains($query->sql, '"appointments"') && str_contains($query->sql, 'exists')) {
+                $events[] = 'check';
+            }
+        });
+
+        $this->book('2026-10-13 10:00')->assertCreated();
+
+        // The last thing before the insert: the booking transaction opens, then the check runs inside it.
+        $this->assertSame(['begin', 'check'], array_slice(array_values(array_filter($events, fn ($e) => in_array($e, ['begin', 'check'], true))), -2));
+        $this->book('2026-10-14 10:00')->assertStatus(409)->assertJsonPath('code', 'appointment_exists');
+    }
+
+    /** B9: the nutritionist's own slot list for moving an appointment. */
+    public function test_the_nutritionist_gets_free_times_for_moving_an_appointment(): void
+    {
+        $id = $this->book('2026-10-13 10:00')->json('id');
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->book('2026-10-14 09:00', 'follow_up', $other)->assertCreated();
+
+        $days = collect($this->getJson("/api/v1/appointments/{$id}/slots", $this->nurse())->assertOk()
+            ->assertJsonPath('type', 'follow_up')->assertJsonPath('duration_minutes', 30)->json('days'))->keyBy('date');
+
+        // No 12-hour lead: today 09:00-12:00 is offered (it is 08:00 now).
+        $this->assertSame($this->at('2026-10-11 09:00'), $days['2026-10-11']['times'][0]);
+        // Its own time stays free; another patient's 09:00-09:30 does not (nor 08:45-09:15 overlaps).
+        $this->assertContains($this->at('2026-10-13 10:00'), $days['2026-10-13']['times']);
+        $this->assertNotContains($this->at('2026-10-14 09:00'), $days['2026-10-14']['times']);
+        $this->assertNotContains($this->at('2026-10-14 09:15'), $days['2026-10-14']['times']);
+        $this->assertFalse($days->has('2026-10-12'), 'day off');
+
+        $stranger = User::factory()->nutritionist()->create();
+        $this->getJson("/api/v1/appointments/{$id}/slots", $this->bearerFor($stranger))->assertNotFound();
+        $this->getJson("/api/v1/appointments/{$id}/slots", $this->me())->assertForbidden();
+    }
+
+    public function test_the_list_filters_by_patient_without_leaking_others(): void
+    {
+        $mine = $this->book('2026-10-13 10:00')->json('id');
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->book('2026-10-14 09:00', 'follow_up', $other)->assertCreated();
+
+        $this->getJson("/api/v1/appointments?subscriber_id={$this->patient->id}", $this->nurse())->assertOk()
+            ->assertJsonCount(1)->assertJsonPath('0.id', $mine);
+
+        $stranger = User::factory()->nutritionist()->create();
+        $this->getJson("/api/v1/appointments?subscriber_id={$this->patient->id}", $this->bearerFor($stranger))->assertOk()->assertJsonCount(0);
+    }
+
     public function test_the_nutritionist_lists_cancels_completes_and_marks_no_show(): void
     {
         $a = $this->book('2026-10-13 10:00')->json('id');
         $this->getJson('/api/v1/appointments?from=2026-10-13&to=2026-10-13', $this->nurse())->assertOk()
             ->assertJsonPath('0.id', $a)->assertJsonPath('0.patient.code', $this->patient->code);
 
+        // B8: not before it starts (this used to be allowed days ahead).
+        $this->postJson("/api/v1/appointments/{$a}/complete", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_not_started');
+        $this->postJson("/api/v1/appointments/{$a}/no-show", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_not_started');
+        $this->travelTo(CarbonImmutable::parse('2026-10-13 10:00', $this->tz));
         $this->postJson("/api/v1/appointments/{$a}/complete", [], $this->nurse())->assertOk()->assertJsonPath('status', 'completed');
+        $this->travelTo(CarbonImmutable::parse('2026-10-11 08:00', $this->tz));
         $this->postJson("/api/v1/appointments/{$a}/cancel", [], $this->nurse())->assertStatus(409)->assertJsonPath('code', 'appointment_closed');
 
         $b = $this->book('2026-10-14 10:00')->json('id');

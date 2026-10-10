@@ -37,7 +37,7 @@ class NotificationCenterTest extends TestCase
         $this->fakePush();
 
         $this->nutritionist = User::factory()->nutritionist()->create();
-        $this->patient = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->patient = Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create();
         $this->user = $this->patient->user;
         $this->user->forceFill(['fcm_token' => 'device-1'])->save();
         $this->prefs(['quiet_hours_enabled' => false]);

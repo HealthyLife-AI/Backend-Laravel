@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Auth;
 
-use App\Models\ClientInvite;
 use App\Models\Food;
 use App\Models\MealLog;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Clients\ClientInviteService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -15,7 +15,8 @@ use Tests\Concerns\AuthenticatesForApi;
 use Tests\TestCase;
 
 /**
- * Batch A: PUT /me/password, the nutritionist-issued sign-in link, and the
+ * Batch A: PUT /me/password, the nutritionist's password reset (Part A,
+ * replaces the sign-in link), and the
  * patient-app fields on /auth/me, /me/nutritionist and follow_up_ended.
  */
 class PatientAccountAccessTest extends TestCase
@@ -33,7 +34,7 @@ class PatientAccountAccessTest extends TestCase
 
         $this->nutritionist = User::factory()->nutritionist()->create(['name' => 'أ. ليلى حسن']);
         $this->patient = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
-        $this->patient->user->forceFill(['password' => Hash::make('OldPass123'), 'phone' => '+15555550199'])->save();
+        $this->patient->user->forceFill(['password' => Hash::make('OldPass123'), 'phone' => '+15555550199', 'username' => 'patient.199'])->save();
     }
 
     private function login(string $password = 'OldPass123'): array
@@ -64,14 +65,15 @@ class PatientAccountAccessTest extends TestCase
         $this->getJson('/api/v1/auth/me', $this->bearer($old['access_token']))->assertUnauthorized();
     }
 
-    public function test_a_sign_in_link_activated_in_the_same_second_ends_older_tokens(): void
+    public function test_a_reset_in_the_same_second_ends_older_tokens(): void
     {
         $this->freezeTime();
 
         $old = $this->login();
-        $activated = $this->activate($this->issueLink())->assertOk()->json();
+        $password = $this->reset()->json('password');
+        $fresh = $this->login($password);
 
-        $this->getJson('/api/v1/auth/me', $this->bearer($activated['access_token']))->assertOk();
+        $this->getJson('/api/v1/auth/me', $this->bearer($fresh['access_token']))->assertOk();
         $this->getJson('/api/v1/auth/me', $this->bearer($old['access_token']))->assertUnauthorized();
     }
 
@@ -143,13 +145,11 @@ class PatientAccountAccessTest extends TestCase
             ->assertStatus(429);
     }
 
-    // ---- sign-in link ------------------------------------------------------
+    // ---- reset-password (replaces the sign-in link) -------------------------
 
-    private function issueLink(?User $as = null): string
+    private function reset(?User $as = null, array $body = []): TestResponse
     {
-        return $this->postJson("/api/v1/clients/{$this->patient->id}/sign-in-link", [], $this->bearerFor($as ?? $this->nutritionist))
-            ->assertCreated()
-            ->json('token');
+        return $this->postJson("/api/v1/clients/{$this->patient->id}/reset-password", $body, $this->bearerFor($as ?? $this->nutritionist));
     }
 
     private function activate(string $token): TestResponse
@@ -157,33 +157,24 @@ class PatientAccountAccessTest extends TestCase
         return $this->postJson("/api/v1/invites/{$token}/activate", ['password' => 'Fresh789A', 'password_confirmation' => 'Fresh789A']);
     }
 
-    public function test_the_sign_in_link_sets_a_new_password_and_ends_old_sessions(): void
+    public function test_reset_sets_a_new_password_and_ends_old_sessions(): void
     {
         $old = $this->login();
 
-        $token = $this->issueLink();
-        $activated = $this->activate($token)->assertOk()->json();
+        $credentials = $this->reset(body: ['username' => 'patient.199'])->assertOk()->json();
 
         $this->getJson('/api/v1/auth/me', $this->bearer($old['access_token']))->assertUnauthorized();
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])->assertUnauthorized();
-        $this->getJson('/api/v1/auth/me', $this->bearer($activated['access_token']))->assertOk();
-        $this->postJson('/api/v1/auth/login', ['phone' => '+15555550199', 'password' => 'Fresh789A'])->assertOk();
+        $this->postJson('/api/v1/auth/login', ['phone' => '+15555550199', 'password' => 'OldPass123'])->assertUnauthorized();
+        $this->postJson('/api/v1/auth/login', ['username' => $credentials['username'], 'password' => $credentials['password']])
+            ->assertOk()
+            ->assertJsonPath('user.password_is_temporary', true);
     }
 
-    /**
-     * An old refresh token must not mint a token that carries the new session
-     * version, and a stale device presenting one must not trip theft detection
-     * and log out the session that was just opened.
-     */
-    public function test_after_a_password_change_old_refresh_tokens_mint_nothing_and_cost_the_new_session_nothing(): void
+    public function test_after_a_reset_old_refresh_tokens_mint_nothing_and_cost_the_new_session_nothing(): void
     {
         $old = $this->login();
-
-        $fresh = $this->putJson('/api/v1/me/password', [
-            'current_password' => 'OldPass123',
-            'password' => 'NewPass456',
-            'password_confirmation' => 'NewPass456',
-        ], $this->bearer($old['access_token']))->assertOk()->json();
+        $fresh = $this->login($this->reset()->json('password'));
 
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])
             ->assertUnauthorized()
@@ -192,29 +183,18 @@ class PatientAccountAccessTest extends TestCase
         $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $fresh['refresh_token']])->assertOk();
     }
 
-    public function test_after_a_sign_in_link_old_refresh_tokens_mint_nothing_and_cost_the_new_session_nothing(): void
+    /** Links sent before Part A keep working until they expire (7 days). */
+    public function test_an_already_issued_sign_in_link_works_once(): void
     {
-        $old = $this->login();
-        $activated = $this->activate($this->issueLink())->assertOk()->json();
-
-        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $old['refresh_token']])
-            ->assertUnauthorized()
-            ->assertJsonMissingPath('access_token');
-
-        $this->postJson('/api/v1/auth/refresh', ['refresh_token' => $activated['refresh_token']])->assertOk();
-    }
-
-    public function test_the_sign_in_link_works_once(): void
-    {
-        $token = $this->issueLink();
+        $token = app(ClientInviteService::class)->issue($this->patient)['plain'];
 
         $this->activate($token)->assertOk();
         $this->activate($token)->assertUnprocessable();
     }
 
-    public function test_the_sign_in_link_expires_like_an_invite(): void
+    public function test_an_already_issued_sign_in_link_still_expires_like_an_invite(): void
     {
-        $token = $this->issueLink();
+        $token = app(ClientInviteService::class)->issue($this->patient)['plain'];
 
         $this->travel(config('invite.ttl_days'))->days();
         $this->travel(1)->minutes();
@@ -222,30 +202,33 @@ class PatientAccountAccessTest extends TestCase
         $this->activate($token)->assertUnprocessable();
     }
 
-    public function test_a_new_link_replaces_the_previous_unused_one(): void
+    public function test_a_reset_replaces_the_previous_password_and_voids_unused_links(): void
     {
-        $first = $this->issueLink();
-        $second = $this->issueLink();
+        $link = app(ClientInviteService::class)->issue($this->patient)['plain'];
+        $first = $this->reset()->json('password');
+        $second = $this->reset()->json('password');
 
-        $this->activate($first)->assertUnprocessable();
-        $this->activate($second)->assertOk();
+        $this->assertNotSame($first, $second);
+        $this->activate($link)->assertUnprocessable();
+        $this->postJson('/api/v1/auth/login', ['phone' => '+15555550199', 'password' => $first])->assertUnauthorized();
+        $this->login($second);
     }
 
-    public function test_another_nutritionist_cannot_issue_a_link(): void
+    public function test_another_nutritionist_cannot_reset(): void
     {
         $stranger = User::factory()->nutritionist()->create();
 
-        $this->postJson("/api/v1/clients/{$this->patient->id}/sign-in-link", [], $this->bearerFor($stranger))->assertNotFound();
-        $this->postJson("/api/v1/clients/{$this->patient->id}/sign-in-link", [], $this->bearerFor($this->patient->user))->assertForbidden();
-        $this->assertSame(0, ClientInvite::where('subscriber_id', $this->patient->id)->count());
+        $this->reset($stranger, ['username' => 'stolen.name'])->assertNotFound();
+        $this->reset($this->patient->user, ['username' => 'stolen.name'])->assertForbidden();
+        $this->login();
+        $this->assertSame('patient.199', $this->patient->user->fresh()->username);
     }
 
-    public function test_no_link_for_a_patient_whose_follow_up_ended(): void
+    public function test_no_reset_for_a_patient_whose_follow_up_ended(): void
     {
         $this->postJson("/api/v1/clients/{$this->patient->id}/archive", [], $this->bearerFor($this->nutritionist))->assertOk();
 
-        $this->postJson("/api/v1/clients/{$this->patient->id}/sign-in-link", [], $this->bearerFor($this->nutritionist))
-            ->assertStatus(409);
+        $this->reset(body: ['username' => 'patient.199'])->assertStatus(409)->assertJsonPath('code', 'follow_up_ended');
     }
 
     // ---- patient-app fields ---------------------------------------------------

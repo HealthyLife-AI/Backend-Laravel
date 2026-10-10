@@ -89,25 +89,60 @@ class Food extends Model
      * must find "Soup, chicken noodle". Plain LIKE scans are fine at this
      * table's size (~8k rows). `$term` should already be trimmed.
      *
-     * Ordered by relevance: names that START with the term, then ones
-     * where it starts a word, then anywhere; foods with an Arabic name
-     * (the curated local list) ahead of English-only USDA rows; shorter
-     * (more generic) names first — "Rice, white, cooked" before a long
-     * branded variant.
+     * Ordered by relevance (B15): the term as a WHOLE word first ("salmon"
+     * before "Salmonberries"), then names that START with it, then ones
+     * where it starts a word, then anywhere; foods with an Arabic name (the
+     * curated local list) ahead of English-only USDA rows; shorter (more
+     * generic) names first.
      *
      * Arabic is compared in its normalized form (ArabicText) on both
-     * sides, so "ارز" finds "أرز" and "بيضه" finds "بيضة".
+     * sides, so "ارز" finds "أرز" and "بيضه" finds "بيضة"; a word that
+     * ends in ه or ا also matches the other ending, because the same word
+     * is written both ways ("تونة" / "تونا").
      */
     public function scopeSearch(Builder $query, string $term): void
     {
-        $escaped = addcslashes(ArabicText::normalize($term), '%_\\');
+        $base = ArabicText::normalize($term);
+        $terms = [$base];
+        $last = mb_substr($base, -1);
+
+        if (mb_strlen($base) > 2 && in_array($last, ['ه', 'ا'], true)) {
+            $terms[] = mb_substr($base, 0, -1).($last === 'ه' ? 'ا' : 'ه');
+        }
+
+        $escaped = array_map(fn ($t) => addcslashes($t, '%_\\'), $terms);
 
         $query->where(function (Builder $q) use ($escaped) {
-            $q->where('name_en', 'like', "%{$escaped}%")
-                ->orWhere('name_ar_normalized', 'like', "%{$escaped}%");
-        })->orderByRaw(
-            'CASE WHEN name_ar_normalized LIKE ? OR name_en LIKE ? THEN 0 WHEN name_ar_normalized LIKE ? OR name_en LIKE ? THEN 1 ELSE 2 END',
-            ["{$escaped}%", "{$escaped}%", "% {$escaped}%", "% {$escaped}%"],
+            foreach ($escaped as $t) {
+                $q->orWhere('name_en', 'like', "%{$t}%")->orWhere('name_ar_normalized', 'like', "%{$t}%");
+            }
+        });
+
+        // Tier 0: the term as a whole word (delimited by start/end, space or comma).
+        $whole = [];
+        $bindings = [];
+        foreach ($escaped as $t) {
+            foreach (["{$t}", "{$t} %", "{$t},%", "% {$t}", "% {$t} %", "% {$t},%"] as $pattern) {
+                $whole[] = 'name_ar_normalized LIKE ? OR name_en LIKE ?';
+                array_push($bindings, $pattern, $pattern);
+            }
+        }
+        $starts = [];
+        $startBindings = [];
+        foreach ($escaped as $t) {
+            $starts[] = 'name_ar_normalized LIKE ? OR name_en LIKE ?';
+            array_push($startBindings, "{$t}%", "{$t}%");
+        }
+        $wordStarts = [];
+        $wordBindings = [];
+        foreach ($escaped as $t) {
+            $wordStarts[] = 'name_ar_normalized LIKE ? OR name_en LIKE ?';
+            array_push($wordBindings, "% {$t}%", "% {$t}%");
+        }
+
+        $query->orderByRaw(
+            'CASE WHEN ('.implode(' OR ', $whole).') THEN 0 WHEN ('.implode(' OR ', $starts).') THEN 1 WHEN ('.implode(' OR ', $wordStarts).') THEN 2 ELSE 3 END',
+            [...$bindings, ...$startBindings, ...$wordBindings],
         )->orderByRaw('CASE WHEN name_ar IS NULL THEN 1 ELSE 0 END')
             ->orderByRaw('LENGTH(COALESCE(name_ar, name_en))');
     }

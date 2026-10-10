@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Notifications;
 
+use App\Models\PatientNotification;
 use App\Models\Subscriber;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -86,11 +87,27 @@ class SendLogRemindersTest extends TestCase
         $client = User::factory()->create(['nutritionist_id' => $nutritionist->id, 'fcm_token' => $fcmToken]);
         $client->assignRole('client');
 
-        return Subscriber::factory()->active()->create([
+        return Subscriber::factory()->active()->withPlanInForce()->create([
             'nutritionist_id' => $nutritionist->id,
             'user_id' => $client->id,
             'last_logged_at' => $lastLoggedDaysAgo === null ? null : now()->subDays($lastLoggedDaysAgo),
         ]);
+    }
+
+    /** B13: no reminder for a patient with no active plan, or whose plan starts in the future. */
+    public function test_no_reminder_without_a_plan_in_force(): void
+    {
+        $noPlan = $this->makeClient('device-1', lastLoggedDaysAgo: 1);
+        $noPlan->mealPlans()->delete();
+        $future = $this->makeClient('device-2', lastLoggedDaysAgo: 1);
+        $future->mealPlans()->update(['start_date' => now()->addDays(2)->toDateString()]);
+        $ready = $this->makeClient('device-3', lastLoggedDaysAgo: 1);
+
+        $this->artisan('notifications:send-log-reminders')->expectsOutputToContain('out of 1 client')->assertSuccessful();
+
+        $this->assertSame(0, PatientNotification::where('user_id', $noPlan->user_id)->count());
+        $this->assertSame(0, PatientNotification::where('user_id', $future->user_id)->count());
+        $this->assertSame(1, PatientNotification::where('user_id', $ready->user_id)->count());
     }
 
     public function test_it_pushes_to_a_client_who_has_not_logged_today(): void

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\System;
 
 use App\Http\Controllers\Controller;
 use App\Services\Scheduling\SelfScheduler;
+use App\Support\TrustedProxies;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Same purpose as `AiStatusController` / `FcmStatusController`: answer
@@ -22,7 +24,7 @@ use Illuminate\Http\JsonResponse;
  */
 class SchedulerStatusController extends Controller
 {
-    public function __invoke(SelfScheduler $scheduler): JsonResponse
+    public function __invoke(SelfScheduler $scheduler, Request $request): JsonResponse
     {
         $now = CarbonImmutable::now();
         $jobs = [];
@@ -41,6 +43,19 @@ class SchedulerStatusController extends Controller
             'timezone' => config('scheduling.timezone'),
             'self_trigger' => (bool) config('scheduling.self_trigger'),
             'jobs' => $jobs,
+            // B1: what the app sees of this very request. remote_addr is the
+            // proxy's address when the app sits behind one — that is the value
+            // for TRUSTED_PROXIES. trusted_proxy_match false while TRUSTED_PROXIES
+            // is set means the proxy's address changed (e.g. after a redeploy).
+            'request' => [
+                'client_ip' => $request->ip(),
+                'remote_addr' => $request->server('REMOTE_ADDR'),
+                'forwarded_for' => $request->headers->get('X-Forwarded-For'),
+                'forwarded_proto' => $request->headers->get('X-Forwarded-Proto'),
+                'scheme' => $request->getScheme(),
+                'trusted_proxies' => config('trustedproxy.proxies'),
+                'trusted_proxy_match' => TrustedProxies::covers($request->server('REMOTE_ADDR'), config('trustedproxy.proxies')),
+            ],
         ]);
     }
 }

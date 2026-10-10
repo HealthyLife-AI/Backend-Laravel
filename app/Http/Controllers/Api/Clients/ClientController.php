@@ -11,12 +11,10 @@ use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Clients\ClientCodeAllocator;
 use App\Services\Clients\ClientDeletionService;
-use App\Services\Clients\ClientInviteService;
+use App\Support\TemporaryPassword;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 /**
  * F-2 / US-02: add a client, list/filter/search a nutritionist's own
@@ -29,7 +27,6 @@ use Illuminate\Support\Str;
 class ClientController extends Controller
 {
     public function __construct(
-        private readonly ClientInviteService $invites,
         private readonly ClientCodeAllocator $codes,
         private readonly ClientDeletionService $deletion,
     ) {}
@@ -42,7 +39,7 @@ class ClientController extends Controller
      */
     public function index(ListClientsRequest $request): AnonymousResourceCollection
     {
-        $query = Subscriber::query()->with('user')->withCount(['proposals as pending_proposals_count' => fn ($q) => $q->where('status', 'pending')]);
+        $query = Subscriber::query()->with(['user', 'patientGoal'])->withCount(['proposals as pending_proposals_count' => fn ($q) => $q->where('status', 'pending')]);
 
         // Archived patients are a separate list, never mixed into the roster.
         if ($request->boolean('archived')) {
@@ -77,10 +74,12 @@ class ClientController extends Controller
     }
 
     /**
-     * FR-02: create the client's auth row (name + phone only — no email,
-     * no usable password until activation) and its domain profile, then
-     * issue a single-use invite (FR-03/BR-3). Wrapped in a transaction so
-     * a failure partway never leaves an orphaned user with no subscriber
+     * FR-02: create the client's auth row (name, phone, username — no
+     * email) with a generated password, and its domain profile. The
+     * username and the plain password are returned ONCE, in this response,
+     * for the nutritionist to send on WhatsApp; only the hash is stored.
+     * No invite link any more (Part A). Wrapped in a transaction so a
+     * failure partway never leaves an orphaned user with no subscriber
      * profile (NFR-04).
      */
     public function store(StoreClientRequest $request): JsonResponse
@@ -91,21 +90,27 @@ class ClientController extends Controller
         // the same instant) is retried instead of surfacing as a 500. The
         // patient code can no longer collide: ClientCodeAllocator hands out
         // numbers under a row lock and never reuses one.
-        return DB::transaction(function () use ($request, $nutritionist) {
+        $password = TemporaryPassword::generate();
+
+        return DB::transaction(function () use ($request, $nutritionist, $password) {
             $user = User::create([
-                'name' => $request->string('name'),
-                'phone' => $request->string('phone'),
-                // Unusable until the client sets a real one via
-                // their invite link (ActivateInviteController).
-                'password' => Hash::make(Str::random(40)),
+                'name' => $request->string('name')->toString(),
+                'phone' => $request->string('phone')->toString(),
+                'username' => $request->string('username')->toString(),
+                // Hashed by the model's cast; the plain text only goes back in this response.
+                'password' => $password,
                 'nutritionist_id' => $nutritionist->id,
             ]);
+            $user->forceFill(['password_is_temporary' => true])->save();
             $user->assignRole('client');
 
             $subscriber = Subscriber::create([
                 'user_id' => $user->id,
                 'code' => $this->codes->next($nutritionist),
-                'goal' => $request->string('goal'),
+                // Legacy column from the structured goal (B10). A plain string:
+                // the Stringable from $request->string() made the goal_type
+                // below always 'other' (B12).
+                'goal' => PatientGoal::LEGACY_GOAL[$request->string('goal')->toString()],
                 // Explicit, even though the migration defaults to
                 // 'pending' at the DB level: Eloquent doesn't know
                 // about schema-level defaults on a freshly built
@@ -119,15 +124,12 @@ class ClientController extends Controller
             // The structured goal starts from the one chosen when adding the patient.
             PatientGoal::create([
                 'subscriber_id' => $subscriber->id,
-                'goal_type' => array_search($subscriber->goal, ['weight_loss' => 'weight_loss', 'weight_gain' => 'weight_gain', 'weight_maintenance' => 'weight_maintenance', 'health_energy' => 'health_monitoring'], true) ?: 'other',
+                'goal_type' => $request->string('goal')->toString(),
             ]);
 
-            $invite = $this->invites->issue($subscriber);
-
             return response()->json([
-                'client' => new SubscriberResource($subscriber->load('user')),
-                'invite_token' => $invite['plain'],
-                'invite_expires_at' => $invite['model']->expires_at->toIso8601String(),
+                'client' => new SubscriberResource($subscriber->load(['user', 'patientGoal'])),
+                'credentials' => ['username' => $user->username, 'password' => $password],
             ], 201);
         }, 3);
     }
@@ -136,7 +138,7 @@ class ClientController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        return (new SubscriberResource($subscriber->load('user')))->withConsent();
+        return (new SubscriberResource($subscriber->load(['user', 'patientGoal'])))->withConsent();
     }
 
     /**

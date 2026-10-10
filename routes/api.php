@@ -12,7 +12,7 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Clients\ClientController;
 use App\Http\Controllers\Api\Clients\ClientFollowUpController;
 use App\Http\Controllers\Api\Clients\ClientInviteController;
-use App\Http\Controllers\Api\Clients\ClientSignInLinkController;
+use App\Http\Controllers\Api\Clients\ClientPasswordResetController;
 use App\Http\Controllers\Api\Clients\DashboardController;
 use App\Http\Controllers\Api\Consent\ConsentController;
 use App\Http\Controllers\Api\FollowUp\ClientReviewController;
@@ -45,16 +45,19 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->name('api.')->group(function () {
 
     Route::prefix('auth')->name('auth.')->group(function () {
+        // B2: every throttle here is a named limiter with its own counter
+        // (AppServiceProvider). The bare `throttle:N,1` form shared ONE counter
+        // per IP across all of these routes.
         Route::post('register', [AuthController::class, 'register'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:register')
             ->name('register');
 
         Route::post('login', [AuthController::class, 'login'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:login')
             ->name('login');
 
         Route::post('refresh', [AuthController::class, 'refresh'])
-            ->middleware('throttle:20,1')
+            ->middleware('throttle:refresh')
             ->name('refresh');
 
         Route::post('logout', [AuthController::class, 'logout'])->name('logout');
@@ -62,16 +65,16 @@ Route::prefix('v1')->name('api.')->group(function () {
         // "Continue with Google": the browser hands over a Google access
         // token, the API verifies it with Google (GoogleAuthService).
         Route::post('google', [AuthController::class, 'google'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:google')
             ->name('google');
 
         // Forgot / reset password. Forgot always answers 200 so the
         // endpoint can't be used to probe which e-mails have accounts.
         Route::post('forgot-password', [AuthController::class, 'forgotPassword'])
-            ->middleware('throttle:5,1')
+            ->middleware('throttle:forgot-password')
             ->name('forgot-password');
         Route::post('reset-password', [AuthController::class, 'resetPassword'])
-            ->middleware('throttle:10,1')
+            ->middleware('throttle:reset-password')
             ->name('reset-password');
 
         Route::get('me', [AuthController::class, 'me'])
@@ -81,12 +84,12 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     // Change one's own password; ends every other session. Throttled like login.
     Route::put('me/password', [AuthController::class, 'changePassword'])
-        ->middleware(['jwt', 'throttle:10,1'])
+        ->middleware(['jwt', 'throttle:password-change'])
         ->name('me.password.update');
 
     // FR-03: public — the invite token itself is the credential.
     Route::post('invites/{token}/activate', [ClientInviteController::class, 'activate'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:invite-activate')
         ->name('invites.activate');
 
     Route::middleware(['jwt', 'permission:clients.manage'])->group(function () {
@@ -97,10 +100,11 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/archive', [ClientFollowUpController::class, 'archive'])->name('clients.archive');
         Route::post('clients/{subscriber}/resume', [ClientFollowUpController::class, 'resume'])->name('clients.resume');
 
-        // A new one-time sign-in link for a patient who can't sign in (sent over WhatsApp).
-        Route::post('clients/{subscriber}/sign-in-link', [ClientSignInLinkController::class, 'store'])
-            ->middleware('follow-up')
-            ->name('clients.sign-in-link.store');
+        // Part A: a new generated password (and the username, if missing or changed),
+        // shown once for the nutritionist to send on WhatsApp. Ends every session.
+        Route::post('clients/{subscriber}/reset-password', [ClientPasswordResetController::class, 'store'])
+            ->middleware(['follow-up', 'throttle:credentials-reset'])
+            ->name('clients.reset-password.store');
 
         // Phase 2: the patient's meal log day by day, with each log's kind.
         Route::get('clients/{subscriber}/meal-logs/daily', [ClientMealLogController::class, 'daily'])->name('clients.meal-logs.daily');
@@ -117,6 +121,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/availability', [NutritionistAppointmentController::class, 'availability'])->name('me.availability.show');
         Route::put('me/availability', [NutritionistAppointmentController::class, 'updateAvailability'])->name('me.availability.update');
         Route::get('appointments', [NutritionistAppointmentController::class, 'index'])->name('appointments.index');
+        Route::get('appointments/{appointment}/slots', [NutritionistAppointmentController::class, 'slots'])->whereNumber('appointment')->name('appointments.slots');
         Route::patch('appointments/{appointment}', [NutritionistAppointmentController::class, 'update'])->whereNumber('appointment')->name('appointments.update');
         Route::post('appointments/{appointment}/cancel', [NutritionistAppointmentController::class, 'cancel'])->whereNumber('appointment')->name('appointments.cancel');
         Route::post('appointments/{appointment}/complete', [NutritionistAppointmentController::class, 'complete'])->whereNumber('appointment')->name('appointments.complete');

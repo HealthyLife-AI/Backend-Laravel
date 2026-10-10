@@ -40,8 +40,8 @@ class FollowUpTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
 
         $this->nutritionist = User::factory()->nutritionist()->create();
-        $this->patient = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
-        $this->other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->patient = Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create();
+        $this->other = Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create();
         $this->patient->user->forceFill(['password' => Hash::make('patient-pass'), 'phone' => '+970590000001'])->save();
     }
 
@@ -229,7 +229,8 @@ class FollowUpTest extends TestCase
 
         $this->assertEquals(80, $this->patient->healthProfile()->value('weight_kg'));
         $this->assertDatabaseCount('body_composition_readings', 0);
-        $this->assertDatabaseCount('meal_plans', 0);
+        // The patient fixture now starts with one active plan (B13); the writes below must add none.
+        $this->assertDatabaseCount('meal_plans', 2);
     }
 
     // ---- resume -----------------------------------------------------------
@@ -237,7 +238,7 @@ class FollowUpTest extends TestCase
     public function test_resuming_follow_up_restores_everything(): void
     {
         $this->archive();
-        $this->resume()->assertJsonPath('invite_token', null);
+        $this->resume()->assertJsonMissingPath('invite_token');
 
         $this->postJson('/api/v1/auth/login', ['phone' => '+970590000001', 'password' => 'patient-pass'])->assertOk();
         $this->assertContains($this->patient->id, collect($this->getJson('/api/v1/clients', $this->auth())->json('data'))->pluck('id'));
@@ -256,18 +257,20 @@ class FollowUpTest extends TestCase
         $this->assertEqualsCanonicalizing([$this->patient->id, $this->other->id], $seen);
     }
 
-    public function test_resuming_a_never_activated_patient_issues_a_new_invite(): void
+    public function test_resuming_a_never_signed_in_patient_issues_no_invite_and_keeps_their_credentials(): void
     {
         $pending = Subscriber::factory()->forNutritionist($this->nutritionist)->create();
-        app(ClientInviteService::class)->issue($pending);
+        $pending->user->forceFill(['username' => 'pending.one', 'password' => 'Sent7Pass', 'password_is_temporary' => true])->save();
         $this->archive($pending);
 
-        $response = $this->postJson("/api/v1/clients/{$pending->id}/resume", [], $this->auth())->assertOk();
-        $token = $response->json('invite_token');
+        $this->postJson("/api/v1/clients/{$pending->id}/resume", [], $this->auth())
+            ->assertOk()
+            ->assertJsonMissingPath('invite_token');
 
-        $this->assertNotNull($token);
-        $this->postJson("/api/v1/invites/{$token}/activate", ['password' => 'NewPass-123', 'password_confirmation' => 'NewPass-123'])
-            ->assertSuccessful();
+        $this->assertSame(0, $pending->invites()->count());
+        // The credentials sent when they were added still work, and signing in activates.
+        $this->postJson('/api/v1/auth/login', ['username' => 'pending.one', 'password' => 'Sent7Pass'])->assertOk();
+        $this->assertSame('active', $pending->fresh()->status);
     }
 
     // ---- ownership and delete --------------------------------------------

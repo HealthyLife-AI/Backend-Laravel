@@ -38,7 +38,7 @@ class DailyAdherenceRefreshTest extends TestCase
 
     private function patient(array $attributes = []): Subscriber
     {
-        return Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create($attributes + ['adherence_status' => 'stable']);
+        return Subscriber::factory()->active()->withPlanInForce()->forNutritionist($this->nutritionist)->create($attributes + ['adherence_status' => 'stable']);
     }
 
     /** One plan item for $subscriber, so logs can be on-plan (BR-9). */

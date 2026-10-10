@@ -9,6 +9,9 @@ use App\Models\Subscriber;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\AiSummaries\WeeklySummaryService;
 use App\Services\Alerts\AlertEvaluationService;
+use App\Support\Phone;
+use App\Support\TrustedProxies;
+use App\Support\Username;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -41,6 +44,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // B1: only the configured proxy's X-Forwarded-* headers are believed.
+        // Parsed (and "*" refused) here, so a bad TRUSTED_PROXIES stops the
+        // app at boot instead of silently trusting everyone.
+        config(['trustedproxy.proxies' => TrustedProxies::parse(config('trustedproxy.proxies'))]);
+
         // Re-evaluate a client's alerts right after new data about them is
         // saved, instead of waiting for tomorrow's 06:00 run: logging a
         // meal clears an open "no log" alert, a new weight reading can
@@ -114,5 +122,44 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai-draft', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()->id);
         });
+
+        // B2: the unauthenticated auth routes, each with its OWN counter. The
+        // bare `throttle:N,1` form keys every route by the same IP signature,
+        // so ten token refreshes used to lock login and activation for that
+        // address (behind Taqat's proxy before B1: for everybody).
+        RateLimiter::for('login', function (Request $request) {
+            return [
+                Limit::perMinute(10)->by('id:'.$request->ip().'|'.self::loginIdentifier($request)),
+                Limit::perMinute(60)->by('ip:'.$request->ip()),
+            ];
+        });
+        RateLimiter::for('refresh', function (Request $request) {
+            return [
+                Limit::perMinute(30)->by('token:'.hash('sha256', (string) $request->input('refresh_token'))),
+                Limit::perMinute(300)->by('ip:'.$request->ip()),
+            ];
+        });
+        RateLimiter::for('register', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
+        RateLimiter::for('google', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
+        RateLimiter::for('forgot-password', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+        RateLimiter::for('reset-password', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
+        RateLimiter::for('invite-activate', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
+        RateLimiter::for('password-change', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+
+        // Part A: each reset mints a new password; cap it per nutritionist.
+        RateLimiter::for('credentials-reset', function (Request $request) {
+            return Limit::perMinute(20)->by($request->user()->id);
+        });
+    }
+
+    /** The account a login attempt is about, normalised like the login itself. */
+    private static function loginIdentifier(Request $request): string
+    {
+        return match (true) {
+            is_string($request->input('username')) => 'u:'.Username::normalize($request->input('username')),
+            is_string($request->input('email')) => 'e:'.mb_strtolower(trim($request->input('email'))),
+            is_string($request->input('phone')) => 'p:'.Phone::clean($request->input('phone')),
+            default => '-',
+        };
     }
 }

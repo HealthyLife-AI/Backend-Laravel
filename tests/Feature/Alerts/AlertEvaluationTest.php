@@ -33,7 +33,7 @@ class AlertEvaluationTest extends TestCase
     {
         $nutritionist = User::factory()->nutritionist()->create();
 
-        return Subscriber::factory()->active()->create([
+        return Subscriber::factory()->active()->withPlanInForce()->create([
             'nutritionist_id' => $nutritionist->id,
             'goal' => $goal,
         ]);

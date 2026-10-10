@@ -54,6 +54,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // has no throttle unless this is called; see that provider for why).
         $middleware->throttleApi();
 
+        // B1: which X-Forwarded-* headers to take from a trusted proxy (the
+        // proxy list itself is config('trustedproxy.proxies'), from
+        // TRUSTED_PROXIES). No AWS-ELB or prefix headers: Taqat sends neither.
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_HOST | Request::HEADER_X_FORWARDED_PORT | Request::HEADER_X_FORWARDED_PROTO);
+
         // Global, not the `api` group: route middleware is priority-sorted,
         // so on the api group this sat behind `jwt` and never ran for a
         // request that failed auth. Global also covers `/up` and anything

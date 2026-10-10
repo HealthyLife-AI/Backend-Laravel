@@ -101,15 +101,17 @@ class AppointmentService
     {
         $nutritionist = User::query()->findOrFail($subscriber->nutritionist_id);
 
-        $upcoming = Appointment::query()->where('subscriber_id', $subscriber->id)->where('status', 'booked')->where('starts_at', '>', now())->exists();
-        if ($upcoming) {
-            throw new ApiCodeException('You already have an upcoming appointment. Change or cancel it instead.', 'appointment_exists', 409);
-        }
-
+        $this->assertNoUpcoming($subscriber);
         $this->assertChannel($nutritionist, $data['channel']);
         $start = $this->assertFreeSlot($nutritionist, $data['type'], $data['starts_at']);
 
         return $this->withHolds($nutritionist, function () use ($subscriber, $nutritionist, $data, $start) {
+            // B6: re-checked under a lock on the patient's row (after the
+            // nutritionist's, always in that order): two taps on «احجز» at the
+            // same instant can no longer both pass the check above.
+            Subscriber::withoutGlobalScopes()->whereKey($subscriber->id)->lockForUpdate()->value('id');
+            $this->assertNoUpcoming($subscriber);
+
             return Appointment::create([
                 'subscriber_id' => $subscriber->id,
                 'nutritionist_id' => $nutritionist->id,
@@ -172,6 +174,11 @@ class AppointmentService
     public function close(Appointment $appointment, string $status): Appointment
     {
         $this->assertBooked($appointment);
+
+        // B8: done / no-show describe something that happened; not before it starts.
+        if ($appointment->starts_at->isFuture()) {
+            throw new ApiCodeException('This appointment has not started yet.', 'appointment_not_started', 409);
+        }
         DB::table('appointment_holds')->where('appointment_id', $appointment->id)->delete();
         $appointment->forceFill(['status' => $status])->save();
 
@@ -207,6 +214,13 @@ class AppointmentService
         }
 
         return $start;
+    }
+
+    private function assertNoUpcoming(Subscriber $subscriber): void
+    {
+        if (Appointment::query()->where('subscriber_id', $subscriber->id)->where('status', 'booked')->where('starts_at', '>', now())->exists()) {
+            throw new ApiCodeException('You already have an upcoming appointment. Change or cancel it instead.', 'appointment_exists', 409);
+        }
     }
 
     private function assertChannel(User $nutritionist, string $channel): void
@@ -267,7 +281,9 @@ class AppointmentService
         $user = Subscriber::withoutGlobalScopes()->find($appointment->subscriber_id)?->user()->first();
 
         if ($user !== null) {
-            $this->notifications->notify($user, 'nutritionist', $type, ['appointment_id' => $appointment->id], "appointment:{$appointment->id}");
+            // B5: one key per type. A shared key let a cancel within 5 minutes of a
+            // reschedule refresh the «تغيّر موعدك» row and never push the cancellation.
+            $this->notifications->notify($user, 'nutritionist', $type, ['appointment_id' => $appointment->id], "appointment:{$appointment->id}:{$type}");
         }
     }
 }

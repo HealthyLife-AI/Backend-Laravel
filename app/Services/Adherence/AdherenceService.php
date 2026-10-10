@@ -5,6 +5,7 @@ namespace App\Services\Adherence;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Services\Nutrition\MealPlanCalculatorService;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 
 /**
@@ -181,7 +182,7 @@ class AdherenceService
         // the client (`activated_at`), and only failing both — a plan
         // predating that column — the day it was drafted.
         $effectiveStart = CarbonImmutable::parse(
-            $plan->start_date ?? $plan->activated_at ?? $plan->created_at
+            $plan->start_date?->toDateString() ?? ClinicDay::ymdOf($plan->activated_at ?? $plan->created_at)
         )->startOfDay();
 
         $cursor = CarbonImmutable::parse($from);
@@ -234,7 +235,7 @@ class AdherenceService
                 continue;
             }
 
-            $date = $log->logged_at->toDateString();
+            $date = ClinicDay::ymdOf($log->logged_at);
             $calories = $this->calculator->macrosFor($log->food, (float) $log->quantity_grams)['calories'];
 
             $totals[$date] = ($totals[$date] ?? 0.0) + $calories;
@@ -339,7 +340,8 @@ class AdherenceService
             return [$from, $to];
         }
 
-        $end = CarbonImmutable::now();
+        // C: the window ends on the clinic's today, not UTC's.
+        $end = CarbonImmutable::parse(ClinicDay::today()->toDateString());
         $start = $end->subDays((int) config('adherence.default_window_days') - 1);
 
         return [$start->toDateString(), $end->toDateString()];

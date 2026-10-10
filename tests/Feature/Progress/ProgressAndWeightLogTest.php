@@ -148,11 +148,11 @@ class ProgressAndWeightLogTest extends TestCase
     }
 
     /**
-     * A client correcting a day the nutritionist already measured in
-     * clinic must not downgrade that row to self-reported — the analyser
-     * figures on it are still analyser figures.
+     * B3: a patient reading on a day the nutritionist measured in clinic is
+     * a SEPARATE self-reported row; the clinic row (weight and analyser
+     * figures) is never modified from the patient endpoint.
      */
-    public function test_a_client_edit_does_not_downgrade_a_clinic_reading(): void
+    public function test_a_patient_reading_never_modifies_a_clinic_reading_on_the_same_day(): void
     {
         [$client, $subscriber, $nutritionist] = $this->makeClient();
         $today = now()->toDateString();
@@ -163,15 +163,38 @@ class ProgressAndWeightLogTest extends TestCase
             $this->bearerFor($nutritionist)
         )->assertCreated();
 
-        $this->postJson('/api/v1/me/measurements', [
-            'weight_kg' => 79.4,
-            'recorded_at' => $today,
-        ], $this->bearerFor($client))->assertOk();
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 77.7, 'recorded_at' => $today], $this->bearerFor($client))
+            ->assertCreated()
+            ->assertJsonPath('source', 'self-reported');
 
-        $reading = $subscriber->bodyCompositionReadings()->first();
-        $this->assertSame('clinic-analyser', $reading->source);
-        $this->assertEquals(79.4, $reading->weight_kg);
-        $this->assertEquals(22, $reading->body_fat_percent);
+        $clinic = $subscriber->bodyCompositionReadings()->where('source', 'clinic-analyser')->sole();
+        $this->assertEquals(80.0, $clinic->weight_kg);
+        $this->assertEquals(22, $clinic->body_fat_percent);
+        $this->assertNull($clinic->edited_at);
+        $this->assertSame(2, $subscriber->bodyCompositionReadings()->count());
+
+        // Re-sending the patient's own day updates their row, not the clinic's.
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 77.9, 'recorded_at' => $today], $this->bearerFor($client))->assertOk();
+        $this->assertEquals(80.0, $clinic->fresh()->weight_kg);
+        $this->assertEquals(77.9, $subscriber->bodyCompositionReadings()->where('source', 'self-reported')->sole()->weight_kg);
+    }
+
+    public function test_two_readings_on_one_date_are_listed_in_a_stable_order_everywhere(): void
+    {
+        [$client, $subscriber, $nutritionist] = $this->makeClient();
+        $today = now()->toDateString();
+
+        $this->postJson("/api/v1/clients/{$subscriber->id}/body-composition-readings", ['recorded_at' => $today, 'weight_kg' => 80, 'body_fat_percent' => 22], $this->bearerFor($nutritionist))->assertCreated();
+        $this->postJson('/api/v1/me/measurements', ['weight_kg' => 77.7, 'recorded_at' => $today], $this->bearerFor($client))->assertCreated();
+
+        $trend = $this->getJson("/api/v1/clients/{$subscriber->id}/progress", $this->bearerFor($nutritionist))->assertOk()->json('weight_trend');
+        $this->assertEquals([[$today, 80.0, 'clinic-analyser'], [$today, 77.7, 'self-reported']], array_map(fn ($p) => [$p['recorded_at'], $p['weight_kg'], $p['source']], $trend));
+        $history = $this->getJson('/api/v1/me/measurements', $this->bearerFor($client))->assertOk()->json();
+        $this->assertSame(['clinic-analyser', 'self-reported'], array_column($history['data'] ?? $history, 'source'));
+        // The patient can delete only their own row.
+        $mine = collect($history['data'] ?? $history)->firstWhere('source', 'self-reported');
+        $this->deleteJson("/api/v1/me/measurements/{$mine['id']}", [], $this->bearerFor($client))->assertNoContent();
+        $this->assertSame(1, $subscriber->bodyCompositionReadings()->count());
     }
 
     /** A tape-only entry used to pass validation and then fail on the NOT NULL weight column (500). */

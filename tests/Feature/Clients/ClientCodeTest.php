@@ -35,7 +35,7 @@ class ClientCodeTest extends TestCase
 
     private function addClient(User $nutritionist, string $phone): TestResponse
     {
-        return $this->postJson('/api/v1/clients', ['name' => "Client {$phone}", 'phone' => $phone, 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
+        return $this->postJson('/api/v1/clients', ['name' => "Client {$phone}", 'phone' => "+970599000{$phone}", 'username' => "client{$phone}.{$nutritionist->id}", 'goal' => 'weight_loss'], $this->bearerFor($nutritionist));
     }
 
     public function test_deleting_the_highest_numbered_patient_does_not_free_its_code(): void

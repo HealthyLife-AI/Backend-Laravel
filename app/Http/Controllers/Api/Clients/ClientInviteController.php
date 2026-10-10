@@ -13,6 +13,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 
 /**
+ * DEPRECATED (Part A): no new invites are issued; this only redeems tokens
+ * already sent (they expire within 7 days). Remove once none are left.
+ *
  * FR-03: public (unauthenticated) endpoint — the invite token itself is
  * the credential. Reuses Sprint 1's JwtService/RefreshTokenService so a
  * freshly activated client is immediately logged in (Milestones US-02
@@ -38,8 +41,9 @@ class ClientInviteController extends Controller
         $subscriber = $invite->subscriber;
         $user = $subscriber->user;
 
-        $user->forceFill(['password' => Hash::make($request->string('password'))])->save();
-        $subscriber->forceFill(['status' => 'active'])->save();
+        // The patient chose this password themselves.
+        $user->forceFill(['password' => Hash::make($request->string('password')), 'password_is_temporary' => false])->save();
+        $subscriber->forceFill(['status' => 'active', 'activated_at' => $subscriber->activated_at ?? now()])->save();
 
         // A sign-in link reissued by the nutritionist replaces every earlier session.
         $this->refreshTokens->endAllSessions($user);

@@ -78,7 +78,7 @@ class SelfSchedulerTest extends TestCase
         $nutritionist = User::factory()->nutritionist()->create();
         $auth = $this->bearerFor($nutritionist); // before travelling: JWT expiry is checked against the real clock
         $this->travelTo($this->wednesdayMorning());
-        $silent = Subscriber::factory()->active()->create(['nutritionist_id' => $nutritionist->id, 'last_logged_at' => null]);
+        $silent = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => $nutritionist->id, 'last_logged_at' => null]);
 
         $this->getJson('/api/v1/alerts', $auth)->assertOk();
 

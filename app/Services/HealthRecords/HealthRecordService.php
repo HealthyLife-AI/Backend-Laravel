@@ -216,7 +216,11 @@ class HealthRecordService
         $this->assertPending($proposal);
         $subscriber = Subscriber::withoutGlobalScopes()->findOrFail($proposal->subscriber_id);
 
-        DB::transaction(function () use ($proposal, $subscriber, $nutritionist, $note) {
+        $proposal = DB::transaction(function () use ($proposal, $subscriber, $nutritionist, $note) {
+            // B7: re-read under a row lock and checked again, so a double click
+            // can't apply the same proposal twice.
+            $proposal = $this->lockPending($proposal);
+
             match ($proposal->kind) {
                 'goal' => $this->setGoal($subscriber, $proposal->payload),
                 'medication' => match ($proposal->action) {
@@ -232,6 +236,8 @@ class HealthRecordService
             };
 
             $this->decide($proposal, 'approved', $nutritionist, $note);
+
+            return $proposal;
         });
 
         $this->notifyDecision($subscriber, $proposal);
@@ -242,10 +248,24 @@ class HealthRecordService
     public function reject(ProfileProposal $proposal, User $nutritionist, ?string $note): ProfileProposal
     {
         $this->assertPending($proposal);
-        $this->decide($proposal, 'rejected', $nutritionist, $note);
+        $proposal = DB::transaction(function () use ($proposal, $nutritionist, $note) {
+            $proposal = $this->lockPending($proposal);
+            $this->decide($proposal, 'rejected', $nutritionist, $note);
+
+            return $proposal;
+        });
         $this->notifyDecision(Subscriber::withoutGlobalScopes()->findOrFail($proposal->subscriber_id), $proposal);
 
         return $proposal;
+    }
+
+    /** The proposal re-read with a row lock; 409 proposal_not_pending if it was decided meanwhile. */
+    private function lockPending(ProfileProposal $proposal): ProfileProposal
+    {
+        $locked = ProfileProposal::query()->whereKey($proposal->id)->lockForUpdate()->firstOrFail();
+        $this->assertPending($locked);
+
+        return $locked;
     }
 
     public function hasPendingAllergyProposal(Subscriber $subscriber): bool

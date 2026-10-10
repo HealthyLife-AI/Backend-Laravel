@@ -168,7 +168,7 @@ class AccountDeletionTest extends TestCase
         $code = $this->subscriber->code;
         $this->deleteAccount()->assertNoContent();
 
-        $new = $this->postJson('/api/v1/clients', ['name' => 'New', 'phone' => '+970590000099', 'goal' => 'weight_loss'], $this->auth($this->nutritionist))->assertCreated();
+        $new = $this->postJson('/api/v1/clients', ['name' => 'New', 'phone' => '+970590000099', 'username' => 'new.patient', 'goal' => 'weight_loss'], $this->auth($this->nutritionist))->assertCreated();
 
         $this->assertNotSame($code, $new->json('client.code'));
     }

@@ -24,6 +24,7 @@ its own reasoning — this is just the checklist).
 | Meal times (optional, BR-16) | `MEAL_TIME_BREAKFAST` (`05:00-10:59`), `MEAL_TIME_LUNCH` (`11:00-16:59`), `MEAL_TIME_DINNER` (`17:00-22:59`) | Used to infer the meal type of an off-plan log sent without one; any other time is a snack. |
 | Patient log limits (optional) | `LOG_EDIT_WINDOW_DAYS` (7), `LOG_LATE_AFTER_DAYS` (7), `LOG_REJECT_AFTER_DAYS` (90) | How long a patient may edit/delete their own entry; after how many days a new entry is accepted but marked late; after how many it is refused (a wrong device clock). `LOG_EDIT_WINDOW_HOURS` and `LOG_BACKDATE_LIMIT_DAYS` are no longer read — remove them if you set them. |
 | Error tracking (optional) | `SENTRY_LARAVEL_DSN`, `SENTRY_ENVIRONMENT` (e.g. `production`), `SENTRY_TRACES_SAMPLE_RATE` (`0` = errors only) | Off unless the DSN is set. `send_default_pii` is always false; `App\Support\SentryScrubber` drops every request body (health data, passwords), the Authorization and Cookie headers, query strings and the user. The dashboard has its own DSN: `NEXT_PUBLIC_SENTRY_DSN` (Vercel), same scrubbing. |
+| Reverse proxy (B1) | `TRUSTED_PROXIES` | The exact address of Taqat's proxy, e.g. `10.0.3.17` (comma-separated IPs or CIDRs if there are several). Only requests from it have their `X-Forwarded-For/-Proto/-Host/-Port` believed, so the real client IP (rate limits, consent records) and `https://` in generated URLs. `*` is refused at boot. Empty = trust nothing (client IP = the proxy for everyone). See "Trusted proxy" below. |
 | Push notifications (S5-06, optional) | `FIREBASE_CREDENTIALS_JSON_BASE64` | ⚠️ **Use this form, not `FIREBASE_CREDENTIALS_JSON`.** The raw-JSON form broke login/register outright on this project's own Taqat deployment — its unescaped `"` characters corrupted Taqat's env-var storage before the app could even log an exception. Base64's alphabet (`[A-Za-z0-9+/=]`) is immune to that class of failure. Verify with `GET /api/v1/system/ai-status` and `/system/fcm-status` after any redeploy — see below. |
 
 After any deploy that touches these, confirm the running container
@@ -49,7 +50,31 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Accept: application/json' \
   https://healthylife.apps.taqat.academy/api/v1/system/ai-status
 ```
 
-The token lasts `JWT_TTL` (minutes); log in again when it expires. Don't paste a
+The token lasts `JWT_TTL` (minutes); log in again when it expires.
+
+### Trusted proxy (TRUSTED_PROXIES)
+
+The app runs behind Taqat's proxy, so every request reaches PHP from the
+proxy's address. To set it, and to re-check it after any Taqat redeploy or
+container move (the address can change):
+
+1. Call `GET /api/v1/system/scheduler-status` with an admin token (above) and
+   read the `request` block:
+   - `remote_addr`: the address the request came from = the proxy. This is the
+     value for `TRUSTED_PROXIES`.
+   - `client_ip`, `scheme`: what the app currently believes (before the variable
+     is set: the proxy's address and `http`).
+   - `trusted_proxy_match`: `true` once `TRUSTED_PROXIES` covers `remote_addr`.
+2. Set `TRUSTED_PROXIES=<remote_addr>` on Taqat and redeploy.
+3. Call it again: `trusted_proxy_match: true`, `client_ip` = your own public
+   address, `scheme: https`, and paginated responses' `links` start with
+   `https://`.
+
+**`trusted_proxy_match: false` while `TRUSTED_PROXIES` is set means the proxy
+address changed**: every user is sharing one IP again (rate limits, consent
+records). Repeat steps 1–3. Never use `*`: it would let anyone who can reach
+the app port forge `X-Forwarded-For`, and the app refuses to boot with it.
+ Don't paste a
 real password into a shell that keeps history, or use `read -s` to prompt for it.
 
 ## Performance

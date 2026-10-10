@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\HealthProfiles;
 
+use App\Support\ClinicDay;
 use Illuminate\Foundation\Http\FormRequest;
 
 /** FR-10: one structured body-composition reading per visit. */
@@ -18,7 +19,7 @@ class StoreBodyCompositionReadingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'recorded_at' => ['required', 'date', 'before_or_equal:today'],
+            'recorded_at' => ['required', 'date', 'before_or_equal:'.ClinicDay::today()->toDateString()],
             'weight_kg' => ['required', 'numeric', 'between:1,500'],
             'body_fat_percent' => ['nullable', 'numeric', 'between:0,100'],
             'muscle_mass_kg' => ['nullable', 'numeric', 'between:0,500'],

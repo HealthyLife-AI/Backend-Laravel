@@ -26,26 +26,18 @@ class ClientFollowUpController extends Controller
         return response()->json(['client' => new SubscriberResource($subscriber->refresh()->load('user'))]);
     }
 
-    /**
-     * A patient who never activated gets a fresh invite (their old one was
-     * invalidated on archive), returned the same way as on creation.
-     */
     public function resume(Subscriber $subscriber): JsonResponse
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
         $wasArchived = $subscriber->isArchived();
-        $invite = $this->followUp->resume($subscriber);
+        $this->followUp->resume($subscriber);
 
-        // Only a real resume of a patient who uses the app; pending patients get a fresh invite instead.
+        // Only a real resume of a patient who uses the app (a pending one hasn't signed in yet).
         if ($wasArchived && $subscriber->status === 'active' && ($user = $subscriber->user()->first()) !== null) {
             app(NotificationService::class)->notify($user, 'system', 'follow_up_resumed');
         }
 
-        return response()->json([
-            'client' => new SubscriberResource($subscriber->refresh()->load('user')),
-            'invite_token' => $invite['plain'] ?? null,
-            'invite_expires_at' => isset($invite) ? $invite['model']->expires_at->toIso8601String() : null,
-        ]);
+        return response()->json(['client' => new SubscriberResource($subscriber->refresh()->load('user'))]);
     }
 }

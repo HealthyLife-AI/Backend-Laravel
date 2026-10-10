@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Logs;
 
+use App\Support\ClinicDay;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -44,7 +45,7 @@ class StoreMeasurementRequest extends FormRequest
 
             // Optional so an offline entry (S4-12) syncs under the date it
             // was actually taken, not the date it reached the server.
-            'recorded_at' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'recorded_at' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:'.ClinicDay::today()->toDateString()],
         ];
     }
 }

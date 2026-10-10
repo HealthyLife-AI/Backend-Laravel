@@ -10,6 +10,7 @@ use App\Http\Resources\BodyCompositionReadingResource;
 use App\Models\BodyCompositionReading;
 use App\Services\Logs\LogWindow;
 use App\Services\Logs\PatientEntryService;
+use App\Support\ClinicDay;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
@@ -61,7 +62,7 @@ class MeasurementController extends Controller
                     ->whereDate('recorded_at', '<=', $request->string('to')->toString()),
             )
             // The relation is newest-first by default; this list is oldest-first.
-            ->reorder('recorded_at')
+            ->reorder('recorded_at')->orderBy('id')
             ->orderBy('id')
             ->get();
 
@@ -99,7 +100,8 @@ class MeasurementController extends Controller
 
         abort_if($subscriber === null, 403, 'This account is not set up as a client.');
 
-        $recordedAt = $request->date('recorded_at')?->toDateString() ?? now()->toDateString();
+        // B4: "today" is the clinic's day, not UTC's.
+        $recordedAt = $request->filled('recorded_at') ? $request->string('recorded_at')->toString() : ClinicDay::today()->toDateString();
 
         // Only the fields BR-11 allows a client to submit. Taken from the
         // model's own list rather than re-typed here, so the rule has one
@@ -111,7 +113,11 @@ class MeasurementController extends Controller
         // the string Eloquent writes is not byte-identical across drivers,
         // so equality finds the row on MySQL and misses it on SQLite —
         // appending a duplicate in tests while passing in production.
+        // B3: only the patient's OWN reading of that day. A clinic-analyser
+        // reading on the same date is never touched from this endpoint; the
+        // two simply share the date (there is no unique index).
         $reading = $subscriber->bodyCompositionReadings()
+            ->where('source', BodyCompositionReading::SOURCE_SELF)
             ->whereDate('recorded_at', $recordedAt)
             ->first();
 
@@ -120,7 +126,7 @@ class MeasurementController extends Controller
             // accepted and marked late; only one beyond the rejection limit
             // is refused. Only a NEW one — re-sending a day that is already
             // saved is a replay and is handled below.
-            $reading = $this->entries->recordNewReading($subscriber, $request->date('recorded_at') ?? now(), $measurements);
+            $reading = $this->entries->recordNewReading($subscriber, ClinicDay::date($recordedAt), $measurements);
 
             return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
         }
@@ -137,11 +143,6 @@ class MeasurementController extends Controller
             $this->window->throwLocked();
         }
 
-        // A client correcting their own entry keeps it self-reported. A
-        // client re-sending a day the nutritionist already measured in
-        // clinic must NOT downgrade that row's source to self-reported —
-        // the analyser figures on it stay analyser figures, so `source`
-        // is left as it is rather than re-stamped.
         $reading->fill($measurements);
 
         // BR-15: the patient changed a saved reading — shown to the

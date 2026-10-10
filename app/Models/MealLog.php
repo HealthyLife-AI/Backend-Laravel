@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\ClinicDay;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -98,6 +99,7 @@ class MealLog extends Model
 
     public function scopeLoggedBetween(Builder $query, string $from, string $to): void
     {
-        $query->whereBetween('logged_at', [$from.' 00:00:00', $to.' 23:59:59']);
+        // C: the clinic's days (SCHEDULE_TIMEZONE), converted to the UTC the timestamps are stored in.
+        $query->whereBetween('logged_at', [ClinicDay::startUtc($from), ClinicDay::endUtc($to)]);
     }
 }

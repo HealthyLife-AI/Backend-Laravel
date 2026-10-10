@@ -6,6 +6,7 @@ use App\Models\AiSummary;
 use App\Models\Subscriber;
 use App\Services\AiSummaries\WeeklySummaryService;
 use App\Services\Scheduling\SelfScheduler;
+use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Sleep;
@@ -41,7 +42,8 @@ class GenerateWeeklySummaries extends Command
             return $this->regenerateNonArabic($summaries);
         }
 
-        $weekStart = CarbonImmutable::now()->subWeek()->startOfWeek();
+        // C: the week that just ended, by the clinic's calendar.
+        $weekStart = CarbonImmutable::parse(ClinicDay::today()->subWeek()->startOfWeek()->toDateString());
         // lazy(), not get() — see EvaluateAlerts's identical note. Same
         // unbounded-roster shape, same fix.
         $total = 0;
