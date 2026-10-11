@@ -9,6 +9,7 @@ return [
     'review_updated' => ['title' => 'Your nutritionist updated their note', 'body' => 'Open the app to see what changed.'],
     'log_reminder' => ['title' => 'Don\'t forget to log your meals today', 'body' => 'You haven\'t logged a meal today yet.'],
     'proposal_decided' => ['title' => 'Your nutritionist reviewed your profile update', 'body' => 'Open the app to see the result.'],
+    'appointment_booked' => ['title' => 'Your nutritionist booked an appointment', 'body' => 'Open the app to see the details.'],
     'appointment_cancelled' => ['title' => 'Your appointment was cancelled', 'body' => 'Open the app for details and to book a new one.'],
     'appointment_rescheduled' => ['title' => 'Your appointment time changed', 'body' => 'Open the app to see the new time.'],
 ];
