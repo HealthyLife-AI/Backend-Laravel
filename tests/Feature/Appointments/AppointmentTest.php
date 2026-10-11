@@ -212,7 +212,10 @@ class AppointmentTest extends TestCase
             $events[] = 'begin';
         });
         DB::listen(function ($query) use (&$events) {
-            if (str_contains($query->sql, '"appointments"') && str_contains($query->sql, 'exists')) {
+            // Identifier quoting is engine-specific ("appointments" on SQLite,
+            // `appointments` on MySQL/MariaDB) — matched unquoted so this
+            // isn't tied to one driver.
+            if (str_contains($query->sql, 'appointments') && str_contains($query->sql, 'exists')) {
                 $events[] = 'check';
             }
         });
