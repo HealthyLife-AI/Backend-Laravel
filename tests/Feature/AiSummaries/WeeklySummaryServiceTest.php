@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AiSummaries;
 
+use App\Models\Alert;
 use App\Models\Food;
 use App\Models\MealItem;
 use App\Models\MealLog;
@@ -259,5 +260,62 @@ class WeeklySummaryServiceTest extends TestCase
         config(['ai.summary.base_url' => 'https://fake-llm.test', 'ai.summary.api_key' => 'test-key', 'ai.summary.model' => 'test-model']);
 
         $this->assertFalse(app(OpenAiCompatibleClient::class)->isConfigured());
+    }
+
+    /**
+     * Regression: collectMetrics()'s alert-count query ran
+     * `->selectRaw('type, count(*) as total')->groupBy('type')` straight off
+     * `$subscriber->alerts()`, whose relation carries a default
+     * `orderByDesc('created_at')`. With no explicit GROUP BY matching that
+     * order column, MySQL's ONLY_FULL_GROUP_BY (on by default from 5.7)
+     * refuses the query outright — invisible on SQLite, which the test suite
+     * runs on and which tolerates it. Captured via DB::listen rather than
+     * run against real MySQL, so this still catches the regression here.
+     */
+    public function test_the_alert_count_query_carries_no_order_by(): void
+    {
+        $subscriber = $this->makeSubscriber();
+        $weekStart = $this->weekStart();
+        $subscriber->alerts()->create(['type' => 'no_log', 'message' => 'x'])->forceFill(['created_at' => $weekStart->addDay()])->saveQuietly();
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries) {
+            $queries[] = $query->sql;
+        });
+
+        app(WeeklySummaryService::class)->generateForWeek($subscriber, $weekStart);
+
+        $alertCountQuery = collect($queries)->first(fn ($sql) => str_contains($sql, 'group by') && str_contains($sql, 'count(*)'));
+        $this->assertNotNull($alertCountQuery, 'expected the grouped alert-count query to run');
+        $this->assertStringNotContainsString('order by', $alertCountQuery);
+    }
+
+    /** collectMetrics() (private) counts alerts correctly per type within the week window, outside it excluded. */
+    public function test_alert_counts_are_grouped_by_type_within_the_week(): void
+    {
+        $subscriber = $this->makeSubscriber();
+        $weekStart = $this->weekStart();
+        $weekEnd = $weekStart->addDays(6);
+
+        $at = function (Alert $alert, $when) {
+            $alert->forceFill(['created_at' => $when])->saveQuietly();
+        };
+        $at($subscriber->alerts()->create(['type' => Alert::TYPE_NO_LOG, 'message' => 'x']), $weekStart->addDay());
+        $at($subscriber->alerts()->create(['type' => Alert::TYPE_NO_LOG, 'message' => 'x']), $weekStart->addDays(3));
+        $at($subscriber->alerts()->create(['type' => Alert::TYPE_CALORIES_EXCEEDED, 'message' => 'x']), $weekStart->addDays(2));
+        $at($subscriber->alerts()->create(['type' => Alert::TYPE_MILESTONE, 'message' => 'x']), $weekStart->addDays(5));
+        // Outside the window: must not be counted.
+        $at($subscriber->alerts()->create(['type' => Alert::TYPE_NO_LOG, 'message' => 'x']), $weekStart->subDay());
+
+        $collectMetrics = new \ReflectionMethod(WeeklySummaryService::class, 'collectMetrics');
+        $metrics = $collectMetrics->invoke(app(WeeklySummaryService::class), $subscriber, $weekStart, $weekEnd);
+        $counts = $metrics['alert_counts'];
+        ksort($counts);
+
+        $this->assertSame([
+            Alert::TYPE_CALORIES_EXCEEDED => 1,
+            Alert::TYPE_MILESTONE => 1,
+            Alert::TYPE_NO_LOG => 2,
+        ], $counts);
     }
 }
