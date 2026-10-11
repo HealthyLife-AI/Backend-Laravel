@@ -88,8 +88,10 @@ plan food's `allergens` intersect the patient's approved allergy groups, show
 
 Appointment: `{id, type, channel, starts_at, ends_at, status (booked/cancelled/completed/no_show), topics, note, cancelled_by, cancel_reason, meeting_link (video only)}`.
 **Reminders (24 h, 1 h, 5 min) are local notifications you schedule**; the
-server pushes only `appointment_cancelled` / `appointment_rescheduled` when
-the nutritionist changes it (category `nutritionist`, `data.appointment_id`).
+server pushes `appointment_booked`, `appointment_cancelled` /
+`appointment_rescheduled` only when the nutritionist books, cancels or
+changes it directly from the dashboard (category `nutritionist`,
+`data.appointment_id`) — not when the patient does the same thing themselves.
 
 #### Step 3 — قائمة التسوق
 
@@ -166,8 +168,8 @@ edit window on meal logs and readings. Details in
 القياسات = `measurements`, الأخصائي = `nutritionist`, تحديثات الخطة = `plan`,
 plus `system` (always on, no chip needed). `type` is one of `plan_activated`,
 `plan_updated`, `follow_up_resumed`, `review_new`, `review_updated`,
-`log_reminder`, `proposal_decided`, `appointment_cancelled`,
-`appointment_rescheduled`.
+`log_reminder`, `proposal_decided`, `appointment_booked`,
+`appointment_cancelled`, `appointment_rescheduled`.
 
 **Deep links** — `data` (also in every FCM push's data, as strings):
 `plan_activated` / `plan_updated` → `{plan_id}` (open «خطتي»);
@@ -2579,6 +2581,8 @@ Nutritionist (`clients.manage`):
 - `GET|PUT /me/availability` `{windows: [{weekday (0 = Sunday), start, end}], days_off: [Y-m-d], meeting_link?}`. Times in `SCHEDULE_TIMEZONE`, on 15-minute boundaries (`422` otherwise; `window_invalid` if end ≤ start).
 - `GET /appointments?from&to` (default the next 14 days), each with `patient {id, name, code}`.
 - `GET /appointments?subscriber_id=` — one patient's appointments; a patient of another nutritionist simply matches nothing (empty list).
+- `GET /clients/{id}/appointments/slots?type=` — free times to book a **new** appointment with this patient: the nutritionist's own calendar, **no 12-hour lead**. Same shape as `GET /me/appointments/slots`.
+- `POST /clients/{id}/appointments` `{type, starts_at, channel, topics?, note?}` — same body as the patient's own `POST /me/appointments` (above). The nutritionist books directly instead of waiting on the patient app (e.g. after a phone call); same rules (availability, overlap, one upcoming appointment, `409 follow_up_ended` while paused) except the 12-hour lead. **201**, same shape as `GET /appointments`. The patient is notified once (`type: appointment_booked`).
 - `GET /appointments/{id}/slots` — free start times to move that appointment to: its own type and duration, its own cells not counted as taken, **no 12-hour lead**. Same shape as `GET /me/appointments/slots` (`type`, `duration_minutes`, `timezone`, `video_available`, `days`). `404` for another nutritionist's appointment.
 - `PATCH /appointments/{id}` `{starts_at}` — the 12-hour rule is waived, availability and overlap are not (`422 slot_unavailable`); the patient is notified once.
 - `POST /appointments/{id}/cancel` `{reason?}` (patient notified).

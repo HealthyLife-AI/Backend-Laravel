@@ -212,7 +212,10 @@ class AppointmentTest extends TestCase
             $events[] = 'begin';
         });
         DB::listen(function ($query) use (&$events) {
-            if (str_contains($query->sql, '"appointments"') && str_contains($query->sql, 'exists')) {
+            // Identifier quoting is engine-specific ("appointments" on SQLite,
+            // `appointments` on MySQL/MariaDB) — matched unquoted so this
+            // isn't tied to one driver.
+            if (str_contains($query->sql, 'appointments') && str_contains($query->sql, 'exists')) {
                 $events[] = 'check';
             }
         });
@@ -222,6 +225,50 @@ class AppointmentTest extends TestCase
         // The last thing before the insert: the booking transaction opens, then the check runs inside it.
         $this->assertSame(['begin', 'check'], array_slice(array_values(array_filter($events, fn ($e) => in_array($e, ['begin', 'check'], true))), -2));
         $this->book('2026-10-14 10:00')->assertStatus(409)->assertJsonPath('code', 'appointment_exists');
+    }
+
+    /**
+     * The nutritionist books a new appointment for a patient directly
+     * (e.g. after a phone call), without waiting on the patient app: no
+     * 12-hour lead, the patient is notified once, and the usual rules
+     * (availability, overlap, one upcoming, follow-up) still apply.
+     */
+    public function test_the_nutritionist_books_a_new_appointment_for_a_patient(): void
+    {
+        $slots = collect($this->getJson("/api/v1/clients/{$this->patient->id}/appointments/slots?type=follow_up", $this->nurse())
+            ->assertOk()->assertJsonPath('type', 'follow_up')->assertJsonPath('duration_minutes', 30)->json('days'))->keyBy('date');
+        // Today (2026-10-11) is inside the patient's 12-hour lead but free for the nutritionist.
+        $this->assertTrue($slots->has('2026-10-11'));
+        $soon = $slots['2026-10-11']['times'][0];
+
+        $response = $this->postJson("/api/v1/clients/{$this->patient->id}/appointments", [
+            'type' => 'follow_up', 'starts_at' => $soon, 'channel' => 'whatsapp', 'topics' => ['weight'], 'note' => 'حجزته بعد اتصال هاتفي',
+        ], $this->nurse());
+
+        $response->assertCreated()->assertJsonPath('status', 'booked')->assertJsonPath('patient.id', $this->patient->id);
+        $this->assertSame('appointment_booked', PatientNotification::where('user_id', $this->patient->user_id)->value('type'));
+        $this->assertCount(1, $this->pushes);
+
+        // The usual rules still hold: one upcoming, availability, overlap.
+        $this->postJson("/api/v1/clients/{$this->patient->id}/appointments", ['type' => 'follow_up', 'starts_at' => $this->at('2026-10-13 10:00'), 'channel' => 'whatsapp'], $this->nurse())
+            ->assertStatus(409)->assertJsonPath('code', 'appointment_exists');
+        $other = Subscriber::factory()->active()->forNutritionist($this->nutritionist)->create();
+        $this->postJson("/api/v1/clients/{$other->id}/appointments", ['type' => 'follow_up', 'starts_at' => $soon, 'channel' => 'whatsapp'], $this->nurse())
+            ->assertStatus(422)->assertJsonPath('code', 'slot_unavailable');
+        $this->postJson("/api/v1/clients/{$other->id}/appointments", ['type' => 'follow_up', 'starts_at' => '2026-12-25T03:00:00+00:00', 'channel' => 'whatsapp'], $this->nurse())
+            ->assertStatus(422)->assertJsonPath('code', 'slot_unavailable');
+    }
+
+    public function test_booking_for_a_patient_is_scoped_and_gated_by_follow_up(): void
+    {
+        $stranger = User::factory()->nutritionist()->create();
+        $this->postJson("/api/v1/clients/{$this->patient->id}/appointments", ['type' => 'follow_up', 'starts_at' => $this->at('2026-10-13 10:00'), 'channel' => 'whatsapp'], $this->bearerFor($stranger))
+            ->assertNotFound();
+        $this->getJson("/api/v1/clients/{$this->patient->id}/appointments/slots?type=follow_up", $this->bearerFor($stranger))->assertNotFound();
+
+        $this->postJson("/api/v1/clients/{$this->patient->id}/archive", [], $this->nurse())->assertOk();
+        $this->postJson("/api/v1/clients/{$this->patient->id}/appointments", ['type' => 'follow_up', 'starts_at' => $this->at('2026-10-13 10:00'), 'channel' => 'whatsapp'], $this->nurse())
+            ->assertStatus(409)->assertJsonPath('code', 'follow_up_ended');
     }
 
     /** B9: the nutritionist's own slot list for moving an appointment. */

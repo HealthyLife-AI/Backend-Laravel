@@ -121,6 +121,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/availability', [NutritionistAppointmentController::class, 'availability'])->name('me.availability.show');
         Route::put('me/availability', [NutritionistAppointmentController::class, 'updateAvailability'])->name('me.availability.update');
         Route::get('appointments', [NutritionistAppointmentController::class, 'index'])->name('appointments.index');
+        // The nutritionist books a NEW appointment for a patient directly
+        // (e.g. after a phone call), instead of waiting on the patient app.
+        Route::get('clients/{subscriber}/appointments/slots', [NutritionistAppointmentController::class, 'slotsForNew'])->name('clients.appointments.slots');
+        Route::post('clients/{subscriber}/appointments', [NutritionistAppointmentController::class, 'store'])
+            ->middleware('follow-up')
+            ->name('clients.appointments.store');
         Route::get('appointments/{appointment}/slots', [NutritionistAppointmentController::class, 'slots'])->whereNumber('appointment')->name('appointments.slots');
         Route::patch('appointments/{appointment}', [NutritionistAppointmentController::class, 'update'])->whereNumber('appointment')->name('appointments.update');
         Route::post('appointments/{appointment}/cancel', [NutritionistAppointmentController::class, 'cancel'])->whereNumber('appointment')->name('appointments.cancel');

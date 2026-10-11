@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\AppointmentResource;
 use App\Models\Appointment;
 use App\Models\NutritionistAvailability;
+use App\Models\Subscriber;
 use App\Services\Appointments\AppointmentService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /** The nutritionist's appointments and weekly availability. */
 class NutritionistAppointmentController extends Controller
@@ -81,6 +83,46 @@ class NutritionistAppointmentController extends Controller
                 ->whereBetween('starts_at', [$from->setTimezone(config('app.timezone')), $to->setTimezone(config('app.timezone'))])
                 ->with('subscriber.user')->orderBy('starts_at')->get()
         );
+    }
+
+    /**
+     * Free times to book a NEW appointment with this patient — the
+     * nutritionist's own calendar, no 12-hour lead (the patient app isn't
+     * the only way an appointment gets booked). Same shape as
+     * GET /me/appointments/slots and GET /appointments/{id}/slots.
+     */
+    public function slotsForNew(Subscriber $subscriber, Request $request): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+        $type = $request->validate(['type' => ['required', Rule::in(array_keys(Appointment::DURATIONS))]])['type'];
+        $nutritionist = Auth::user();
+
+        return response()->json([
+            'type' => $type,
+            'duration_minutes' => Appointment::DURATIONS[$type],
+            'timezone' => config('scheduling.timezone'),
+            'video_available' => filled($nutritionist->nutritionistProfile?->meeting_link),
+            'days' => collect($this->appointments->slots($nutritionist, $type, applyLead: false))
+                ->map(fn ($times, $date) => ['date' => $date, 'times' => $times])->values(),
+        ]);
+    }
+
+    /** The nutritionist books a new appointment for this patient directly; the patient is notified once. */
+    public function store(Subscriber $subscriber, Request $request): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+        $data = $request->validate([
+            'type' => ['required', Rule::in(array_keys(Appointment::DURATIONS))],
+            'starts_at' => ['required', 'date'],
+            'channel' => ['required', Rule::in(Appointment::CHANNELS)],
+            'topics' => ['nullable', 'array', 'max:6'],
+            'topics.*' => [Rule::in(Appointment::TOPICS)],
+            'note' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        $appointment = $this->appointments->book($subscriber, $data, byNutritionist: true)->load('subscriber.user');
+
+        return (new AppointmentResource($appointment))->response()->setStatusCode(201);
     }
 
     /**

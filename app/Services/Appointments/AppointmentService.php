@@ -96,16 +96,24 @@ class AppointmentService
         return $result;
     }
 
-    /** @param  array{type: string, starts_at: string, channel: string, topics?: list<string>, note?: string|null}  $data */
-    public function book(Subscriber $subscriber, array $data): Appointment
+    /**
+     * @param  array{type: string, starts_at: string, channel: string, topics?: list<string>, note?: string|null}  $data
+     * @param  bool  $byNutritionist  The nutritionist booking on the patient's
+     *                                behalf (dashboard "book appointment"):
+     *                                exempt from the 12-hour lead, like
+     *                                reschedule() already is, and the patient
+     *                                is notified once (a patient booking
+     *                                their own needs no notice).
+     */
+    public function book(Subscriber $subscriber, array $data, bool $byNutritionist = false): Appointment
     {
         $nutritionist = User::query()->findOrFail($subscriber->nutritionist_id);
 
         $this->assertNoUpcoming($subscriber);
         $this->assertChannel($nutritionist, $data['channel']);
-        $start = $this->assertFreeSlot($nutritionist, $data['type'], $data['starts_at']);
+        $start = $this->assertFreeSlot($nutritionist, $data['type'], $data['starts_at'], applyLead: ! $byNutritionist);
 
-        return $this->withHolds($nutritionist, function () use ($subscriber, $nutritionist, $data, $start) {
+        $appointment = $this->withHolds($nutritionist, function () use ($subscriber, $nutritionist, $data, $start) {
             // B6: re-checked under a lock on the patient's row (after the
             // nutritionist's, always in that order): two taps on «احجز» at the
             // same instant can no longer both pass the check above.
@@ -123,6 +131,12 @@ class AppointmentService
                 'note' => $data['note'] ?? null,
             ])->refresh();
         });
+
+        if ($byNutritionist) {
+            $this->notify($appointment, 'appointment_booked');
+        }
+
+        return $appointment;
     }
 
     public function reschedule(Appointment $appointment, string $startsAt, bool $byNutritionist): Appointment
