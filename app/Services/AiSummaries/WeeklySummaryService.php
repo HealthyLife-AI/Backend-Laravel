@@ -117,6 +117,12 @@ class WeeklySummaryService
         $adherence = $this->adherence->summary($subscriber, $weekStart->toDateString(), $weekEnd->toDateString());
 
         $alertCounts = $subscriber->alerts()
+            // alerts() carries a default orderByDesc('created_at'); MySQL's
+            // only_full_group_by rejects that non-aggregated column alongside
+            // a bare GROUP BY type with no matching ORDER BY — invisible on
+            // SQLite, which is lenient. Same class of bug as AdherenceService's
+            // mealLogs()/bodyCompositionReadings() reorder() calls.
+            ->reorder()
             ->whereBetween('created_at', [ClinicDay::startUtc($weekStart->toDateString()), ClinicDay::endUtc($weekEnd->toDateString())])
             ->selectRaw('type, count(*) as total')
             ->groupBy('type')
