@@ -197,6 +197,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/meal-plans', [MealPlanController::class, 'store'])->middleware('follow-up')->name('meal-plans.store');
         Route::get('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'show'])->name('meal-plans.show');
         Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->middleware('follow-up')->name('meal-plans.update');
+        // Item C: her approved target and summary alone — editable on the
+        // ACTIVE plan too, since neither field ever reaches the patient,
+        // so changing one needs no BR-6 re-approval.
+        Route::patch('clients/{subscriber}/meal-plans/{mealPlan}/decision', [MealPlanController::class, 'updateDecision'])
+            ->middleware('follow-up')
+            ->name('meal-plans.decision');
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->middleware('follow-up')->name('meal-plans.activate');
         // Stricter than the blanket 120/min api limit: this is a real,
         // paid/quota-limited external LLM call (Groq), not a DB read —

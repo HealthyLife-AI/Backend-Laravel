@@ -7,6 +7,7 @@ use App\Models\MealItem;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Nutrition\CalorieTarget;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -34,6 +35,7 @@ class MealPlanService
                 'status' => 'draft',
             ]);
 
+            $this->applyDecision($plan, $data);
             $this->replaceMeals($plan, $data['meals']);
 
             return $plan;
@@ -185,6 +187,10 @@ class MealPlanService
     public function saveAsTemplate(MealPlan $plan, User $creator, ?string $name = null): MealPlan
     {
         return DB::transaction(function () use ($plan, $creator, $name) {
+            // Item C: approved_calories, suggested_calories and
+            // plan_summary are deliberately NOT carried over. They are a
+            // decision about one patient — her calorie target and the
+            // reasoning for it — and a template is the meals only.
             $template = MealPlan::create([
                 'subscriber_id' => null,
                 'created_by' => $creator->id,
@@ -209,6 +215,8 @@ class MealPlanService
     public function applyTemplate(MealPlan $template, Subscriber $subscriber, User $creator): MealPlan
     {
         return DB::transaction(function () use ($template, $subscriber, $creator) {
+            // The decision fields stay empty here too: applying a
+            // template proposes meals, never last patient's target.
             $plan = MealPlan::create([
                 'subscriber_id' => $subscriber->id,
                 'created_by' => $creator->id,
@@ -258,6 +266,34 @@ class MealPlanService
      * plan at a time — and clears `is_ai_draft`, since an activated draft
      * has, by definition, now been reviewed and approved.
      */
+    /**
+     * Her decision fields, written only when the payload mentions them.
+     *
+     * An explicit null CLEARS the approved target and falls the client
+     * back to the formula (Item C) — distinct from the key being absent,
+     * which means "this request isn't about the decision", so saving the
+     * meals never wipes a target she set earlier.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function applyDecision(MealPlan $plan, array $data): void
+    {
+        $changes = [];
+
+        if (array_key_exists('approved_calories', $data)) {
+            $changes['approved_calories'] = $data['approved_calories'];
+        }
+
+        if (array_key_exists('plan_summary', $data)) {
+            $changes['plan_summary'] = $data['plan_summary'];
+            $changes['summary_updated_at'] = $data['plan_summary'] === null ? null : now();
+        }
+
+        if ($changes !== []) {
+            $plan->update($changes);
+        }
+    }
+
     public function activate(MealPlan $plan): void
     {
         DB::transaction(function () use ($plan) {
@@ -270,7 +306,18 @@ class MealPlanService
             // follow this plan — distinct from created_at (when it was
             // drafted) and the only honest answer to "since when" for
             // both the progress chart and a case review.
-            $plan->update(['status' => 'active', 'is_ai_draft' => false, 'activated_at' => now()]);
+            // Item C: freeze what the formula said at this moment, so the
+            // history shows what she was deciding against — a later
+            // profile edit recomputes daily_calorie_needs and would
+            // otherwise rewrite the past.
+            $suggested = $plan->subscriber === null ? null : CalorieTarget::suggestion($plan->subscriber);
+
+            $plan->update([
+                'status' => 'active',
+                'is_ai_draft' => false,
+                'activated_at' => now(),
+                'suggested_calories' => $suggested,
+            ]);
         });
     }
 }
