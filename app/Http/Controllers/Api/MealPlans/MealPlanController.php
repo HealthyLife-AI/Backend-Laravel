@@ -81,6 +81,21 @@ class MealPlanController extends Controller
     }
 
     /**
+     * Item E: start the next plan from this one. A new draft, the
+     * original untouched — nothing reaches the patient until the copy is
+     * activated on its own (BR-6).
+     */
+    public function duplicate(Subscriber $subscriber, MealPlan $mealPlan): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+        abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
+
+        $copy = $this->plans->duplicate($mealPlan, request()->user());
+
+        return (new MealPlanResource($copy->load(self::EAGER_LOAD)))->response()->setStatusCode(201);
+    }
+
+    /**
      * Item D: a suggested summary for her to edit — never saved here.
      * Every figure in it is computed from the plan itself; the model
      * only names the pattern and adds a follow-up note (see the

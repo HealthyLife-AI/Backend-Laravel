@@ -208,6 +208,41 @@ class MealPlanService
     }
 
     /**
+     * Item E: "ابدأ من هذه الخطة" — a fresh DRAFT holding this plan's
+     * meals, items, alternatives and her decision.
+     *
+     * Unlike a template (which is deliberately stripped, see
+     * saveAsTemplate) this stays with the SAME patient, so the approved
+     * target and the summary are exactly the context she wants to carry
+     * into the next cycle and edit.
+     *
+     * The source is untouched — including an active plan, which keeps
+     * running until the copy is activated in its own right (BR-6).
+     */
+    public function duplicate(MealPlan $plan, User $creator): MealPlan
+    {
+        return DB::transaction(function () use ($plan, $creator) {
+            $copy = MealPlan::create([
+                'subscriber_id' => $plan->subscriber_id,
+                'created_by' => $creator->id,
+                'is_template' => false,
+                // A copy of a draft the model wrote is her plan now, not
+                // a machine draft awaiting review.
+                'is_ai_draft' => false,
+                'start_date' => null,
+                'status' => 'draft',
+                'approved_calories' => $plan->approved_calories,
+                'plan_summary' => $plan->plan_summary,
+                'summary_updated_at' => $plan->plan_summary === null ? null : now(),
+            ]);
+
+            $this->cloneMealsInto($plan, $copy);
+
+            return $copy;
+        });
+    }
+
+    /**
      * S3-03: clone a template's meals/items into a brand-new draft plan
      * for a specific client — a starting point the nutritionist still
      * reviews and activates explicitly, same as any other draft.
