@@ -52,12 +52,26 @@ class OwnProgressTest extends TestCase
         return [$client, Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id, 'user_id' => $client->id])];
     }
 
+    /**
+     * The two payloads stay one payload, with exactly one documented
+     * exception: Item B's `bmi`, which is the nutritionist's own entry
+     * and never reaches the patient app. Asserted as "identical once bmi
+     * is removed, and bmi is the only key that differs", so any further
+     * drift between the two views still fails here.
+     */
     public function test_the_patient_reads_the_same_progress_their_nutritionist_sees(): void
     {
         $mine = $this->getJson('/api/v1/me/progress', $this->bearerFor($this->client))->assertOk();
         $theirs = $this->getJson("/api/v1/clients/{$this->subscriber->id}/progress", $this->bearerFor($this->nutritionist))->assertOk();
 
-        $this->assertSame($theirs->json(), $mine->json());
+        $hers = $theirs->json();
+        foreach (['latest', 'previous'] as $snapshot) {
+            $this->assertArrayHasKey('bmi', $hers['body_composition'][$snapshot]);
+            $this->assertArrayNotHasKey('bmi', $mine->json("body_composition.{$snapshot}"));
+            unset($hers['body_composition'][$snapshot]['bmi']);
+        }
+
+        $this->assertSame($hers, $mine->json());
         $this->assertCount(2, $mine->json('weight_trend'));
         $this->assertEquals(-1.5, $mine->json('body_composition.change.weight_kg'));
     }
