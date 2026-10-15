@@ -197,6 +197,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::post('clients/{subscriber}/meal-plans', [MealPlanController::class, 'store'])->middleware('follow-up')->name('meal-plans.store');
         Route::get('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'show'])->name('meal-plans.show');
         Route::put('clients/{subscriber}/meal-plans/{mealPlan}', [MealPlanController::class, 'update'])->middleware('follow-up')->name('meal-plans.update');
+        // Item D: an AI-assisted summary SUGGESTION — nothing is saved by
+        // this call. Rate-limited like ai-draft: same provider, same cost.
+        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/summary-suggestion', [MealPlanController::class, 'suggestSummary'])
+            ->middleware('throttle:summary-suggestion')
+            ->name('meal-plans.summary-suggestion');
+
         // Item C: her approved target and summary alone — editable on the
         // ACTIVE plan too, since neither field ever reaches the patient,
         // so changing one needs no BR-6 re-approval.

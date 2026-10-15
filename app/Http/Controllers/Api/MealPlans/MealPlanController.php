@@ -12,6 +12,7 @@ use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
 use App\Services\MealPlans\MealPlanService;
+use App\Services\MealPlans\PlanSummarySuggestionService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -77,6 +78,20 @@ class MealPlanController extends Controller
         }
 
         return new MealPlanResource($mealPlan->load(self::EAGER_LOAD));
+    }
+
+    /**
+     * Item D: a suggested summary for her to edit — never saved here.
+     * Every figure in it is computed from the plan itself; the model
+     * only names the pattern and adds a follow-up note (see the
+     * service), and a reply that invents a number is rejected.
+     */
+    public function suggestSummary(Subscriber $subscriber, MealPlan $mealPlan, PlanSummarySuggestionService $suggestions): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+        abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
+
+        return response()->json($suggestions->suggest($mealPlan->load(self::EAGER_LOAD), $subscriber));
     }
 
     /**
