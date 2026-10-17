@@ -22,10 +22,13 @@ return [
     |
     | NOT a placeholder — "calories exceeded 3 days running" is stated
     | directly in FR-20 and PRD F-7. The streak is measured against each
-    | day's own logged intake versus that client's daily_calorie_needs
-    | (health_profiles), over CONSECUTIVE calendar dates that each have at
-    | least one log — a day with no logs breaks the streak rather than
-    | counting as "not exceeded", since nothing was actually measured.
+    | day's own logged intake versus that client's EFFECTIVE calorie target
+    | (App\Services\Nutrition\CalorieTarget::effective): the approved
+    | figure on the active plan if the nutritionist set one, otherwise the
+    | health_profiles.daily_calorie_needs formula. Measured over
+    | CONSECUTIVE calendar dates that each have at least one log — a day
+    | with no logs breaks the streak rather than counting as "not
+    | exceeded", since nothing was actually measured.
     |
     */
 

@@ -10,6 +10,7 @@ use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\HealthRecords\HealthRecordService;
+use App\Services\Nutrition\CalorieTarget;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -91,13 +92,19 @@ class AiDraftPlanService
         private readonly OpenAiCompatibleClient $llm,
     ) {}
 
-    public function generateDraft(Subscriber $subscriber, User $creator): MealPlan
+    /**
+     * `$approvedCalories` is the figure the nutritionist typed in the
+     * plan-decision card and has not saved yet — the draft is built to
+     * the number she is deciding on, not the one on the stored plan.
+     * Without it, the effective target (Item C).
+     */
+    public function generateDraft(Subscriber $subscriber, User $creator, ?int $approvedCalories = null): MealPlan
     {
         $profile = $subscriber->healthProfile;
 
         abort_if($profile === null, 422, 'This client needs a health profile (calorie needs, allergies) before an AI draft can be generated.');
 
-        $dailyCalories = (int) $profile->daily_calorie_needs;
+        $dailyCalories = $approvedCalories ?? CalorieTarget::effective($subscriber) ?? (int) $profile->daily_calorie_needs;
         // Approved data only. Foods are excluded by allergen group (every class:
         // allergy, intolerance, avoid) and, for free text, by name.
         $records = app(HealthRecordService::class);
@@ -122,7 +129,15 @@ class AiDraftPlanService
             $meals = $this->generateRuleBasedMeals($safeFoods, $dailyCalories);
         }
 
-        $plan = $this->plans->create($subscriber, ['meals' => $meals], $creator, isAiDraft: true);
+        // The draft carries the target it was actually built to, so the
+        // designer's ring and the per-meal split agree with the plan in
+        // front of her the moment it loads.
+        $plan = $this->plans->create(
+            $subscriber,
+            ['meals' => $meals, 'approved_calories' => $dailyCalories],
+            $creator,
+            isAiDraft: true,
+        );
         $plan->forceFill(['is_ai_fallback' => $isFallback])->save();
 
         return $plan;

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Clients;
 
 use App\Models\PatientGoal;
+use App\Rules\NoDoubledCountryCode;
 use App\Rules\PatientUsername;
 use App\Support\Phone;
 use App\Support\Username;
@@ -53,6 +54,7 @@ class StoreClientRequest extends FormRequest
                 'string',
                 'max:32',
                 'regex:'.Phone::E164,
+                new NoDoubledCountryCode,
                 Rule::unique('users', 'phone')->where('nutritionist_id', $this->user()->id),
             ],
             // Optional: left empty, the system generates one (pt104.k7m2).

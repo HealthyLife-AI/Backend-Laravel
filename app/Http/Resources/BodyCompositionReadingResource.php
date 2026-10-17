@@ -34,6 +34,12 @@ class BodyCompositionReadingResource extends JsonResource
             'muscle_mass_kg' => $this->muscle_mass_kg !== null ? (float) $this->muscle_mass_kg : null,
             'water_percent' => $this->water_percent !== null ? (float) $this->water_percent : null,
             'waist_cm' => $this->waist_cm !== null ? (float) $this->waist_cm : null,
+            // The nutritionist's entered BMI. Hers to read: the patient app
+            // shows weight and the tape measurements, and a number the
+            // client never submitted and cannot act on has no place there.
+            $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => [
+                'bmi' => $this->bmi !== null ? (float) $this->bmi : null,
+            ]),
             'hip_cm' => $this->hip_cm !== null ? (float) $this->hip_cm : null,
             'thigh_cm' => $this->thigh_cm !== null ? (float) $this->thigh_cm : null,
             'arm_cm' => $this->arm_cm !== null ? (float) $this->arm_cm : null,
