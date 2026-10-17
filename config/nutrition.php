@@ -17,6 +17,11 @@ return [
     |
     | Replace both numbers once the clinic states its own policy.
     |
+    | This file is the ONLY source: the dashboard holds no copy and reads
+    | them from `calorie_floor` on GET/PUT clients/{id}/health-profile
+    | (HealthProfileResource), so changing a value here or in the env
+    | changes the warning with no dashboard release.
+    |
     */
 
     'calorie_floor' => [
