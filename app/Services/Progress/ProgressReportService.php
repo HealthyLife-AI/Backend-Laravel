@@ -26,8 +26,14 @@ class ProgressReportService
 {
     public function __construct(private readonly AdherenceService $adherence) {}
 
-    /** @return array<string, mixed> */
-    public function build(Subscriber $subscriber, ?string $from, ?string $to): array
+    /**
+     * `$includeBmi` is the nutritionist's view: BMI is her entry (Item B),
+     * so it travels on her `GET /clients/{id}/progress` and never on the
+     * patient's own `/me/progress`, which is otherwise the same payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function build(Subscriber $subscriber, ?string $from, ?string $to, bool $includeBmi = false): array
     {
         $readings = $subscriber->bodyCompositionReadings()
             // whereDate, not whereBetween on the raw column: SQLite stores the
@@ -48,8 +54,8 @@ class ProgressReportService
                 'edited_at' => $reading->edited_at?->toIso8601String(),
             ])->values(),
             'body_composition' => [
-                'latest' => $this->snapshot($readings->last()),
-                'previous' => $this->snapshot($readings->count() > 1 ? $readings[$readings->count() - 2] : null),
+                'latest' => $this->snapshot($readings->last(), $includeBmi),
+                'previous' => $this->snapshot($readings->count() > 1 ? $readings[$readings->count() - 2] : null, $includeBmi),
                 'change' => $this->change($readings),
             ],
             'adherence' => $this->adherence->summary($subscriber, $from, $to),
@@ -61,13 +67,13 @@ class ProgressReportService
     }
 
     /** @return array<string, mixed>|null */
-    private function snapshot(?BodyCompositionReading $reading): ?array
+    private function snapshot(?BodyCompositionReading $reading, bool $includeBmi = false): ?array
     {
         if ($reading === null) {
             return null;
         }
 
-        return [
+        return ($includeBmi ? ['bmi' => $reading->bmi !== null ? (float) $reading->bmi : null] : []) + [
             'recorded_at' => $reading->recorded_at->toDateString(),
             // BR-13: carried so the charts (S4-18) can mark which figures
             // are analyser-grade and which are the client's own estimate.

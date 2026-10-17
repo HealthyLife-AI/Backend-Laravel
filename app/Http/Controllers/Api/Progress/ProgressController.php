@@ -36,6 +36,7 @@ class ProgressController extends Controller
             $subscriber,
             $request->string('from')->toString() ?: null,
             $request->string('to')->toString() ?: null,
+            includeBmi: true,
         ));
     }
 }
