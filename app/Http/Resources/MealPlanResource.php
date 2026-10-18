@@ -27,6 +27,20 @@ class MealPlanResource extends JsonResource
             // not the model). For the nutritionist only: the patient's own plan
             // (GET /me/meal-plan) never carries it.
             $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => ['is_ai_fallback' => (bool) $this->is_ai_fallback]),
+            /*
+             * Item C, the nutritionist's own decision about this plan —
+             * the approved target, the formula's figure at activation,
+             * and her written reasoning. The patient follows the meals;
+             * the reasoning behind them is a clinical note between her
+             * and the file, and `plan_summary` is sensitive health data
+             * that never reaches a client response (nor a log or Sentry).
+             */
+            $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => [
+                'approved_calories' => $this->approved_calories !== null ? (int) $this->approved_calories : null,
+                'suggested_calories' => $this->suggested_calories !== null ? (int) $this->suggested_calories : null,
+                'plan_summary' => $this->plan_summary,
+                'summary_updated_at' => $this->summary_updated_at?->toIso8601String(),
+            ]),
             // Only a template is ever given one deliberately — see the
             // migration. Null on a hand-built client plan, which has one
             // audience and doesn't need to be told apart from another.

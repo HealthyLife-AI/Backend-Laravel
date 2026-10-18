@@ -24,6 +24,11 @@ class StoreBodyCompositionReadingRequest extends FormRequest
             'body_fat_percent' => ['nullable', 'numeric', 'between:0,100'],
             'muscle_mass_kg' => ['nullable', 'numeric', 'between:0,500'],
             'water_percent' => ['nullable', 'numeric', 'between:0,100'],
+            // The nutritionist's own figure (the analyser's, or the
+            // computed one she accepted). The bounds only catch a typo:
+            // below 10 or above 80 is not a person, it is a slipped
+            // decimal point. BR-11 keeps this off the client's side.
+            'bmi' => ['nullable', 'numeric', 'between:10,80'],
             'waist_cm' => ['nullable', 'numeric', 'between:0,300'],
             // S4-16: the nutritionist measures everything the client can,
             // plus the analyser-only figures above.

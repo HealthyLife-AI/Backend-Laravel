@@ -33,6 +33,12 @@ class StoreMealPlanRequest extends FormRequest
         return [
             'start_date' => ['nullable', 'date'],
 
+            // Item C, nutritionist-only. The bounds are a typo guard, not
+            // a clinical rule — a floor warning lives in the designer
+            // (config/nutrition.php) and never blocks the save.
+            'approved_calories' => ['nullable', 'integer', 'between:800,6000'],
+            'plan_summary' => ['nullable', 'string', 'max:1000'],
+
             'meals' => ['required', 'array', 'min:1'],
             'meals.*.name' => ['required', Rule::in(['breakfast', 'snack', 'lunch', 'dinner'])],
             'meals.*.day_index' => ['nullable', 'integer', 'between:0,6'],

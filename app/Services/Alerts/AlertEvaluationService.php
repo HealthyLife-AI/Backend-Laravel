@@ -4,6 +4,7 @@ namespace App\Services\Alerts;
 
 use App\Models\Alert;
 use App\Models\Subscriber;
+use App\Services\Nutrition\CalorieTarget;
 use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -60,7 +61,10 @@ class AlertEvaluationService
      */
     private function evaluateCaloriesExceeded(Subscriber $subscriber): void
     {
-        $target = $subscriber->healthProfile?->daily_calorie_needs;
+        // Item C: the target she approved on the active plan, else the
+        // formula. Alerting against a figure she has overridden would
+        // flag a client for following exactly what she prescribed.
+        $target = CalorieTarget::effective($subscriber);
 
         if ($target === null) {
             return;
