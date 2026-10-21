@@ -58,6 +58,8 @@ class Food extends Model
     {
         return [
             'allergens' => 'array',
+            'sodium_mg_per_100g' => 'decimal:1',
+            'nutrition_reviewed_at' => 'datetime',
             'calories_per_100g' => 'decimal:1',
             'protein_g_per_100g' => 'decimal:1',
             'carbs_g_per_100g' => 'decimal:1',

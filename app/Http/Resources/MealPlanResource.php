@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\MealPlan;
+use App\Services\Nutrition\CalorieTarget;
 use App\Services\Nutrition\MealPlanCalculatorService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -17,6 +18,17 @@ class MealPlanResource extends JsonResource
     private ?array $allergenReport = null;
 
     private bool $newUnacknowledged = false;
+
+    /** @var list<array<string, mixed>>|null Clinical batch 1, E4. */
+    private ?array $nutritionWarnings = null;
+
+    /** Attached by the nutritionist's controller only; dropped for the client role below. */
+    public function withNutritionWarnings(array $warnings): static
+    {
+        $this->nutritionWarnings = $warnings;
+
+        return $this;
+    }
 
     /**
      * Pilot feedback 2, A: attach the plan's allergen report. Set only by
@@ -62,6 +74,11 @@ class MealPlanResource extends JsonResource
                 'plan_summary' => $this->plan_summary,
                 'summary_updated_at' => $this->summary_updated_at?->toIso8601String(),
                 'allergen_ack_at' => $this->allergen_ack_at?->toIso8601String(),
+                // Clinical batch 1, B5: how the system's suggestion was reached.
+                // An archived plan keeps the figure it froze; a template has no patient.
+                'calorie_suggestion' => $this->status !== 'archived' && $this->subscriber !== null
+                    ? CalorieTarget::suggestionDetail($this->subscriber)
+                    : null,
             ]),
             $this->mergeWhen($this->allergenReport !== null && ! Auth::user()?->hasRole('client'), fn () => [
                 'allergen_conflicts' => $this->allergenReport['conflicts'],
@@ -70,6 +87,12 @@ class MealPlanResource extends JsonResource
                 // acknowledgement does not cover (an edit, or an allergy
                 // approved later): the dashboard raises the red warning again.
                 'new_unacknowledged_conflicts' => $this->newUnacknowledged,
+            ]),
+            // Clinical batch 1, D: written for the patient, so (unlike
+            // plan_summary above) the client role receives it too.
+            'patient_instructions' => $this->patient_instructions,
+            $this->mergeWhen($this->nutritionWarnings !== null && ! Auth::user()?->hasRole('client'), fn () => [
+                'nutrition_warnings' => $this->nutritionWarnings,
             ]),
             // Only a template is ever given one deliberately — see the
             // migration. Null on a hand-built client plan, which has one

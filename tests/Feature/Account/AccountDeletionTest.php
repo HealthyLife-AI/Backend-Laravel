@@ -93,6 +93,7 @@ class AccountDeletionTest extends TestCase
         DB::table('patient_medications')->insert(['subscriber_id' => $subscriber->id, 'name' => 'x', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('patient_allergies')->insert(['subscriber_id' => $subscriber->id, 'group' => 'egg', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('profile_proposals')->insert(['subscriber_id' => $subscriber->id, 'kind' => 'goal', 'action' => 'edit', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('patient_conditions')->insert(['subscriber_id' => $subscriber->id, 'code' => 'hypertension', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('subscriber_alert_settings')->insert(['subscriber_id' => $subscriber->id, 'no_log_days' => 1, 'created_at' => now(), 'updated_at' => now()]);
         MealItem::create(['meal_id' => $mealId, 'food_id' => $food->id, 'parent_item_id' => $item->id, 'quantity_grams' => 90, 'sort_order' => 1]);
         MealLog::create(['subscriber_id' => $subscriber->id, 'food_id' => $food->id, 'meal_item_id' => $item->id, 'meal_type' => 'lunch', 'quantity_grams' => 100, 'logged_at' => now()]);
@@ -203,7 +204,7 @@ class AccountDeletionTest extends TestCase
             'meals', 'meal_items', 'nutritionist_profiles', 'foods', 'patient_deletion_notices', 'permissions', 'roles', 'role_has_permissions',
             'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations',
             'follow_up_reviews', 'follow_up_tasks', 'patient_notifications', 'notification_preferences',
-            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings'];
+            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings', 'patient_conditions'];
         foreach (Schema::getTables() as $table) {
             $name = $table['name'];
             $columns = Schema::getColumnListing($name);
@@ -213,7 +214,7 @@ class AccountDeletionTest extends TestCase
         }
 
         $this->assertSame(0, DB::table('subscribers')->where('id', $subscriberId)->count());
-        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings'] as $table) {
+        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings', 'patient_conditions'] as $table) {
             $this->assertSame(0, DB::table($table)->where('subscriber_id', $subscriberId)->count(), "{$table} still has the patient's rows");
         }
         $this->assertSame(0, DB::table('meals')->whereIn('meal_plan_id', $planIds)->count());

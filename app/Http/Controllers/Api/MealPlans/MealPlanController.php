@@ -14,6 +14,7 @@ use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
 use App\Services\MealPlans\AllergenConflictService;
+use App\Services\MealPlans\NutritionWarningService;
 use App\Services\MealPlans\MealPlanService;
 use App\Services\MealPlans\PlanSummarySuggestionService;
 use App\Services\Notifications\NotificationService;
@@ -33,6 +34,7 @@ class MealPlanController extends Controller
         private readonly MealPlanService $plans,
         private readonly AiDraftPlanService $aiDraft,
         private readonly AllergenConflictService $allergens,
+        private readonly NutritionWarningService $nutrition,
     ) {}
 
     /** Dotted paths load their intermediate relations too — meals and items don't need listing separately. */
@@ -44,7 +46,7 @@ class MealPlanController extends Controller
      * plan holds a confirmed conflict its acknowledgement does not cover).
      * The resource drops all of it for the client role.
      */
-    private function present(MealPlan $plan, Subscriber $subscriber, ?array $profile = null): MealPlanResource
+    private function present(MealPlan $plan, Subscriber $subscriber, ?array $profile = null, ?array $codes = null): MealPlanResource
     {
         $plan->loadMissing(self::EAGER_LOAD);
         $report = $this->allergens->forPlan($plan, $subscriber, $profile);
@@ -52,7 +54,7 @@ class MealPlanController extends Controller
         return (new MealPlanResource($plan))->withAllergens(
             $report,
             $this->allergens->hasNewUnacknowledged($plan, $report['conflicts']),
-        );
+        )->withNutritionWarnings($this->nutrition->forPlan($plan, $subscriber, $codes));
     }
 
     /**
@@ -66,12 +68,13 @@ class MealPlanController extends Controller
 
         $plans = $subscriber->mealPlans()->latest()->get()->load(self::EAGER_LOAD);
         $profile = $this->allergens->profile($subscriber);
+        $codes = $this->nutrition->codes($subscriber);
         $request = request();
 
         return response()->json($plans->map(
             fn (MealPlan $plan) => $plan->status === 'archived'
                 ? (new MealPlanResource($plan))->resolve($request)
-                : $this->present($plan, $subscriber, $profile)->resolve($request)
+                : $this->present($plan, $subscriber, $profile, $codes)->resolve($request)
         )->values());
     }
 
@@ -160,7 +163,17 @@ class MealPlanController extends Controller
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
+        $before = $mealPlan->patient_instructions;
+
         $this->plans->applyDecision($mealPlan, $request->validated());
+
+        // Clinical batch 1, D4: instructions are patient-facing, so changing
+        // them on the plan in force tells the patient it was updated - the
+        // same generic notification and dedupe key as a meal edit, nothing
+        // new, and no re-activation (activated_at is untouched).
+        if ($mealPlan->status === 'active' && $mealPlan->refresh()->patient_instructions !== $before) {
+            $this->notifyPatient($subscriber, $mealPlan, 'plan_updated');
+        }
 
         return $this->present($mealPlan->refresh(), $subscriber);
     }
@@ -202,12 +215,15 @@ class MealPlanController extends Controller
         ])['food_ids'];
 
         $profile = $this->allergens->profile($subscriber);
+        $codes = $this->nutrition->codes($subscriber);
 
-        $foods = Food::query()->whereIn('id', $ids)->get()->map(function (Food $food) use ($profile) {
+        $foods = Food::query()->whereIn('id', $ids)->get()->map(function (Food $food) use ($profile, $codes) {
             return [
                 'food_id' => $food->id,
                 'conflict' => $this->allergens->matchFood($food, $profile),
                 'unverified' => $food->allergens === null,
+                // Clinical batch 1, E4: GI / sodium, reviewed foods only.
+                'nutrition_warnings' => $this->nutrition->forFood($food, $codes),
             ];
         })->values();
 

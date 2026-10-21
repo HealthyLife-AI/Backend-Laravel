@@ -134,15 +134,15 @@ class ClinicDayBoundaryTest extends TestCase
     public function test_the_calorie_streak_counts_clinic_days(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-08 00:30', 'Asia/Gaza'));
-        HealthProfile::query()->updateOrCreate(['subscriber_id' => $this->patient->id], ['weight_kg' => 80, 'height_cm' => 175, 'age' => 35, 'gender' => 'male', 'activity_level' => 'light', 'daily_calorie_needs' => 500]);
+        HealthProfile::query()->updateOrCreate(['subscriber_id' => $this->patient->id], ['weight_kg' => 80, 'height_cm' => 175, 'age' => 35, 'gender' => 'male', 'activity_level' => 'light', 'daily_calorie_needs' => 1500]);
         config(['alerts.calorie_exceeded_streak_days' => 3]);
 
-        // Three local days (5th, 6th, 7th), each 600 kcal > 500. The late-evening meal of the 7th
+        // Three local days (5th, 6th, 7th), each 2000 kcal > 1500 (the target must stay above the male calorie floor, 1400). The late-evening meal of the 7th
         // (23:40 local = 20:40 UTC) and an early one of the 6th (00:20 local = 21:20 UTC the 5th) pin the cut.
         foreach (['2026-10-05 08:00', '2026-10-06 00:20', '2026-10-06 09:00', '2026-10-07 12:00', '2026-10-07 23:40'] as $at) {
-            $this->logAtLocal($at, 150); // 300 kcal each
+            $this->logAtLocal($at, 500); // 1000 kcal each
         }
-        $this->logAtLocal('2026-10-05 20:00', 150);
+        $this->logAtLocal('2026-10-05 20:00', 500);
 
         app(AlertEvaluationService::class)->evaluate($this->patient->fresh());
 

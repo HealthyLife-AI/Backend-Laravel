@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\FollowUp\MyReviewController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\HealthRecords\ClientConditionsController;
 use App\Http\Controllers\Api\HealthRecords\ClientHealthRecordsController;
 use App\Http\Controllers\Api\HealthRecords\MyHealthRecordsController;
 use App\Http\Controllers\Api\Logs\ClientMealLogController;
@@ -151,12 +152,18 @@ Route::prefix('v1')->name('api.')->group(function () {
         // Step 1: goal, medications, allergies, and deciding the patient's proposals.
         Route::get('clients/{subscriber}/health-records', [ClientHealthRecordsController::class, 'show'])->name('clients.health-records.show');
         Route::get('clients/{subscriber}/proposals', [ClientHealthRecordsController::class, 'proposals'])->name('clients.proposals.index');
+        Route::get('clients/{subscriber}/conditions', [ClientConditionsController::class, 'index'])->name('clients.conditions.index');
+        Route::get('clients/{subscriber}/patient-tips', [ClientConditionsController::class, 'tips'])->name('clients.patient-tips');
         Route::middleware('follow-up')->group(function () {
             Route::put('clients/{subscriber}/goal', [ClientHealthRecordsController::class, 'updateGoal'])->name('clients.goal.update');
             Route::post('clients/{subscriber}/medications', [ClientHealthRecordsController::class, 'storeMedication'])->name('clients.medications.store');
             Route::put('clients/{subscriber}/medications/{medication}', [ClientHealthRecordsController::class, 'updateMedication'])->whereNumber('medication')->name('clients.medications.update');
             Route::delete('clients/{subscriber}/medications/{medication}', [ClientHealthRecordsController::class, 'destroyMedication'])->whereNumber('medication')->name('clients.medications.destroy');
             Route::post('clients/{subscriber}/medications/{medication}/review', [ClientHealthRecordsController::class, 'reviewMedication'])->whereNumber('medication')->name('clients.medications.review');
+            // Clinical batch 1, C2: structured conditions, nutritionist only.
+            Route::post('clients/{subscriber}/conditions', [ClientConditionsController::class, 'store'])->name('clients.conditions.store');
+            Route::put('clients/{subscriber}/conditions/{condition}', [ClientConditionsController::class, 'update'])->whereNumber('condition')->name('clients.conditions.update');
+            Route::delete('clients/{subscriber}/conditions/{condition}', [ClientConditionsController::class, 'destroy'])->whereNumber('condition')->name('clients.conditions.destroy');
             Route::post('clients/{subscriber}/allergies', [ClientHealthRecordsController::class, 'storeAllergy'])->name('clients.allergies.store');
             Route::put('clients/{subscriber}/allergies/{allergy}', [ClientHealthRecordsController::class, 'updateAllergy'])->whereNumber('allergy')->name('clients.allergies.update');
             Route::delete('clients/{subscriber}/allergies/{allergy}', [ClientHealthRecordsController::class, 'destroyAllergy'])->whereNumber('allergy')->name('clients.allergies.destroy');

@@ -29,6 +29,7 @@ class UpdatePlanDecisionRequest extends FormRequest
         return [
             'approved_calories' => ['sometimes', 'nullable', 'integer', 'between:800,6000'],
             'plan_summary' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'patient_instructions' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\HealthProfile;
+use App\Services\Nutrition\CalorieTarget;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Auth;
@@ -41,6 +42,9 @@ class HealthProfileResource extends JsonResource
                     'female' => (int) config('nutrition.calorie_floor.female'),
                     'male' => (int) config('nutrition.calorie_floor.male'),
                 ],
+                // Clinical batch 1, B5: the goal-adjusted suggestion and how it
+                // was reached. `daily_calorie_needs` above stays the maintenance figure.
+                'calorie_suggestion' => $this->subscriber === null ? null : CalorieTarget::suggestionDetail($this->subscriber),
             ]),
             'updated_at' => $this->updated_at->toIso8601String(),
         ];

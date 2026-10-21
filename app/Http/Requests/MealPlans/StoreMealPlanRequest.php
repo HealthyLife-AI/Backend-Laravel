@@ -38,6 +38,7 @@ class StoreMealPlanRequest extends FormRequest
             // (config/nutrition.php) and never blocks the save.
             'approved_calories' => ['nullable', 'integer', 'between:800,6000'],
             'plan_summary' => ['nullable', 'string', 'max:1000'],
+            'patient_instructions' => ['nullable', 'string', 'max:2000'],
 
             'meals' => ['required', 'array', 'min:1'],
             'meals.*.name' => ['required', Rule::in(['breakfast', 'snack', 'lunch', 'dinner'])],
