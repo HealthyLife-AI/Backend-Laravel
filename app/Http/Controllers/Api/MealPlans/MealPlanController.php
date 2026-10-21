@@ -2,20 +2,23 @@
 
 namespace App\Http\Controllers\Api\MealPlans;
 
+use App\Exceptions\ApiCodeException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\MealPlans\StoreMealPlanRequest;
 use App\Http\Requests\MealPlans\UpdateMealPlanRequest;
 use App\Http\Requests\MealPlans\UpdatePlanDecisionRequest;
 use App\Http\Resources\MealPlanResource;
+use App\Models\Food;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
+use App\Services\MealPlans\AllergenConflictService;
 use App\Services\MealPlans\MealPlanService;
 use App\Services\MealPlans\PlanSummarySuggestionService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Http\Request;
 
 /**
  * S3-01/S3-02/S3-07: the nutritionist-facing plan designer — create,
@@ -29,18 +32,47 @@ class MealPlanController extends Controller
     public function __construct(
         private readonly MealPlanService $plans,
         private readonly AiDraftPlanService $aiDraft,
+        private readonly AllergenConflictService $allergens,
     ) {}
 
     /** Dotted paths load their intermediate relations too — meals and items don't need listing separately. */
     private const EAGER_LOAD = ['meals.items.food', 'meals.items.alternatives.food'];
 
-    public function index(Subscriber $subscriber): AnonymousResourceCollection
+    /**
+     * Pilot feedback 2, A: every single-plan response carries the plan's
+     * allergen report (conflicts, unverified foods, and whether an active
+     * plan holds a confirmed conflict its acknowledgement does not cover).
+     * The resource drops all of it for the client role.
+     */
+    private function present(MealPlan $plan, Subscriber $subscriber, ?array $profile = null): MealPlanResource
+    {
+        $plan->loadMissing(self::EAGER_LOAD);
+        $report = $this->allergens->forPlan($plan, $subscriber, $profile);
+
+        return (new MealPlanResource($plan))->withAllergens(
+            $report,
+            $this->allergens->hasNewUnacknowledged($plan, $report['conflicts']),
+        );
+    }
+
+    /**
+     * The patient's allergy profile is read once and shared by every plan
+     * listed, so a long history is one query rather than one per plan. An
+     * archived plan is not followed any more, so it is not scanned.
+     */
+    public function index(Subscriber $subscriber): JsonResponse
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
         $plans = $subscriber->mealPlans()->latest()->get()->load(self::EAGER_LOAD);
+        $profile = $this->allergens->profile($subscriber);
+        $request = request();
 
-        return MealPlanResource::collection($plans);
+        return response()->json($plans->map(
+            fn (MealPlan $plan) => $plan->status === 'archived'
+                ? (new MealPlanResource($plan))->resolve($request)
+                : $this->present($plan, $subscriber, $profile)->resolve($request)
+        )->values());
     }
 
     public function store(Subscriber $subscriber, StoreMealPlanRequest $request): MealPlanResource
@@ -49,7 +81,7 @@ class MealPlanController extends Controller
 
         $plan = $this->plans->create($subscriber, $request->validated(), $request->user());
 
-        return new MealPlanResource($plan->load(self::EAGER_LOAD));
+        return $this->present($plan, $subscriber);
     }
 
     public function show(Subscriber $subscriber, MealPlan $mealPlan): MealPlanResource
@@ -57,7 +89,7 @@ class MealPlanController extends Controller
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
-        return new MealPlanResource($mealPlan->load(self::EAGER_LOAD));
+        return $this->present($mealPlan, $subscriber);
     }
 
     /** S3-07: also how the nutritionist edits an AI draft before approving it. */
@@ -77,7 +109,11 @@ class MealPlanController extends Controller
             $this->notifyPatient($subscriber, $mealPlan, 'plan_updated');
         }
 
-        return new MealPlanResource($mealPlan->load(self::EAGER_LOAD));
+        // The save always succeeds. An edit that brings in a confirmed-allergy
+        // food the acknowledgement does not cover is reported, never blocked:
+        // `new_unacknowledged_conflicts` makes the dashboard raise the red
+        // warning again, so it cannot pass silently.
+        return $this->present($mealPlan->refresh(), $subscriber);
     }
 
     /**
@@ -92,7 +128,7 @@ class MealPlanController extends Controller
 
         $copy = $this->plans->duplicate($mealPlan, request()->user());
 
-        return (new MealPlanResource($copy->load(self::EAGER_LOAD)))->response()->setStatusCode(201);
+        return $this->present($copy, $subscriber)->response()->setStatusCode(201);
     }
 
     /**
@@ -126,22 +162,86 @@ class MealPlanController extends Controller
 
         $this->plans->applyDecision($mealPlan, $request->validated());
 
-        return new MealPlanResource($mealPlan->refresh()->load(self::EAGER_LOAD));
+        return $this->present($mealPlan->refresh(), $subscriber);
+    }
+
+    /**
+     * Pilot feedback 2, A3: record that she reviewed the confirmed-allergy
+     * conflicts on an ACTIVE plan and keeps them - the way to clear the red
+     * warning after an edit, or after an allergy was approved later.
+     *
+     * Activating again is not an option for that: activation restarts
+     * `activated_at` (adherence windows and the no-log clock hang off it)
+     * and notifies the patient. This touches neither, and sends nothing.
+     */
+    public function acknowledgeAllergens(Subscriber $subscriber, MealPlan $mealPlan, Request $request): MealPlanResource
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+        abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
+
+        $request->validate(['acknowledge_allergen_conflicts' => ['required', 'accepted']]);
+
+        $conflicts = $this->allergens->forPlan($mealPlan, $subscriber)['conflicts'];
+        $this->plans->recordAllergenAcknowledgement($mealPlan, $request->user(), $conflicts);
+
+        return $this->present($mealPlan->refresh(), $subscriber);
+    }
+
+    /**
+     * Pilot feedback 2, A: the dashboard's inline warning, from the same
+     * rules as the plan report. One call covers every food an autocomplete
+     * just listed. Nothing is saved.
+     */
+    public function allergenCheck(Subscriber $subscriber, Request $request): JsonResponse
+    {
+        abort_unless($subscriber->belongsToCaller(), 404);
+
+        $ids = $request->validate([
+            'food_ids' => ['required', 'array', 'min:1', 'max:50'],
+            'food_ids.*' => ['integer'],
+        ])['food_ids'];
+
+        $profile = $this->allergens->profile($subscriber);
+
+        $foods = Food::query()->whereIn('id', $ids)->get()->map(function (Food $food) use ($profile) {
+            return [
+                'food_id' => $food->id,
+                'conflict' => $this->allergens->matchFood($food, $profile),
+                'unverified' => $food->allergens === null,
+            ];
+        })->values();
+
+        return response()->json(['foods' => $foods]);
     }
 
     /**
      * BR-6/BR-10: the only way a plan (hand-built or AI draft) ever
      * becomes what the client sees.
      */
-    public function activate(Subscriber $subscriber, MealPlan $mealPlan): MealPlanResource
+    public function activate(Subscriber $subscriber, MealPlan $mealPlan, Request $request): MealPlanResource
     {
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
-        $this->plans->activate($mealPlan);
+        $conflicts = $this->allergens->forPlan($mealPlan, $subscriber)['conflicts'];
+        $blocking = $this->allergens->confirmed($conflicts);
+
+        // A food that conflicts with a CONFIRMED allergy does not reach a
+        // patient on a click. Intolerances and foods to avoid never block:
+        // they are shown, and left to her judgement.
+        if ($blocking !== [] && ! $request->boolean('acknowledge_allergen_conflicts')) {
+            throw new ApiCodeException(
+                'This plan contains a food that conflicts with a confirmed allergy. Review it and confirm to activate.',
+                'allergen_conflict_unacknowledged',
+                422,
+                ['allergen_conflicts' => $conflicts],
+            );
+        }
+
+        $this->plans->activate($mealPlan, $blocking !== [] ? $request->user() : null, $blocking !== [] ? $conflicts : null);
         $this->notifyPatient($subscriber, $mealPlan, 'plan_activated');
 
-        return new MealPlanResource($mealPlan->refresh()->load(self::EAGER_LOAD));
+        return $this->present($mealPlan->refresh(), $subscriber);
     }
 
     /**
@@ -174,7 +274,7 @@ class MealPlanController extends Controller
         // An allergy the patient proposed is not used until approved: say so before the plan is approved.
         $warnings = app(HealthRecordService::class)->hasPendingAllergyProposal($subscriber) ? ['pending_allergy_proposal'] : [];
 
-        $response = (new MealPlanResource($plan->load(self::EAGER_LOAD)))->response();
+        $response = $this->present($plan, $subscriber)->response();
         $response->setData(['warnings' => $warnings] + $response->getData(true));
 
         return $response;

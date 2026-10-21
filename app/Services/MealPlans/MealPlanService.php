@@ -329,9 +329,35 @@ class MealPlanService
         }
     }
 
-    public function activate(MealPlan $plan): void
+    /**
+     * `$acknowledgedBy` + `$conflicts` are given only when the plan holds a
+     * confirmed-allergy conflict and she chose to activate anyway: the
+     * decision, who made it, and the conflicts as they stood are recorded
+     * in the same transaction as the activation itself.
+     *
+     * @param  list<array<string, mixed>>|null  $conflicts
+     */
+    /**
+     * Pilot feedback 2, A3: a conflict acknowledgement on a plan that is
+     * ALREADY active - after an edit, or after an allergy was approved
+     * later. Records who and what; touches nothing else, so `activated_at`
+     * (and everything timed from it) is unchanged and the patient is not
+     * notified.
+     *
+     * @param  list<array<string, mixed>>  $conflicts
+     */
+    public function recordAllergenAcknowledgement(MealPlan $plan, User $by, array $conflicts): void
     {
-        DB::transaction(function () use ($plan) {
+        $plan->update([
+            'allergen_ack_at' => now(),
+            'allergen_ack_by' => $by->id,
+            'allergen_ack_snapshot' => $conflicts,
+        ]);
+    }
+
+    public function activate(MealPlan $plan, ?User $acknowledgedBy = null, ?array $conflicts = null): void
+    {
+        DB::transaction(function () use ($plan, $acknowledgedBy, $conflicts) {
             MealPlan::where('subscriber_id', $plan->subscriber_id)
                 ->where('status', 'active')
                 ->where('id', '!=', $plan->id)
@@ -352,7 +378,11 @@ class MealPlanService
                 'is_ai_draft' => false,
                 'activated_at' => now(),
                 'suggested_calories' => $suggested,
-            ]);
+            ] + ($acknowledgedBy !== null ? [
+                'allergen_ack_at' => now(),
+                'allergen_ack_by' => $acknowledgedBy->id,
+                'allergen_ack_snapshot' => $conflicts,
+            ] : []));
         });
     }
 }

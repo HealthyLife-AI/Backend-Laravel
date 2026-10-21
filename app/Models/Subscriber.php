@@ -95,6 +95,12 @@ class Subscriber extends Model
         return $this->hasOne(PatientGoal::class);
     }
 
+    /** Pilot feedback 2, B: this patient's alert-threshold overrides (NULL columns = global default). */
+    public function alertSettings(): HasOne
+    {
+        return $this->hasOne(SubscriberAlertSetting::class);
+    }
+
     public function medications(): HasMany
     {
         return $this->hasMany(PatientMedication::class)->orderBy('id');

@@ -13,6 +13,27 @@ use Illuminate\Support\Facades\Auth;
  */
 class MealPlanResource extends JsonResource
 {
+    /** @var array{conflicts: list<array<string, mixed>>, unverified_items: list<array<string, mixed>>}|null */
+    private ?array $allergenReport = null;
+
+    private bool $newUnacknowledged = false;
+
+    /**
+     * Pilot feedback 2, A: attach the plan's allergen report. Set only by
+     * the nutritionist's controller, and dropped for the client role even
+     * so (below) - the patient app has no business with an allergen
+     * conflict list, an acknowledgement or its snapshot.
+     *
+     * @param  array{conflicts: list<array<string, mixed>>, unverified_items: list<array<string, mixed>>}  $report
+     */
+    public function withAllergens(array $report, bool $newUnacknowledged): static
+    {
+        $this->allergenReport = $report;
+        $this->newUnacknowledged = $newUnacknowledged;
+
+        return $this;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -40,6 +61,15 @@ class MealPlanResource extends JsonResource
                 'suggested_calories' => $this->suggested_calories !== null ? (int) $this->suggested_calories : null,
                 'plan_summary' => $this->plan_summary,
                 'summary_updated_at' => $this->summary_updated_at?->toIso8601String(),
+                'allergen_ack_at' => $this->allergen_ack_at?->toIso8601String(),
+            ]),
+            $this->mergeWhen($this->allergenReport !== null && ! Auth::user()?->hasRole('client'), fn () => [
+                'allergen_conflicts' => $this->allergenReport['conflicts'],
+                'unverified_items' => $this->allergenReport['unverified_items'],
+                // An ACTIVE plan holding a confirmed-allergy conflict that its
+                // acknowledgement does not cover (an edit, or an allergy
+                // approved later): the dashboard raises the red warning again.
+                'new_unacknowledged_conflicts' => $this->newUnacknowledged,
             ]),
             // Only a template is ever given one deliberately — see the
             // migration. Null on a hand-built client plan, which has one
