@@ -179,6 +179,28 @@ class CalorieSuggestionTest extends TestCase
         $this->assertSame(1200, config('nutrition.calorie_floor.female'));
     }
 
+    public function test_the_floor_applies_to_adults_of_known_gender_only(): void
+    {
+        $child = CalorieTarget::suggestionDetail($this->patient(60, 'weight_maintenance', ['age' => 12, 'daily_calorie_needs' => 1100]));
+        $this->assertSame(1100, $child['suggested']);
+        $this->assertFalse($child['clamped_to_floor']);
+
+        // The column is NOT NULL, so "unknown" is simulated on the loaded model only.
+        $unknown = $this->patient(60, 'weight_maintenance', ['daily_calorie_needs' => 1100]);
+        $unknown->healthProfile->gender = null;
+        $noGender = CalorieTarget::suggestionDetail($unknown);
+        $this->assertSame(1100, $noGender['suggested']);
+        $this->assertFalse($noGender['clamped_to_floor']);
+
+        $woman = CalorieTarget::suggestionDetail($this->patient(60, 'weight_maintenance', ['daily_calorie_needs' => 1100]));
+        $this->assertSame(1200, $woman['suggested']);
+        $this->assertTrue($woman['clamped_to_floor']);
+
+        $man = CalorieTarget::suggestionDetail($this->patient(60, 'weight_maintenance', ['gender' => 'male', 'daily_calorie_needs' => 1300]));
+        $this->assertSame(1400, $man['suggested']);
+        $this->assertTrue($man['clamped_to_floor']);
+    }
+
     public function test_a_nutritionist_entered_bmi_wins_over_the_computed_one(): void
     {
         // Computed from 60 kg / 170 cm would be 20.8 (normal, no deficit); she entered 31.0.

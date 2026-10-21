@@ -30,6 +30,9 @@ class ConditionCodes
     /** Every code that means "has diabetes" for the glycemic warnings. */
     public const DIABETES = ['diabetes_type1', 'diabetes_type2', 'gestational_diabetes'];
 
+    /** Conditions whose plans are watched for glycemic index / load: diabetes, insulin resistance and prediabetes. */
+    public const GLYCEMIC_WATCH = ['diabetes_type1', 'diabetes_type2', 'gestational_diabetes', 'insulin_resistance', 'prediabetes'];
+
     /**
      * Keywords (Arabic-normalized substrings) per code, most specific first.
      * Anything unmatched maps to "other" with the original text kept.

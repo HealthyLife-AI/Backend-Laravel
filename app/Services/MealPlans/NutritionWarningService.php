@@ -78,7 +78,7 @@ class NutritionWarningService
 
         $warnings = [];
 
-        if (array_intersect($codes, ConditionCodes::DIABETES) !== [] && $food->glycemic_index !== null
+        if (array_intersect($codes, ConditionCodes::GLYCEMIC_WATCH) !== [] && $food->glycemic_index !== null
             && self::giCategory($food->glycemic_index) === 'high') {
             $warnings[] = ['type' => 'gi', 'gi' => (int) $food->glycemic_index, 'category' => 'high'];
         }
@@ -101,7 +101,7 @@ class NutritionWarningService
     {
         $codes ??= $this->codes($subscriber);
 
-        $diabetic = array_intersect($codes, ConditionCodes::DIABETES) !== [];
+        $diabetic = array_intersect($codes, ConditionCodes::GLYCEMIC_WATCH) !== [];
         $hypertensive = in_array('hypertension', $codes, true);
 
         if (! $diabetic && ! $hypertensive) {

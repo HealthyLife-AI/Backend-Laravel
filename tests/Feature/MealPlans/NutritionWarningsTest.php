@@ -111,6 +111,23 @@ class NutritionWarningsTest extends TestCase
         $this->assertSame('low', $byFood[$highGiSmall->id]['gl_category']);
     }
 
+    public function test_insulin_resistance_and_prediabetes_get_the_glycemic_warnings_but_not_sodium(): void
+    {
+        $food = $this->reviewed(['carbs_g_per_100g' => 30, 'fiber_g_per_100g' => 2, 'glycemic_index' => 80, 'sodium_mg_per_100g' => 2000]);
+
+        foreach (['insulin_resistance', 'prediabetes'] as $code) {
+            PatientCondition::where('subscriber_id', $this->subscriber->id)->delete();
+            $this->condition($code);
+
+            $warnings = $this->plan([$food], 200)['nutrition_warnings'];
+            $this->assertCount(1, $warnings, $code);
+            $this->assertSame('gi_gl', $warnings[0]['type'], $code);
+
+            $check = $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/allergen-check", ['food_ids' => [$food->id]], $this->token())->json('foods.0.nutrition_warnings');
+            $this->assertSame(['gi'], array_column($check, 'type'), $code);
+        }
+    }
+
     public function test_the_load_follows_the_quantity(): void
     {
         $this->condition('diabetes_type1');

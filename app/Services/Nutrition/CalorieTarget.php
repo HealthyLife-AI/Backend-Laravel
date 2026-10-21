@@ -105,8 +105,12 @@ class CalorieTarget
         }
 
         $suggested = $maintenance + $adjustment;
-        $floor = (int) config('nutrition.calorie_floor.'.($profile->gender === 'male' ? 'male' : 'female'));
-        $clamped = $suggested < $floor;
+        // The floor is an ADULT figure: with the age unknown or under 18, or the
+        // gender unknown, there is no floor to apply and the value is untouched.
+        $floor = $age !== null && $age >= 18 && in_array($profile->gender, ['male', 'female'], true)
+            ? (int) config('nutrition.calorie_floor.'.$profile->gender)
+            : null;
+        $clamped = $floor !== null && $suggested < $floor;
 
         return [
             'maintenance' => $maintenance,
