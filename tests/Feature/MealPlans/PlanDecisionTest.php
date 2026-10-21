@@ -33,7 +33,7 @@ class PlanDecisionTest extends TestCase
         $this->seed(RolesAndPermissionsSeeder::class);
 
         $this->nutritionist = User::factory()->nutritionist()->create();
-        $this->subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id]);
+        $this->subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id, 'goal' => 'weight_maintenance']);
         $this->food = Food::factory()->create(['status' => 'approved']);
 
         HealthProfile::create([

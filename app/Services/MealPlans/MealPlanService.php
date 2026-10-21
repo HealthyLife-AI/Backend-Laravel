@@ -234,6 +234,7 @@ class MealPlanService
                 'approved_calories' => $plan->approved_calories,
                 'plan_summary' => $plan->plan_summary,
                 'summary_updated_at' => $plan->plan_summary === null ? null : now(),
+                'patient_instructions' => $plan->patient_instructions,
             ]);
 
             $this->cloneMealsInto($plan, $copy);
@@ -322,6 +323,11 @@ class MealPlanService
         if (array_key_exists('plan_summary', $data)) {
             $changes['plan_summary'] = $data['plan_summary'];
             $changes['summary_updated_at'] = $data['plan_summary'] === null ? null : now();
+        }
+
+        // Clinical batch 1, D: written for the patient (unlike plan_summary).
+        if (array_key_exists('patient_instructions', $data)) {
+            $changes['patient_instructions'] = $data['patient_instructions'];
         }
 
         if ($changes !== []) {

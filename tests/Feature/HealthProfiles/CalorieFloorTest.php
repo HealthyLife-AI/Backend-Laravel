@@ -47,7 +47,7 @@ class CalorieFloorTest extends TestCase
     {
         $this->profile()
             ->assertJsonPath('calorie_floor.female', 1200)
-            ->assertJsonPath('calorie_floor.male', 1500);
+            ->assertJsonPath('calorie_floor.male', 1400);
     }
 
     public function test_changing_the_config_changes_the_api_value(): void

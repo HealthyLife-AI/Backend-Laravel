@@ -21,6 +21,13 @@ final class Bmi
 
     public const OBESITY = 'obesity';
 
+    /** Clinical batch 1: the three obesity classes, behind the one coarse OBESITY band. */
+    public const OBESITY_1 = 'obesity_1';
+
+    public const OBESITY_2 = 'obesity_2';
+
+    public const OBESITY_3 = 'obesity_3';
+
     /** weight ÷ (height in metres)², to one decimal. Null when either figure is missing or zero. */
     public static function compute(?float $weightKg, ?float $heightCm): ?float
     {
@@ -53,5 +60,35 @@ final class Bmi
             $bmi < 30.0 => self::OVERWEIGHT,
             default => self::OBESITY,
         };
+    }
+
+    /**
+     * Clinical batch 1: the same bands with obesity split into classes 1-3
+     * (cut-offs in config/nutrition.php, provisional). category() above is
+     * unchanged for its existing callers; the coarse "obesity" is any of
+     * the three classes.
+     */
+    public static function classify(?float $bmi, ?int $age): ?string
+    {
+        if ($bmi === null || $age === null || $age < 18) {
+            return null;
+        }
+
+        $cut = config('nutrition.bmi_classes');
+
+        return match (true) {
+            $bmi < $cut['normal'] => self::UNDERWEIGHT,
+            $bmi < $cut['overweight'] => self::NORMAL,
+            $bmi < $cut['obesity_1'] => self::OVERWEIGHT,
+            $bmi < $cut['obesity_2'] => self::OBESITY_1,
+            $bmi < $cut['obesity_3'] => self::OBESITY_2,
+            default => self::OBESITY_3,
+        };
+    }
+
+    /** Maps a fine class to the coarse one category() returns. */
+    public static function coarse(?string $class): ?string
+    {
+        return in_array($class, [self::OBESITY_1, self::OBESITY_2, self::OBESITY_3], true) ? self::OBESITY : $class;
     }
 }

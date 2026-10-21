@@ -5,6 +5,7 @@ namespace App\Services\HealthRecords;
 use App\Exceptions\ApiCodeException;
 use App\Models\HealthProfile;
 use App\Models\PatientAllergy;
+use App\Models\PatientCondition;
 use App\Models\PatientGoal;
 use App\Models\PatientMedication;
 use App\Models\ProfileProposal;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Services\Notifications\NotificationService;
 use App\Services\Nutrition\NutritionCalculatorService;
 use App\Support\AllergyGroups;
+use App\Support\ConditionCodes;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -61,6 +63,12 @@ class HealthRecordService
                 'reason' => ['nullable', 'string', 'max:200'],
                 'status' => ['nullable', Rule::in(PatientMedication::STATUSES)],
                 'until_date' => ['nullable', 'required_if:status,until', 'date', 'after_or_equal:today'],
+            ],
+            // Nutritionist-only (clinical batch 1): the patient cannot propose these.
+            'condition' => [
+                'code' => ['required', Rule::in(ConditionCodes::CODES)],
+                'other_text' => ['nullable', 'required_if:code,other', 'string', 'max:100'],
+                'note' => ['nullable', 'string', 'max:300'],
             ],
             'allergy' => [
                 'group' => ['required', Rule::in(PatientAllergy::GROUPS)],
@@ -160,6 +168,77 @@ class HealthRecordService
         $subscriberId = $allergy->subscriber_id;
         $allergy->delete();
         $this->mirror($subscriberId);
+    }
+
+    // ---- conditions (nutritionist only) -------------------------------------
+
+    /** @param  array<string, mixed>  $data  validated condition */
+    public function addCondition(Subscriber $subscriber, array $data, ?User $by = null): PatientCondition
+    {
+        $this->assertConditionNotRecorded($subscriber, $data);
+
+        $condition = PatientCondition::create([
+            'subscriber_id' => $subscriber->id,
+            'code' => $data['code'],
+            'other_text' => $data['code'] === 'other' ? $data['other_text'] : null,
+            'note' => $data['note'] ?? null,
+            'created_by' => $by?->id,
+        ]);
+        $this->mirrorConditions($subscriber);
+
+        return $condition;
+    }
+
+    /** @param  array<string, mixed>  $data */
+    public function updateCondition(PatientCondition $condition, array $data): PatientCondition
+    {
+        $subscriber = Subscriber::withoutGlobalScopes()->findOrFail($condition->subscriber_id);
+        $this->assertConditionNotRecorded($subscriber, $data, $condition->id);
+
+        $condition->fill([
+            'code' => $data['code'],
+            'other_text' => $data['code'] === 'other' ? $data['other_text'] : null,
+            'note' => $data['note'] ?? null,
+        ])->save();
+        $this->mirrorConditions($subscriber);
+
+        return $condition;
+    }
+
+    public function removeCondition(PatientCondition $condition): void
+    {
+        $subscriberId = $condition->subscriber_id;
+        $condition->delete();
+        $this->mirrorConditions($subscriberId);
+    }
+
+    /**
+     * Rewrites health_profiles.health_conditions (the Arabic labels, "other"
+     * as its own text) from the structured records, so the AI draft, the
+     * profile resource and the patient app read it unchanged.
+     *
+     * Only runs for a patient who has structured conditions, or just edited
+     * them: free text nobody has mapped yet is never wiped by an unrelated
+     * save (see mirror()).
+     */
+    public function mirrorConditions(Subscriber|int $subscriber): void
+    {
+        $subscriberId = $subscriber instanceof Subscriber ? $subscriber->id : $subscriber;
+        $profile = HealthProfile::query()->where('subscriber_id', $subscriberId)->first();
+
+        if ($profile === null) {
+            return;
+        }
+
+        $profile->forceFill([
+            'health_conditions' => PatientCondition::query()->where('subscriber_id', $subscriberId)->orderBy('id')->get()
+                ->map(fn (PatientCondition $c) => $c->label())->values()->all(),
+        ])->saveQuietly();
+    }
+
+    public function hasStructuredConditions(Subscriber|int $subscriber): bool
+    {
+        return PatientCondition::query()->where('subscriber_id', $subscriber instanceof Subscriber ? $subscriber->id : $subscriber)->exists();
     }
 
     // ---- proposals (patient) ------------------------------------------------
@@ -378,6 +457,19 @@ class HealthRecordService
     private function allergyKey(PatientAllergy $allergy): string
     {
         return $allergy->group === 'other' ? 'other:'.$this->key((string) $allergy->other_text) : $allergy->group;
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function assertConditionNotRecorded(Subscriber $subscriber, array $data, ?int $exceptId = null): void
+    {
+        $exists = PatientCondition::query()->where('subscriber_id', $subscriber->id)->where('code', $data['code'])
+            ->when($data['code'] === 'other', fn ($q) => $q->where('other_text', $data['other_text']))
+            ->when($exceptId !== null, fn ($q) => $q->where('id', '!=', $exceptId))
+            ->exists();
+
+        if ($exists) {
+            throw new ApiCodeException('This condition is already recorded.', 'already_recorded', 409);
+        }
     }
 
     private function allergyKeyFromText(string $text): string

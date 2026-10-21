@@ -106,6 +106,12 @@ class Subscriber extends Model
         return $this->hasMany(PatientMedication::class)->orderBy('id');
     }
 
+    /** Clinical batch 1: the structured conditions the nutritionist recorded. */
+    public function conditions(): HasMany
+    {
+        return $this->hasMany(PatientCondition::class)->orderBy('id');
+    }
+
     public function allergyItems(): HasMany
     {
         return $this->hasMany(PatientAllergy::class)->orderBy('id');

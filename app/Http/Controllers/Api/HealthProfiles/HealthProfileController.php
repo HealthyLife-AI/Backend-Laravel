@@ -59,12 +59,20 @@ class HealthProfileController extends Controller
         $legacyAllergies = array_key_exists('allergies', $data) ? ($data['allergies'] ?? []) : null;
         unset($data['medications'], $data['allergies']);
 
+        // Clinical batch 1: once a patient has structured conditions they own
+        // health_conditions (mirrored from the records); a form still sending
+        // the old free-text list cannot overwrite them. Until then (nothing
+        // mapped yet) the list passes through as before.
+        $records = app(HealthRecordService::class);
+        if ($records->hasStructuredConditions($subscriber)) {
+            unset($data['health_conditions']);
+        }
+
         $profile = $subscriber->healthProfile()->updateOrCreate(
             ['subscriber_id' => $subscriber->id],
             $data,
         );
 
-        $records = app(HealthRecordService::class);
         $records->syncLegacyArrays($subscriber, $legacyMedications, $legacyAllergies);
         $records->mirror($subscriber);
 
