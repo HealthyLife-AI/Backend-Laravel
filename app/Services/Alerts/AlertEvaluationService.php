@@ -44,7 +44,7 @@ class AlertEvaluationService
         if (app(LoggingClock::class)->isStale($subscriber)) {
             $this->openIfNotAlready($subscriber, Alert::TYPE_NO_LOG, sprintf(
                 'No meal logged in %d+ days.',
-                (int) config('adherence.late_after_days'),
+                app(AlertThresholds::class)->noLogDays($subscriber),
             ));
         } else {
             $this->resolveOpen($subscriber, Alert::TYPE_NO_LOG);
@@ -70,7 +70,7 @@ class AlertEvaluationService
             return;
         }
 
-        $streakDays = (int) config('alerts.calorie_exceeded_streak_days');
+        $streakDays = (int) app(AlertThresholds::class)->for($subscriber)['calorie_exceeded_streak_days'];
         // C: days are the clinic's (SCHEDULE_TIMEZONE); grouped here, not in SQL
         // (DATE() would cut at UTC midnight), over a window of a few days.
         $today = ClinicDay::today();
@@ -124,7 +124,9 @@ class AlertEvaluationService
             return;
         }
 
-        $windowStart = CarbonImmutable::now()->subDays((int) config('alerts.milestone_window_days'));
+        $thresholds = app(AlertThresholds::class)->for($subscriber);
+        $windowDays = (int) $thresholds['milestone_window_days'];
+        $windowStart = CarbonImmutable::now()->subDays($windowDays);
 
         $readings = $subscriber->bodyCompositionReadings()
             ->where('recorded_at', '>=', $windowStart->toDateString())
@@ -137,7 +139,7 @@ class AlertEvaluationService
 
         $first = (float) $readings->first()->weight_kg;
         $last = (float) $readings->last()->weight_kg;
-        $threshold = (float) config('alerts.milestone_weight_change_kg');
+        $threshold = (float) $thresholds['milestone_weight_change_kg'];
 
         $achieved = $subscriber->goal === 'weight_loss'
             ? ($first - $last) >= $threshold
@@ -165,7 +167,7 @@ class AlertEvaluationService
                 'Milestone: %.1fkg %s over the last %d days.',
                 abs($last - $first),
                 $subscriber->goal === 'weight_loss' ? 'lost' : 'gained',
-                (int) config('alerts.milestone_window_days'),
+                $windowDays,
             ),
         ]);
     }

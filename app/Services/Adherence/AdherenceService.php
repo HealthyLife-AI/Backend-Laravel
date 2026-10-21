@@ -4,6 +4,7 @@ namespace App\Services\Adherence;
 
 use App\Models\MealPlan;
 use App\Models\Subscriber;
+use App\Services\Alerts\AlertThresholds;
 use App\Services\Nutrition\MealPlanCalculatorService;
 use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
@@ -267,7 +268,11 @@ class AdherenceService
      */
     private function classify(Subscriber $subscriber, ?float $currentPercent, ?float $changePp): string
     {
-        $staleBefore = CarbonImmutable::now()->subDays((int) config('adherence.late_after_days'));
+        // The "stopped logging" STATUS follows the same per-patient no-log
+        // threshold as the alert, so the home list and the alert cannot
+        // disagree about one patient. It is the status only: the adherence
+        // percent and the decline rule below stay global.
+        $staleBefore = CarbonImmutable::now()->subDays(app(AlertThresholds::class)->noLogDays($subscriber));
 
         if ($subscriber->last_logged_at === null || $subscriber->last_logged_at->lt($staleBefore)) {
             return self::STATUS_STOPPED;

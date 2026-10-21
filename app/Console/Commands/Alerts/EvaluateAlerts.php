@@ -4,7 +4,7 @@ namespace App\Console\Commands\Alerts;
 
 use App\Models\Subscriber;
 use App\Services\Adherence\AdherenceService;
-use App\Services\Alerts\AlertEvaluationService;
+use App\Services\Alerts\SubscriberCheck;
 use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -36,12 +36,16 @@ use Illuminate\Support\Facades\Log;
  */
 class EvaluateAlerts extends Command
 {
-    protected $signature = 'alerts:evaluate';
+    protected $signature = 'alerts:evaluate {--subscriber= : Evaluate only this patient (by id). Does not count as the daily run.}';
 
     protected $description = 'Recompute adherence status and evaluate FR-20 alert rules for every active client';
 
-    public function handle(AlertEvaluationService $alerts, AdherenceService $adherence): int
+    public function handle(SubscriberCheck $check): int
     {
+        if ($this->option('subscriber') !== null) {
+            return $this->handleOne($check, (int) $this->option('subscriber'));
+        }
+
         $total = 0;
         $changed = 0;
         $failures = 0;
@@ -51,28 +55,22 @@ class EvaluateAlerts extends Command
             AdherenceService::STATUS_STOPPED => 0,
         ];
 
-        Subscriber::active()->lazyById(200)->each(function (Subscriber $subscriber) use ($alerts, $adherence, &$total, &$changed, &$failures, &$statuses): void {
+        // `with('alertSettings')`: each patient's own thresholds are read
+        // while checking them, and must not cost a query per patient.
+        Subscriber::active()->with('alertSettings')->lazyById(200)->each(function (Subscriber $subscriber) use ($check, &$total, &$changed, &$failures, &$statuses): void {
             $total++;
 
-            try {
-                $before = $subscriber->adherence_status;
-                $status = $adherence->refreshStatus($subscriber);
-                $statuses[$status]++;
-                if ($status !== $before) {
-                    $changed++;
-                }
-            } catch (\Throwable $e) {
-                $failures++;
-                report($e);
-                $this->error("Adherence refresh failed for subscriber {$subscriber->id}: {$e->getMessage()}");
-            }
+            $outcome = $check->run($subscriber);
 
-            try {
-                $alerts->evaluate($subscriber);
-            } catch (\Throwable $e) {
+            if ($outcome['status'] !== null) {
+                $statuses[$outcome['status']]++;
+            }
+            if ($outcome['status_changed']) {
+                $changed++;
+            }
+            foreach ($outcome['failures'] as $message) {
                 $failures++;
-                report($e);
-                $this->error("Alert evaluation failed for subscriber {$subscriber->id}: {$e->getMessage()}");
+                $this->error($message);
             }
         });
 
@@ -89,5 +87,31 @@ class EvaluateAlerts extends Command
         $this->info($line);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * One patient, on demand. Deliberately does NOT call markRan or
+     * recordResult: those tell the scheduler (and the admin status page)
+     * that the DAILY run happened, and a single-patient run is not that.
+     */
+    private function handleOne(SubscriberCheck $check, int $id): int
+    {
+        $subscriber = Subscriber::active()->with('alertSettings')->find($id);
+
+        if ($subscriber === null) {
+            $this->error("No active client with id {$id}.");
+
+            return self::FAILURE;
+        }
+
+        $outcome = $check->run($subscriber);
+
+        foreach ($outcome['failures'] as $message) {
+            $this->error($message);
+        }
+
+        $this->info(sprintf('Checked client %d: status %s%s, %d failure(s).', $id, $outcome['status'] ?? 'unchanged', $outcome['status_changed'] ? ' (changed)' : '', count($outcome['failures'])));
+
+        return $outcome['failures'] === [] ? self::SUCCESS : self::FAILURE;
     }
 }

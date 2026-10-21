@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\AdminNutritionistController;
 use App\Http\Controllers\Api\Admin\AdminOverviewController;
 use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
+use App\Http\Controllers\Api\Alerts\AlertSettingsController;
 use App\Http\Controllers\Api\Appointments\MyAppointmentController;
 use App\Http\Controllers\Api\Appointments\NutritionistAppointmentController;
 use App\Http\Controllers\Api\Auth\AuthController;
@@ -215,6 +216,15 @@ Route::prefix('v1')->name('api.')->group(function () {
             ->middleware('follow-up')
             ->name('meal-plans.decision');
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/activate', [MealPlanController::class, 'activate'])->middleware('follow-up')->name('meal-plans.activate');
+        // Pilot feedback 2, A3: record that she reviewed the allergen
+        // conflicts on an ACTIVE plan. No follow-up gate on purpose beyond the
+        // plan's own: it changes no meal and notifies no one.
+        Route::post('clients/{subscriber}/meal-plans/{mealPlan}/acknowledge-allergens', [MealPlanController::class, 'acknowledgeAllergens'])
+            ->middleware('follow-up')
+            ->name('meal-plans.acknowledge-allergens');
+        // Pilot feedback 2, A: inline allergen check for foods about to be
+        // added. Read-only.
+        Route::post('clients/{subscriber}/meal-plans/allergen-check', [MealPlanController::class, 'allergenCheck'])->name('meal-plans.allergen-check');
         // Stricter than the blanket 120/min api limit: this is a real,
         // paid/quota-limited external LLM call (Groq), not a DB read —
         // hammering it (accidental double-click loop, or a script) burns
@@ -326,6 +336,12 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::delete('notices/{id}', [DeletionNoticeController::class, 'destroy'])->whereNumber('id')->name('notices.destroy');
 
         Route::get('alerts', [AlertController::class, 'index'])->name('alerts.index');
+        // Pilot feedback 2, B: this patient's own alert thresholds. The PUT
+        // is a write, so it carries the follow-up gate like every other one.
+        Route::get('clients/{subscriber}/alert-settings', [AlertSettingsController::class, 'show'])->name('clients.alert-settings.show');
+        Route::put('clients/{subscriber}/alert-settings', [AlertSettingsController::class, 'update'])
+            ->middleware('follow-up')
+            ->name('clients.alert-settings.update');
         Route::patch('alerts/{alert}/read', [AlertController::class, 'markRead'])->name('alerts.mark-read');
     });
 

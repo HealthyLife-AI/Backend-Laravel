@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\Food;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * @mixin Food
@@ -29,6 +30,12 @@ class FoodResource extends JsonResource
             'fiber_g_per_100g' => $this->fiber_g_per_100g !== null ? (float) $this->fiber_g_per_100g : null,
             // Allergen groups (FoodTagger::GROUPS) and the shopping-list section.
             'allergens' => $this->allergens ?? [],
+            // `allergens` above reads NULL (never tagged) as []. The nutritionist
+            // needs to tell "tagged, none" from "unknown" before trusting a food
+            // in an allergic patient's plan; the patient app is unchanged.
+            $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => [
+                'allergens_verified' => $this->allergens !== null,
+            ]),
             'shopping_section' => $this->shopping_section ?? 'other',
         ];
     }

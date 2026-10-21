@@ -39,7 +39,15 @@ class LoggingClock
         return $joined->max($planStart);
     }
 
-    /** No log since the clock started (or since the last log, whichever is newer) for late_after_days. */
+    /**
+     * No log since the clock started (or since the last log, whichever is
+     * newer) for THIS patient's no-log threshold: the nutritionist's
+     * override if she set one, else adherence.late_after_days.
+     *
+     * Only the no-log ALERT asks this. The 20:00 reminder uses start()
+     * alone, so a tighter threshold for one patient never changes when
+     * anyone is nudged.
+     */
     public function isStale(Subscriber $subscriber): bool
     {
         $start = $this->start($subscriber);
@@ -50,6 +58,6 @@ class LoggingClock
 
         $since = $subscriber->last_logged_at !== null ? CarbonImmutable::parse($subscriber->last_logged_at)->max($start) : $start;
 
-        return $since->lessThan(CarbonImmutable::now()->subDays((int) config('adherence.late_after_days')));
+        return $since->lessThan(CarbonImmutable::now()->subDays(app(AlertThresholds::class)->noLogDays($subscriber)));
     }
 }
