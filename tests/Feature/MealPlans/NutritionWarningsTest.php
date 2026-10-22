@@ -93,22 +93,27 @@ class NutritionWarningsTest extends TestCase
     {
         $this->condition('diabetes_type2');
         $highBoth = $this->reviewed(['carbs_g_per_100g' => 30, 'fiber_g_per_100g' => 2, 'glycemic_index' => 75]);
+        // High index, little carbohydrate: 200 g is a load of 8 (low), so no warning at all.
         $highGiSmall = $this->reviewed(['carbs_g_per_100g' => 5, 'fiber_g_per_100g' => 0, 'glycemic_index' => 80]);
+        // High index, medium load (16): the GI warning stays.
+        $highGiMedium = $this->reviewed(['carbs_g_per_100g' => 10, 'fiber_g_per_100g' => 0, 'glycemic_index' => 80]);
         $low = $this->reviewed(['carbs_g_per_100g' => 30, 'fiber_g_per_100g' => 2, 'glycemic_index' => 30]);
 
-        $plan = $this->plan([$highBoth, $highGiSmall, $low], 200);
+        $plan = $this->plan([$highBoth, $highGiSmall, $highGiMedium, $low], 200);
 
         $byFood = collect($plan['nutrition_warnings'])->keyBy('food_id');
-        $this->assertCount(2, $byFood, 'the low-GI food is not flagged');
+        $this->assertCount(2, $byFood, 'only the high-load and the medium-load high-GI foods are flagged');
 
         $this->assertSame('gi_gl', $byFood[$highBoth->id]['type']);
         $this->assertSame(75, $byFood[$highBoth->id]['gi']);
         $this->assertEquals(42.0, $byFood[$highBoth->id]['gl']); // 75 x 56 / 100
         $this->assertSame('high', $byFood[$highBoth->id]['gl_category']);
 
-        // High index but a small amount of carbs: GI warns, GL does not.
-        $this->assertSame('gi', $byFood[$highGiSmall->id]['type']);
-        $this->assertSame('low', $byFood[$highGiSmall->id]['gl_category']);
+        $this->assertFalse($byFood->has($highGiSmall->id), 'a high index of a low load is not raised');
+
+        // High index with a medium load: GI warns, GL does not.
+        $this->assertSame('gi', $byFood[$highGiMedium->id]['type']);
+        $this->assertSame('medium', $byFood[$highGiMedium->id]['gl_category']);
     }
 
     public function test_insulin_resistance_and_prediabetes_get_the_glycemic_warnings_but_not_sodium(): void
@@ -126,6 +131,48 @@ class NutritionWarningsTest extends TestCase
             $check = $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/allergen-check", ['food_ids' => [$food->id]], $this->token())->json('foods.0.nutrition_warnings');
             $this->assertSame(['gi'], array_column($check, 'type'), $code);
         }
+    }
+
+    public function test_a_high_gi_of_a_small_amount_is_not_flagged_but_a_big_load_still_is(): void
+    {
+        $this->condition('diabetes_type2');
+        // Watermelon: GI 72 but little carbohydrate, so 120 g is a load of ~6.
+        $watermelon = $this->reviewed(['name_ar' => 'بطيخ', 'carbs_g_per_100g' => 7.6, 'fiber_g_per_100g' => 0.4, 'glycemic_index' => 72]);
+        // Manakish: high index and a lot of carbohydrate, 150 g is a load of ~48.
+        $manakish = $this->reviewed(['name_ar' => 'مناقيش', 'carbs_g_per_100g' => 45, 'fiber_g_per_100g' => 2, 'glycemic_index' => 75]);
+
+        $this->assertSame([], $this->plan([$watermelon], 120)['nutrition_warnings'], 'GL <= 10: nothing');
+
+        $warnings = $this->plan([$manakish], 150)['nutrition_warnings'];
+        $this->assertCount(1, $warnings);
+        $this->assertSame('gi_gl', $warnings[0]['type']);
+        $this->assertEquals(48.4, $warnings[0]['gl']);
+
+        // The same watermelon in a big enough amount is a high LOAD: that warning is unchanged.
+        $big = $this->plan([$watermelon], 500)['nutrition_warnings'];
+        $this->assertSame('gi_gl', $big[0]['type']);
+        $this->assertEquals(25.9, $big[0]['gl']);
+    }
+
+    public function test_the_food_check_gates_gi_on_the_quantity_when_it_is_known(): void
+    {
+        $this->condition('prediabetes');
+        $watermelon = $this->reviewed(['carbs_g_per_100g' => 7.6, 'fiber_g_per_100g' => 0.4, 'glycemic_index' => 72]);
+        $url = "/api/v1/clients/{$this->subscriber->id}/meal-plans/allergen-check";
+        $types = fn (array $body) => array_column($this->postJson($url, $body, $this->token())->assertOk()->json('foods.0.nutrition_warnings'), 'type');
+
+        // No quantity yet: nothing says it is small, so the GI warning stays.
+        $this->assertSame(['gi'], $types(['food_ids' => [$watermelon->id]]));
+        $this->assertSame(['gi'], $types(['items' => [['food_id' => $watermelon->id]]]));
+
+        // Small amount: low load, no warning. Big amount: the warning stays.
+        $this->assertSame([], $types(['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 120]]]));
+        $this->assertSame(['gi'], $types(['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 500]]]));
+
+        // The same food at two quantities in one call is answered per quantity.
+        $both = $this->postJson($url, ['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 120], ['food_id' => $watermelon->id, 'quantity_grams' => 500]]], $this->token())->json('foods');
+        $this->assertSame([[], ['gi']], [array_column($both[0]['nutrition_warnings'], 'type'), array_column($both[1]['nutrition_warnings'], 'type')]);
+        $this->assertEquals(120, $both[0]['quantity_grams']);
     }
 
     public function test_the_load_follows_the_quantity(): void
