@@ -167,12 +167,55 @@ class NutritionWarningsTest extends TestCase
 
         // Small amount: low load, no warning. Big amount: the warning stays.
         $this->assertSame([], $types(['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 120]]]));
-        $this->assertSame(['gi'], $types(['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 500]]]));
+        $this->assertSame(['gi_gl'], $types(['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 500]]]));
 
         // The same food at two quantities in one call is answered per quantity.
         $both = $this->postJson($url, ['items' => [['food_id' => $watermelon->id, 'quantity_grams' => 120], ['food_id' => $watermelon->id, 'quantity_grams' => 500]]], $this->token())->json('foods');
-        $this->assertSame([[], ['gi']], [array_column($both[0]['nutrition_warnings'], 'type'), array_column($both[1]['nutrition_warnings'], 'type')]);
+        $this->assertSame([[], ['gi_gl']], [array_column($both[0]['nutrition_warnings'], 'type'), array_column($both[1]['nutrition_warnings'], 'type')]);
         $this->assertEquals(120, $both[0]['quantity_grams']);
+    }
+
+    /**
+     * The row badge asks the food check with a quantity and must get what the
+     * plan report gives for an item of that size: GI alone, GL alone, or both.
+     */
+    public function test_the_food_check_with_a_quantity_matches_the_plan_report(): void
+    {
+        $this->condition('diabetes_type2');
+        $url = "/api/v1/clients/{$this->subscriber->id}/meal-plans/allergen-check";
+
+        // GI 81 and a load of ~20.7 at 30 g: both.
+        $cornflakes = $this->reviewed(['carbs_g_per_100g' => 88, 'fiber_g_per_100g' => 3, 'glycemic_index' => 81]);
+        // GI 67 (not high) but a load of ~64 at 180 g: GL alone.
+        $bread = $this->reviewed(['carbs_g_per_100g' => 55, 'fiber_g_per_100g' => 2, 'glycemic_index' => 67]);
+        // GI 80 and a load of ~43 at 150 g: both.
+        $manakish = $this->reviewed(['carbs_g_per_100g' => 38, 'fiber_g_per_100g' => 2, 'glycemic_index' => 80]);
+
+        $cases = [[$cornflakes, 30, 'gi_gl'], [$bread, 180, 'gl'], [$manakish, 150, 'gi_gl']];
+        $check = $this->postJson($url, ['items' => array_map(fn ($c) => ['food_id' => $c[0]->id, 'quantity_grams' => $c[1]], $cases)], $this->token())->assertOk()->json('foods');
+
+        $plan = $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans", [
+            'meals' => [['name' => 'lunch', 'items' => array_map(fn ($c) => ['food_id' => $c[0]->id, 'quantity_grams' => $c[1]], $cases)]],
+        ], $this->token())->assertCreated()->json('nutrition_warnings');
+        $byFood = collect($plan)->keyBy('food_id');
+
+        foreach ($cases as $i => [$food, $grams, $type]) {
+            $row = $check[$i]['nutrition_warnings'];
+            $this->assertCount(1, $row, "food {$i}");
+            $this->assertSame($type, $row[0]['type'], "food {$i}");
+            $this->assertSame($byFood[$food->id]['type'], $row[0]['type']);
+            $this->assertEquals($byFood[$food->id]['gi'], $row[0]['gi']);
+            $this->assertEquals($byFood[$food->id]['gl'], $row[0]['gl']);
+        }
+
+        $this->assertEquals(20.7, $check[0]['nutrition_warnings'][0]['gl']);
+
+        // As an ALTERNATIVE too: the same judgement whatever the position.
+        $alt = $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans", [
+            'meals' => [['name' => 'lunch', 'items' => [['food_id' => $cornflakes->id, 'quantity_grams' => 30, 'alternatives' => [['food_id' => $bread->id, 'quantity_grams' => 180]]]]]],
+        ], $this->token())->assertCreated()->json('nutrition_warnings');
+        $this->assertSame(['gi_gl', 'gl'], array_column($alt, 'type'));
+        $this->assertNotNull($alt[1]['parent_item_id']);
     }
 
     public function test_the_load_follows_the_quantity(): void
