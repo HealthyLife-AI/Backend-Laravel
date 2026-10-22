@@ -209,21 +209,34 @@ class MealPlanController extends Controller
     {
         abort_unless($subscriber->belongsToCaller(), 404);
 
-        $ids = $request->validate([
-            'food_ids' => ['required', 'array', 'min:1', 'max:50'],
+        $data = $request->validate([
+            'food_ids' => ['required_without:items', 'array', 'min:1', 'max:50'],
             'food_ids.*' => ['integer'],
-        ])['food_ids'];
+            // The same foods with the quantity the caller means to plan, so a
+            // high GI of a small amount is not flagged.
+            'items' => ['required_without:food_ids', 'array', 'min:1', 'max:50'],
+            'items.*.food_id' => ['required', 'integer'],
+            'items.*.quantity_grams' => ['nullable', 'numeric', 'min:0', 'max:5000'],
+        ]);
+
+        $wanted = isset($data['items'])
+            ? array_map(fn (array $i) => ['id' => (int) $i['food_id'], 'grams' => isset($i['quantity_grams']) ? (float) $i['quantity_grams'] : null], $data['items'])
+            : array_map(fn ($id) => ['id' => (int) $id, 'grams' => null], $data['food_ids']);
 
         $profile = $this->allergens->profile($subscriber);
         $codes = $this->nutrition->codes($subscriber);
+        $byId = Food::query()->whereIn('id', array_column($wanted, 'id'))->get()->keyBy('id');
 
-        $foods = Food::query()->whereIn('id', $ids)->get()->map(function (Food $food) use ($profile, $codes) {
+        $foods = collect($wanted)->filter(fn (array $w) => $byId->has($w['id']))->map(function (array $w) use ($byId, $profile, $codes) {
+            $food = $byId[$w['id']];
+
             return [
                 'food_id' => $food->id,
+                'quantity_grams' => $w['grams'],
                 'conflict' => $this->allergens->matchFood($food, $profile),
                 'unverified' => $food->allergens === null,
                 // Clinical batch 1, E4: GI / sodium, reviewed foods only.
-                'nutrition_warnings' => $this->nutrition->forFood($food, $codes),
+                'nutrition_warnings' => $this->nutrition->forFood($food, $codes, $w['grams']),
             ];
         })->values();
 
