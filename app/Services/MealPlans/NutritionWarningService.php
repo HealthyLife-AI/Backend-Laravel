@@ -58,6 +58,39 @@ class NutritionWarningService
         return round($food->glycemic_index * $available / 100, 1);
     }
 
+    /**
+     * The one glycemic judgement, shared by a plan item and the food check so
+     * a row badge can never differ from the plan report: null, or type gi / gl /
+     * gi_gl with the numbers. A high index of a small amount (load at or under
+     * the low cut-off) is not raised; a high load is unchanged. With no
+     * quantity the load is unknown, so only the index is judged.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function glycemic(Food $food, ?float $grams): ?array
+    {
+        if ($food->glycemic_index === null) {
+            return null;
+        }
+
+        $gi = (int) $food->glycemic_index;
+        $gl = $grams === null ? null : self::glycemicLoad($food, $grams);
+        $giHigh = self::giCategory($gi) === 'high' && ! $this->loadIsLow($food, $grams);
+        $glHigh = $gl !== null && self::glCategory($gl) === 'high';
+
+        if (! $giHigh && ! $glHigh) {
+            return null;
+        }
+
+        return [
+            'type' => $giHigh && $glHigh ? 'gi_gl' : ($giHigh ? 'gi' : 'gl'),
+            'gi' => $gi,
+            'gi_category' => self::giCategory($gi),
+            'gl' => $gl,
+            'gl_category' => $gl === null ? null : self::glCategory($gl),
+        ];
+    }
+
     /** True only when the quantity is known, the load can be computed, and it is at or under the low cut-off. */
     private function loadIsLow(Food $food, ?float $grams): bool
     {
@@ -76,13 +109,15 @@ class NutritionWarningService
     }
 
     /**
-     * Food-level warnings: GI for a patient on the glycemic watch, sodium for
-     * a hypertensive one.
+     * Food-level warnings: glycemic for a patient on the glycemic watch,
+     * sodium for a hypertensive one.
      *
-     * `$grams` is the planned quantity when the caller knows it. A high GI of
-     * a small amount (glycemic load at or under the low cut-off) is no
-     * concern and is not raised; with no quantity yet the GI warning stays,
-     * since nothing says it is small.
+     * `$grams` is the planned quantity when the caller knows it, and then the
+     * answer is exactly what the plan report gives for an item of that size:
+     * `gi`, `gl` or `gi_gl`, with both numbers. A high GI of a small amount
+     * (load at or under the low cut-off) is not raised. With no quantity yet
+     * only the index can be judged: the GI warning stays, since nothing says
+     * the amount is small.
      *
      * @param  list<string>  $codes
      * @return list<array<string, mixed>>
@@ -95,9 +130,12 @@ class NutritionWarningService
 
         $warnings = [];
 
-        if (array_intersect($codes, ConditionCodes::GLYCEMIC_WATCH) !== [] && $food->glycemic_index !== null
-            && self::giCategory($food->glycemic_index) === 'high' && ! $this->loadIsLow($food, $grams)) {
-            $warnings[] = ['type' => 'gi', 'gi' => (int) $food->glycemic_index, 'category' => 'high'];
+        if (array_intersect($codes, ConditionCodes::GLYCEMIC_WATCH) !== []) {
+            $glycemic = $this->glycemic($food, $grams);
+
+            if ($glycemic !== null) {
+                $warnings[] = $glycemic;
+            }
         }
 
         if (in_array('hypertension', $codes, true) && $food->sodium_mg_per_100g !== null
@@ -158,24 +196,8 @@ class NutritionWarningService
 
         $warnings = [];
 
-        if ($diabetic && $food->glycemic_index !== null) {
-            $gi = (int) $food->glycemic_index;
-            $gl = self::glycemicLoad($food, (float) $item->quantity_grams);
-            // A high index of a small amount (load at or under the low cut-off)
-            // is not raised; a high load is unchanged. Without carbs data the
-            // load is unknown, so the index warning stays.
-            $giHigh = self::giCategory($gi) === 'high' && ! $this->loadIsLow($food, (float) $item->quantity_grams);
-            $glHigh = $gl !== null && self::glCategory($gl) === 'high';
-
-            if ($giHigh || $glHigh) {
-                $warnings[] = $base + [
-                    'type' => $giHigh && $glHigh ? 'gi_gl' : ($giHigh ? 'gi' : 'gl'),
-                    'gi' => $gi,
-                    'gi_category' => self::giCategory($gi),
-                    'gl' => $gl,
-                    'gl_category' => $gl === null ? null : self::glCategory($gl),
-                ];
-            }
+        if ($diabetic && ($glycemic = $this->glycemic($food, (float) $item->quantity_grams)) !== null) {
+            $warnings[] = $base + $glycemic;
         }
 
         if ($hypertensive && $food->sodium_mg_per_100g !== null && (float) $food->sodium_mg_per_100g >= (float) config('nutrition.high_sodium_mg_per_100g')) {
