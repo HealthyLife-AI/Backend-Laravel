@@ -36,6 +36,9 @@ class ImportUsdaFoods extends Command
 
     private const NUTRIENT_FIBER_G = 1079;
 
+    /** Sodium (Na), mg per 100 g: see ImportUsdaSodium, which fills it for foods already imported. */
+    private const NUTRIENT_SODIUM_MG = ImportUsdaSodium::NUTRIENT_SODIUM_MG;
+
     public function handle(): int
     {
         $path = $this->option('path') ?: storage_path('app/imports/usda');
@@ -63,7 +66,7 @@ class ImportUsdaFoods extends Command
 
     /**
      * One pass over the (36MB) food_nutrient.csv, keeping only the 5
-     * macro rows per food — the rest of that file's columns (derivation,
+     * macro rows (and sodium) per food — the rest of that file's columns (derivation,
      * min/max/median, footnotes) aren't needed for a per-100g macro
      * table, so they're never loaded.
      *
@@ -77,6 +80,7 @@ class ImportUsdaFoods extends Command
             self::NUTRIENT_FAT_G => true,
             self::NUTRIENT_CARBS_G => true,
             self::NUTRIENT_FIBER_G => true,
+            self::NUTRIENT_SODIUM_MG => true,
         ];
 
         $handle = fopen($path, 'r');
@@ -129,6 +133,13 @@ class ImportUsdaFoods extends Command
                 continue;
             }
 
+            // Sodium is stored with the review stamp a sodium import gives
+            // (see ImportUsdaSodium). Only NEW rows get it from here: on a
+            // re-run the upsert below leaves sodium and the stamp of an
+            // existing food alone, which is foods:import-usda-sodium's job.
+            $sodium = $nutrients[self::NUTRIENT_SODIUM_MG] ?? null;
+            $sodium = $sodium !== null && $sodium >= 0 && $sodium <= 40000 ? round($sodium, 1) : null;
+
             $batch[] = [
                 'source' => 'usda',
                 'status' => 'approved',
@@ -139,6 +150,9 @@ class ImportUsdaFoods extends Command
                 'carbs_g_per_100g' => $nutrients[self::NUTRIENT_CARBS_G] ?? 0,
                 'fat_g_per_100g' => $nutrients[self::NUTRIENT_FAT_G] ?? 0,
                 'fiber_g_per_100g' => $nutrients[self::NUTRIENT_FIBER_G] ?? null,
+                'sodium_mg_per_100g' => $sodium,
+                'nutrition_reviewed_at' => $sodium === null ? null : $now,
+                'nutrition_review_source' => $sodium === null ? null : ImportUsdaSodium::SOURCE,
                 'created_at' => $now,
                 'updated_at' => $now,
             ];
