@@ -88,7 +88,10 @@ return [
     |
     | Category cut-offs for glycemic index (low <= 55, medium 56-69, high
     | >= 70) and glycemic load per serving (low <= 10, medium 11-19, high
-    | >= 20). `high_sodium_mg_per_100g` is PROVISIONAL.
+    | >= 20). `high_sodium_mg_per_100g` (600 mg sodium per 100 g) matches the
+    | UK Food Standards Agency front-of-pack "high" threshold for foods:
+    | more than 1.5 g salt per 100 g, i.e. 600 mg sodium. Drinks have a
+    | lower FSA threshold and are NOT treated separately here.
     |
     | Warnings use these only for foods a nutritionist has reviewed
     | (foods.nutrition_reviewed_at), and are never blocking.
