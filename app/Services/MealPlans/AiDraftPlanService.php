@@ -10,6 +10,7 @@ use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\HealthRecords\HealthRecordService;
+use App\Services\FoodPreferences\FoodPreferenceService;
 use App\Services\Nutrition\CalorieTarget;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -84,6 +85,9 @@ class AiDraftPlanService
     /** A plated meal: a main dish and up to three sides. */
     private const MAX_ITEMS_PER_MEAL = 4;
 
+    /** Disliked foods are dropped from the pool only while at least this many foods remain. */
+    private const MIN_FOODS_AFTER_DISLIKES = 3;
+
     /** Longest a nutritionist is kept waiting for a rate-limit retry before the draft falls back. */
     private const MAX_INTERACTIVE_WAIT_SECONDS = 10;
 
@@ -116,10 +120,20 @@ class AiDraftPlanService
 
         abort_if($safeFoods->isEmpty(), 422, 'No approved foods are free of this client\'s allergies — add more foods to the database before drafting.');
 
+        // Phase 2, B5: soft preferences. A disliked food is left out of the menu
+        // and the rule-based pool whenever enough others remain, so it is only
+        // ever picked when there is no alternative; the NAMES (nothing else new)
+        // also go to the model as likes / dislikes.
+        $preferences = app(FoodPreferenceService::class);
+        $likedNames = $preferences->namesFor($subscriber);
+        $dislikedIds = \App\Models\PatientFoodPreference::query()->where('subscriber_id', $subscriber->id)->where('kind', 'dislike')->pluck('food_id')->all();
+        $pool = $safeFoods->reject(fn (Food $food) => in_array($food->id, $dislikedIds, true));
+        $safeFoods = $pool->count() >= self::MIN_FOODS_AFTER_DISLIKES ? $pool : $safeFoods;
+
         $meals = null;
 
         if ($this->llm->isConfigured()) {
-            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups);
+            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups, $likedNames);
         } else {
             Log::info('AI draft: no provider configured, using rule-based generation.', ['reason' => 'not_configured']);
         }
@@ -150,13 +164,13 @@ class AiDraftPlanService
      *
      * @return array<int, array<string, mixed>>|null
      */
-    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = []): ?array
+    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = []): ?array
     {
         $candidates = $this->menuFor($safeFoods);
 
         $messages = [
             ['role' => 'system', 'content' => $this->systemPrompt()],
-            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups)],
+            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups, $foodNames)],
         ];
 
         // One retry for a passing hiccup, so a single click doesn't fall back:
@@ -314,6 +328,7 @@ class AiDraftPlanService
         - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
         - Never choose a food that contains or derives from anything in must_avoid_allergies (rule 6).
         - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
+        - client_profile.liked_foods / disliked_foods are SOFT preferences, by name: prefer a liked food when it fits, and do not choose a disliked one when another food fits as well. They never override an allergy, the calorie targets or the rules above.
         PROMPT;
     }
 
@@ -361,7 +376,8 @@ class AiDraftPlanService
             ->values();
     }
 
-    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = []): string
+    /** @param  array{likes?: list<string>, dislikes?: list<string>}  $foodNames  Arabic names only */
+    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = []): string
     {
         // Compact rows, one array per food, in the order of food_columns.
         $foods = $candidateFoods->map(fn (Food $food) => [
@@ -394,6 +410,9 @@ class AiDraftPlanService
             'medications' => $profile->medications,
             'allergies' => $profile->allergies,
             'food_preferences' => $profile->food_preferences,
+            // Phase 2, B5: soft preferences, by NAME only (no ids, nothing else new).
+            'liked_foods' => $foodNames['likes'] ?? [],
+            'disliked_foods' => $foodNames['dislikes'] ?? [],
             'surgery_history' => $profile->surgery_history,
             'lab_notes' => $profile->lab_notes,
             'nutritionist_notes' => $profile->nutritionist_notes,

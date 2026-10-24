@@ -41,7 +41,7 @@ class SelfSchedulerTest extends TestCase
     {
         $scheduler = app(SelfScheduler::class);
 
-        $this->assertSame(['alerts', 'summaries', 'measurements'], $scheduler->overdue($this->wednesdayMorning()));
+        $this->assertSame(['alerts', 'summaries', 'measurements', 'checkins'], $scheduler->overdue($this->wednesdayMorning()));
     }
 
     public function test_slots_follow_the_clinic_timezone(): void

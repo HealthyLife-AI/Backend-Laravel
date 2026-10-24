@@ -6,6 +6,10 @@ use App\Http\Controllers\Api\Admin\AdminNutritionistController;
 use App\Http\Controllers\Api\Admin\AdminOverviewController;
 use App\Http\Controllers\Api\AiSummaries\AiSummaryController;
 use App\Http\Controllers\Api\Alerts\AlertController;
+use App\Http\Controllers\Api\Checkins\ClientCheckinController;
+use App\Http\Controllers\Api\FoodPreferences\ClientFoodPreferenceController;
+use App\Http\Controllers\Api\FoodPreferences\MyFoodPreferenceController;
+use App\Http\Controllers\Api\Checkins\MyCheckinController;
 use App\Http\Controllers\Api\Alerts\AlertSettingsController;
 use App\Http\Controllers\Api\Appointments\MyAppointmentController;
 use App\Http\Controllers\Api\Appointments\NutritionistAppointmentController;
@@ -40,6 +44,7 @@ use App\Http\Controllers\Api\Notifications\NotificationPreferenceController;
 use App\Http\Controllers\Api\Nutritionists\MyNutritionistController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
+use App\Http\Controllers\Api\Progress\GoalProjectionController;
 use App\Http\Controllers\Api\Progress\OwnProgressController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
@@ -152,6 +157,21 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::put('clients/{subscriber}/health-profile', [HealthProfileController::class, 'update'])
             ->middleware('follow-up')
             ->name('clients.health-profile.update');
+
+        // Phase 2, C: the goal projection and whether the patient sees it. Nutritionist only (not the progress.view group a client also holds).
+        Route::get('clients/{subscriber}/goal-projection', [GoalProjectionController::class, 'show'])->name('clients.goal-projection.show');
+        Route::put('clients/{subscriber}/goal-projection-visibility', [GoalProjectionController::class, 'visibility'])->middleware('follow-up')->name('clients.goal-projection.visibility');
+
+        // Phase 2, B3: likes and dislikes. What she writes is never removed by the patient's own edit.
+        Route::get('clients/{subscriber}/food-preferences', [ClientFoodPreferenceController::class, 'show'])->name('clients.food-preferences.show');
+        Route::put('clients/{subscriber}/food-preferences', [ClientFoodPreferenceController::class, 'update'])->middleware('follow-up')->name('clients.food-preferences.update');
+
+        // Phase 2, A3: the periodic check-in. Writes carry the follow-up gate.
+        Route::get('clients/{subscriber}/checkin-settings', [ClientCheckinController::class, 'show'])->name('clients.checkin-settings.show');
+        Route::put('clients/{subscriber}/checkin-settings', [ClientCheckinController::class, 'update'])->middleware('follow-up')->name('clients.checkin-settings.update');
+        Route::delete('clients/{subscriber}/checkin-settings', [ClientCheckinController::class, 'destroy'])->middleware('follow-up')->name('clients.checkin-settings.destroy');
+        Route::get('clients/{subscriber}/checkins', [ClientCheckinController::class, 'history'])->name('clients.checkins.index');
+        Route::post('clients/{subscriber}/checkins/{checkin}/review', [ClientCheckinController::class, 'review'])->whereNumber('checkin')->middleware('follow-up')->name('clients.checkins.review');
 
         // Phase 1, B: how often this patient measures. Writes carry the follow-up gate.
         Route::get('clients/{subscriber}/measurement-schedule', [MeasurementScheduleController::class, 'show'])->name('clients.measurement-schedule.show');
@@ -315,6 +335,18 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['jwt', 'consent', 'role:client'])->group(function () {
         Route::get('me/health-profile', [MyHealthRecordsController::class, 'show'])->name('me.health-profile.show');
         Route::get('me/measurement-schedule', [MeasurementScheduleController::class, 'mine'])->name('me.measurement-schedule.show');
+
+        // Phase 2, C2: the patient's own goal projection (null while the nutritionist keeps it hidden).
+        Route::get('me/goal-projection', [GoalProjectionController::class, 'mine'])->name('me.goal-projection.show');
+
+        // Phase 2, B2: the patient's own likes and dislikes.
+        Route::get('me/food-preferences', [MyFoodPreferenceController::class, 'show'])->name('me.food-preferences.show');
+        Route::put('me/food-preferences', [MyFoodPreferenceController::class, 'update'])->name('me.food-preferences.update');
+
+        // Phase 2, A5: the periodic check-in questionnaire.
+        Route::get('me/checkins/current', [MyCheckinController::class, 'current'])->name('me.checkins.current');
+        Route::get('me/checkins', [MyCheckinController::class, 'index'])->name('me.checkins.index');
+        Route::post('me/checkins/{id}', [MyCheckinController::class, 'submit'])->whereNumber('id')->name('me.checkins.submit');
 
         // Phase 1, E2: structured requests to the nutritionist. Sent once, never edited.
         Route::get('me/quick-requests', [MyQuickRequestController::class, 'index'])->name('me.quick-requests.index');

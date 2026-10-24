@@ -89,7 +89,7 @@ return [
             'diabetes_type1', 'diabetes_type2', 'gestational_diabetes', 'insulin_resistance', 'prediabetes',
             'hypertension', 'kidney_disease',
         ],
-        'important_types' => ['no_log', 'calories_exceeded'],
+        'important_types' => ['no_log', 'calories_exceeded', 'checkin_flag'],
         'important_quick_request_reasons' => ['craving', 'cannot_continue'],
     ],
 
