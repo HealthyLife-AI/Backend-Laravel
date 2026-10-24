@@ -310,6 +310,7 @@ class SeedDemoData extends Command
                 gender: $spec['gender'],
                 activityLevel: $spec['activity_level'],
             );
+            $profile['bmr'] = $nutrition->calculateBmr((float) $spec['weight_kg'], (float) $spec['height_cm'], (int) $spec['age'], $spec['gender']);
             $subscriber->healthProfile()->create($profile);
             PatientGoal::create([
                 'subscriber_id' => $subscriber->id,

@@ -227,7 +227,7 @@ class CalorieSuggestionTest extends TestCase
         $subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id]);
 
         $this->assertSame(
-            ['maintenance' => null, 'adjustment' => null, 'suggested' => null, 'bmi' => null, 'bmi_class' => null, 'reason' => null, 'clamped_to_floor' => null],
+            ['maintenance' => null, 'bmr' => null, 'activity_level' => null, 'activity_multiplier' => null, 'adjustment' => null, 'suggested' => null, 'bmi' => null, 'bmi_class' => null, 'reason' => null, 'clamped_to_floor' => null],
             CalorieTarget::suggestionDetail($subscriber),
         );
         $this->assertNull(CalorieTarget::suggestion($subscriber));

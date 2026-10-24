@@ -14,5 +14,6 @@ return [
     'measurement_due' => ['title' => 'Time to record your measurements', 'body' => 'It is time to record your measurements.'],
     'quick_request_new' => ['title' => 'New request', 'body' => 'A patient sent you a new request.'],
     'quick_request_answered' => ['title' => 'You have a reply', 'body' => 'Your nutritionist replied to your request. Open the app to read it.'],
+    'checkin_due' => ['title' => 'A short questionnaire', 'body' => 'You have a short questionnaire from your nutritionist.'],
     'appointment_rescheduled' => ['title' => 'Your appointment time changed', 'body' => 'Open the app to see the new time.'],
 ];

@@ -56,7 +56,12 @@ class CalorieTarget
      * is negative for a deficit. `reason` says why NO adjustment was made
      * (null when one was, or when the goal simply has none).
      *
-     * @return array{maintenance: ?int, adjustment: ?int, suggested: ?int, bmi: ?float, bmi_class: ?string, reason: ?string, clamped_to_floor: ?bool}
+     * Phase 2, D2: also `bmr` (energy at rest), `activity_level` and
+     * `activity_multiplier`, so the designer can show rest -> with activity -> target.
+     * The stored BMR is used; a profile saved before it existed has it computed here
+     * (read-only: nothing is written; health-profiles:backfill-bmr does that).
+     *
+     * @return array{maintenance: ?int, bmr: ?int, activity_level: ?string, activity_multiplier: ?float, adjustment: ?int, suggested: ?int, bmi: ?float, bmi_class: ?string, reason: ?string, clamped_to_floor: ?bool}
      */
     public static function suggestionDetail(Subscriber $subscriber): array
     {
@@ -64,7 +69,7 @@ class CalorieTarget
         $maintenance = $profile?->daily_calorie_needs === null ? null : (int) $profile->daily_calorie_needs;
 
         if ($maintenance === null) {
-            return ['maintenance' => null, 'adjustment' => null, 'suggested' => null, 'bmi' => null, 'bmi_class' => null, 'reason' => null, 'clamped_to_floor' => null];
+            return ['maintenance' => null, 'bmr' => null, 'activity_level' => null, 'activity_multiplier' => null, 'adjustment' => null, 'suggested' => null, 'bmi' => null, 'bmi_class' => null, 'reason' => null, 'clamped_to_floor' => null];
         }
 
         $age = $profile->age === null ? null : (int) $profile->age;
@@ -112,8 +117,13 @@ class CalorieTarget
             : null;
         $clamped = $floor !== null && $suggested < $floor;
 
+        $calculator = app(NutritionCalculatorService::class);
+
         return [
             'maintenance' => $maintenance,
+            'bmr' => $profile->bmr !== null ? (int) $profile->bmr : (in_array($profile->gender, ['male', 'female'], true) ? $calculator->bmrForProfile($profile) : null),
+            'activity_level' => $profile->activity_level,
+            'activity_multiplier' => $calculator->activityMultiplier((string) $profile->activity_level),
             'adjustment' => $adjustment,
             'suggested' => $clamped ? $floor : $suggested,
             'bmi' => $bmi,

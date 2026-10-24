@@ -105,6 +105,7 @@ class HealthRecordService
             if (filled($data['activity_level'] ?? null) && ($profile = $subscriber->healthProfile) !== null) {
                 $profile->activity_level = $data['activity_level'];
                 $profile->daily_calorie_needs = $this->nutrition->calculateForProfile($profile);
+                $profile->bmr = $this->nutrition->bmrForProfile($profile);
                 $profile->save();
             }
 

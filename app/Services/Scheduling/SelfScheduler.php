@@ -39,6 +39,7 @@ class SelfScheduler
         'reminders' => 'notifications:send-log-reminders',
         'summaries' => 'ai-summaries:generate-weekly',
         'measurements' => 'measurements:remind',
+        'checkins' => 'checkins:open',
     ];
 
     public function markRan(string $task): void
@@ -109,7 +110,7 @@ class SelfScheduler
             'alerts' => $local->setTime(6, 0),
             'reminders' => $local->setTime(20, 0),
             'summaries' => $local->startOfWeek(CarbonImmutable::MONDAY)->setTime(7, 0),
-            'measurements' => $local->setTime(9, 0),
+            'measurements', 'checkins' => $local->setTime(9, 0),
         };
 
         if ($slot->greaterThan($local)) {

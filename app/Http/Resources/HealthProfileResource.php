@@ -42,6 +42,8 @@ class HealthProfileResource extends JsonResource
                     'female' => (int) config('nutrition.calorie_floor.female'),
                     'male' => (int) config('nutrition.calorie_floor.male'),
                 ],
+                // Phase 2, D2: energy at rest, nutritionist only.
+                'bmr' => $this->bmr !== null ? (int) $this->bmr : null,
                 // Clinical batch 1, B5: the goal-adjusted suggestion and how it
                 // was reached. `daily_calorie_needs` above stays the maintenance figure.
                 'calorie_suggestion' => $this->subscriber === null ? null : CalorieTarget::suggestionDetail($this->subscriber),

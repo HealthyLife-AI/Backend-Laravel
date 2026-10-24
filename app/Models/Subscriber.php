@@ -112,6 +112,23 @@ class Subscriber extends Model
         return $this->hasOne(SubscriberMeasurementSchedule::class);
     }
 
+    /** Phase 2, A: the periodic questionnaire settings (none until the nutritionist sets them). */
+    public function checkinSetting(): HasOne
+    {
+        return $this->hasOne(SubscriberCheckinSetting::class);
+    }
+
+    public function checkins(): HasMany
+    {
+        return $this->hasMany(PatientCheckin::class)->orderByDesc('due_on');
+    }
+
+    /** Phase 2, B: foods the patient likes or dislikes. */
+    public function foodPreferences(): HasMany
+    {
+        return $this->hasMany(PatientFoodPreference::class)->orderBy('id');
+    }
+
     public function quickRequests(): HasMany
     {
         return $this->hasMany(PatientQuickRequest::class)->latest('id');

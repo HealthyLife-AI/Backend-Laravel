@@ -45,6 +45,26 @@ class NutritionCalculatorService
         return (int) round($tdee);
     }
 
+    /**
+     * Phase 2, D1: the Mifflin-St Jeor BMR on its own (energy at total rest),
+     * the figure `calculateDailyCalorieNeeds` scales by the activity multiplier.
+     * Same equation, so `bmr x activityMultiplier` reproduces the stored needs.
+     */
+    public function calculateBmr(float $weightKg, float $heightCm, int $age, string $gender): int
+    {
+        return (int) round((10 * $weightKg) + (6.25 * $heightCm) - (5 * $age) + ($gender === 'male' ? 5 : -161));
+    }
+
+    public function activityMultiplier(string $activityLevel): ?float
+    {
+        return self::ACTIVITY_MULTIPLIERS[$activityLevel] ?? null;
+    }
+
+    public function bmrForProfile(HealthProfile $profile): int
+    {
+        return $this->calculateBmr((float) $profile->weight_kg, (float) $profile->height_cm, (int) $profile->age, $profile->gender);
+    }
+
     /** Convenience overload that reads straight off a HealthProfile. */
     public function calculateForProfile(HealthProfile $profile): int
     {

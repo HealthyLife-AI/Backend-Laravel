@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'lab_notes',
     'nutritionist_notes',
     'daily_calorie_needs',
+    'bmr',
 ])]
 class HealthProfile extends Model
 {

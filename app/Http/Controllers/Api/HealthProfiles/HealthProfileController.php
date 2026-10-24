@@ -52,6 +52,10 @@ class HealthProfileController extends Controller
             activityLevel: $data['activity_level'],
         );
 
+        // Phase 2, D1: the BMR is stored beside the needs. The formula and
+        // daily_calorie_needs are untouched.
+        $data['bmr'] = $this->calculator->calculateBmr((float) $data['weight_kg'], (float) $data['height_cm'], (int) $data['age'], $data['gender']);
+
         // The structured records own medications and allergies now. An older
         // client may still send the JSON arrays: they are merged by name (never
         // a wipe), then the JSON is rewritten from the records.

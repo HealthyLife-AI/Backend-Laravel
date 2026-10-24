@@ -13,6 +13,7 @@ use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
+use App\Services\FoodPreferences\FoodPreferenceService;
 use App\Services\MealPlans\AllergenConflictService;
 use App\Services\MealPlans\NutritionWarningService;
 use App\Services\MealPlans\MealPlanService;
@@ -230,8 +231,10 @@ class MealPlanController extends Controller
         $profile = $this->allergens->profile($subscriber);
         $codes = $this->nutrition->codes($subscriber);
         $byId = Food::query()->whereIn('id', array_column($wanted, 'id'))->get()->keyBy('id');
+        // Phase 2, B4: the patient's like / dislike per food, for the picker's marks and the row note.
+        $preferences = app(FoodPreferenceService::class)->kindsFor($subscriber, array_column($wanted, 'id'));
 
-        $foods = collect($wanted)->filter(fn (array $w) => $byId->has($w['id']))->map(function (array $w) use ($byId, $profile, $codes) {
+        $foods = collect($wanted)->filter(fn (array $w) => $byId->has($w['id']))->map(function (array $w) use ($byId, $profile, $codes, $preferences) {
             $food = $byId[$w['id']];
 
             return [
@@ -239,6 +242,7 @@ class MealPlanController extends Controller
                 'quantity_grams' => $w['grams'],
                 'conflict' => $this->allergens->matchFood($food, $profile),
                 'unverified' => $food->allergens === null,
+                'preference' => $preferences[$food->id] ?? null,
                 // Clinical batch 1, E4: GI / sodium, reviewed foods only.
                 'nutrition_warnings' => $this->nutrition->forFood($food, $codes, $w['grams']),
             ];
