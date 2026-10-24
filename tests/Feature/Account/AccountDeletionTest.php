@@ -93,6 +93,9 @@ class AccountDeletionTest extends TestCase
         DB::table('patient_medications')->insert(['subscriber_id' => $subscriber->id, 'name' => 'x', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('patient_allergies')->insert(['subscriber_id' => $subscriber->id, 'group' => 'egg', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('profile_proposals')->insert(['subscriber_id' => $subscriber->id, 'kind' => 'goal', 'action' => 'edit', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('plan_activities')->insert(['meal_plan_id' => $planId, 'title' => 'walk', 'duration_minutes' => 30, 'times_per_day' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('subscriber_measurement_schedules')->insert(['subscriber_id' => $subscriber->id, 'interval_days' => 14, 'next_due_on' => now()->addDays(14)->toDateString(), 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('patient_quick_requests')->insert(['subscriber_id' => $subscriber->id, 'reason' => 'craving', 'status' => 'open', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('patient_conditions')->insert(['subscriber_id' => $subscriber->id, 'code' => 'hypertension', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('subscriber_alert_settings')->insert(['subscriber_id' => $subscriber->id, 'no_log_days' => 1, 'created_at' => now(), 'updated_at' => now()]);
         MealItem::create(['meal_id' => $mealId, 'food_id' => $food->id, 'parent_item_id' => $item->id, 'quantity_grams' => 90, 'sort_order' => 1]);
@@ -204,7 +207,7 @@ class AccountDeletionTest extends TestCase
             'meals', 'meal_items', 'nutritionist_profiles', 'foods', 'patient_deletion_notices', 'permissions', 'roles', 'role_has_permissions',
             'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations',
             'follow_up_reviews', 'follow_up_tasks', 'patient_notifications', 'notification_preferences',
-            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings', 'patient_conditions'];
+            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests', 'plan_activities'];
         foreach (Schema::getTables() as $table) {
             $name = $table['name'];
             $columns = Schema::getColumnListing($name);
@@ -214,10 +217,11 @@ class AccountDeletionTest extends TestCase
         }
 
         $this->assertSame(0, DB::table('subscribers')->where('id', $subscriberId)->count());
-        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings', 'patient_conditions'] as $table) {
+        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests'] as $table) {
             $this->assertSame(0, DB::table($table)->where('subscriber_id', $subscriberId)->count(), "{$table} still has the patient's rows");
         }
         $this->assertSame(0, DB::table('meals')->whereIn('meal_plan_id', $planIds)->count());
+        $this->assertSame(0, DB::table('plan_activities')->whereIn('meal_plan_id', $planIds)->count());
         $this->assertSame(0, DB::table('meal_items')->whereIn('meal_id', DB::table('meals')->whereIn('meal_plan_id', $planIds)->pluck('id'))->count());
         $this->assertSame(0, DB::table('patient_consents')->where('user_id', $userId)->count());
         $this->assertSame(0, DB::table('patient_notifications')->where('user_id', $userId)->count());

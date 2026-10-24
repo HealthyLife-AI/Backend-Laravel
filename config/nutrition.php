@@ -104,4 +104,11 @@ return [
 
     'high_sodium_mg_per_100g' => env('HIGH_SODIUM_MG_PER_100G', 600),
 
+    /*
+    | Conditions whose plans get the high-sodium warning (Phase 1, D3). A
+    | config list so the clinic can change it without a code change.
+    */
+
+    'sodium_conditions' => ['hypertension', 'fluid_retention', 'kidney_disease'],
+
 ];

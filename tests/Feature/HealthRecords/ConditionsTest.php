@@ -64,7 +64,7 @@ class ConditionsTest extends TestCase
         $this->getJson($this->url(), $this->token())->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.code', 'kidney_disease')
-            ->assertJsonCount(10, 'available');
+            ->assertJsonCount(12, 'available');
 
         $this->deleteJson($this->url("/{$created->json('id')}"), [], $this->token())->assertNoContent();
         $this->assertSame(0, PatientCondition::count());

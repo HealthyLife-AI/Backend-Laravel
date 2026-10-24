@@ -19,12 +19,14 @@ class ConditionCodes
         'kidney_disease' => 'أمراض الكلى',
         'liver_disease' => 'أمراض الكبد',
         'cancer' => 'السرطان',
+        'celiac' => 'الداء البطني (السيلياك)',
+        'fluid_retention' => 'احتباس السوائل',
         'other' => 'أخرى',
     ];
 
     public const CODES = [
         'diabetes_type1', 'diabetes_type2', 'gestational_diabetes', 'insulin_resistance',
-        'prediabetes', 'hypertension', 'kidney_disease', 'liver_disease', 'cancer', 'other',
+        'prediabetes', 'hypertension', 'kidney_disease', 'liver_disease', 'cancer', 'celiac', 'fluid_retention', 'other',
     ];
 
     /** Every code that means "has diabetes" for the glycemic warnings. */
@@ -46,6 +48,9 @@ class ConditionCodes
         'hypertension' => ['ضغط', 'hypertension', 'blood pressure'],
         'kidney_disease' => ['كلى', 'كلية', 'كلوي', 'kidney', 'renal'],
         'liver_disease' => ['كبد', 'liver', 'hepat'],
+        // Phase 1, D1. Before `cancer`: "تورم" (swelling) contains "ورم".
+        'fluid_retention' => ['احتباس', 'وذمة', 'تورم', 'edema', 'oedema', 'fluid retention'],
+        'celiac' => ['سيلياك', 'بطني', 'حساسية القمح', 'celiac', 'coeliac'],
         'cancer' => ['سرطان', 'ورم', 'cancer', 'tumor', 'tumour'],
         // A bare "سكري" (no type said) is left to the nutritionist: type 2
         // is the common case but it is not this code's call to make.

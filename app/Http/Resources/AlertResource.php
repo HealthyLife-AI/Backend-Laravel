@@ -26,6 +26,8 @@ class AlertResource extends JsonResource
             'subscriber_name' => $this->whenLoaded('subscriber', fn () => $this->subscriber->user->name),
             'subscriber_code' => $this->whenLoaded('subscriber', fn () => $this->subscriber->code),
             'type' => $this->type,
+            // Phase 1, C: 'normal' | 'important', decided when the alert opened.
+            'severity' => $this->severity,
             'message' => $this->message,
             'is_read' => $this->is_read,
             // Whether the underlying condition is still true — distinct

@@ -185,8 +185,39 @@ class HealthRecordService
             'created_by' => $by?->id,
         ]);
         $this->mirrorConditions($subscriber);
+        $this->applyConditionEffects($subscriber, $condition->code);
 
         return $condition;
+    }
+
+    /**
+     * Phase 1, D2: celiac disease implies a confirmed gluten allergy, so the
+     * existing hard allergen warning and activation acknowledgement apply
+     * without anyone having to add the allergy by hand.
+     *
+     * Ensures a `wheat_gluten` allergy of class confirmed_allergy: created when
+     * missing, raised to confirmed when it was only an intolerance / avoid. It
+     * never makes a second row, and removing the condition later does NOT
+     * remove it: the allergy is a separate record the nutritionist owns.
+     */
+    public function applyConditionEffects(Subscriber $subscriber, string $code): void
+    {
+        if ($code !== 'celiac') {
+            return;
+        }
+
+        $allergy = PatientAllergy::query()->where('subscriber_id', $subscriber->id)->where('group', 'wheat_gluten')->first();
+
+        if ($allergy === null) {
+            $this->addAllergy($subscriber, ['group' => 'wheat_gluten', 'other_text' => null, 'class' => 'confirmed_allergy', 'note' => null]);
+
+            return;
+        }
+
+        if ($allergy->class !== 'confirmed_allergy') {
+            $allergy->forceFill(['class' => 'confirmed_allergy'])->save();
+            $this->mirror($subscriber);
+        }
     }
 
     /** @param  array<string, mixed>  $data */
@@ -201,6 +232,7 @@ class HealthRecordService
             'note' => $data['note'] ?? null,
         ])->save();
         $this->mirrorConditions($subscriber);
+        $this->applyConditionEffects($subscriber, $condition->code);
 
         return $condition;
     }

@@ -103,6 +103,12 @@ class NutritionWarningService
         return $gl !== null && self::glCategory($gl) === 'low';
     }
 
+    /** Phase 1, D3: any of the conditions listed in config('nutrition.sodium_conditions'). */
+    private function sodiumWatch(array $codes): bool
+    {
+        return array_intersect($codes, (array) config('nutrition.sodium_conditions')) !== [];
+    }
+
     private function reviewed(Food $food): bool
     {
         return $food->nutrition_reviewed_at !== null;
@@ -138,7 +144,7 @@ class NutritionWarningService
             }
         }
 
-        if (in_array('hypertension', $codes, true) && $food->sodium_mg_per_100g !== null
+        if ($this->sodiumWatch($codes) && $food->sodium_mg_per_100g !== null
             && (float) $food->sodium_mg_per_100g >= (float) config('nutrition.high_sodium_mg_per_100g')) {
             $warnings[] = ['type' => 'sodium', 'sodium_mg_per_100g' => (float) $food->sodium_mg_per_100g];
         }
@@ -157,7 +163,7 @@ class NutritionWarningService
         $codes ??= $this->codes($subscriber);
 
         $diabetic = array_intersect($codes, ConditionCodes::GLYCEMIC_WATCH) !== [];
-        $hypertensive = in_array('hypertension', $codes, true);
+        $hypertensive = $this->sodiumWatch($codes);
 
         if (! $diabetic && ! $hypertensive) {
             return [];

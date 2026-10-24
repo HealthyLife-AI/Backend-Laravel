@@ -7,6 +7,7 @@ use App\Http\Requests\HealthProfiles\StoreBodyCompositionReadingRequest;
 use App\Http\Resources\BodyCompositionReadingResource;
 use App\Models\BodyCompositionReading;
 use App\Models\Subscriber;
+use App\Services\Measurements\MeasurementScheduleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -35,6 +36,9 @@ class BodyCompositionReadingController extends Controller
         $reading = $subscriber->bodyCompositionReadings()->create(
             $request->validated() + ['source' => BodyCompositionReading::SOURCE_CLINIC],
         );
+
+        // Phase 1, B3: the next measurement is due one interval after this one.
+        app(MeasurementScheduleService::class)->recorded($subscriber, $reading->recorded_at);
 
         return (new BodyCompositionReadingResource($reading))->response()->setStatusCode(201);
     }

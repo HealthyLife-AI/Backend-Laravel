@@ -65,4 +65,32 @@ return [
 
     'milestone_window_days' => (int) env('ALERTS_MILESTONE_WINDOW_DAYS', 14),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Alert severity (Phase 1, C)
+    |--------------------------------------------------------------------------
+    |
+    | Decided server-side when an alert is OPENED ('normal' | 'important'), so
+    | the dashboard only sorts and filters. An alert is 'important' when its
+    | type is listed in `important_types` AND the patient has any condition in
+    | `important_conditions` (codes from App\Support\ConditionCodes). A quick
+    | request is judged the same way, but only for the reasons in
+    | `important_quick_request_reasons`. Everything else is 'normal'.
+    |
+    | Pregnancy has no field of its own in this schema; `gestational_diabetes`
+    | is the pregnancy condition the nutritionist can record, and is listed.
+    |
+    | Edit these lists to change the rule; no code is involved.
+    |
+    */
+
+    'severity' => [
+        'important_conditions' => [
+            'diabetes_type1', 'diabetes_type2', 'gestational_diabetes', 'insulin_resistance', 'prediabetes',
+            'hypertension', 'kidney_disease',
+        ],
+        'important_types' => ['no_log', 'calories_exceeded'],
+        'important_quick_request_reasons' => ['craving', 'cannot_continue'],
+    ],
+
 ];

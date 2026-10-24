@@ -30,6 +30,16 @@ class UpdatePlanDecisionRequest extends FormRequest
             'approved_calories' => ['sometimes', 'nullable', 'integer', 'between:800,6000'],
             'plan_summary' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'patient_instructions' => ['sometimes', 'nullable', 'string', 'max:2000'],
+
+            // Phase 1, A: the physical activity prescribed with the plan. An
+            // absent key leaves the stored activities alone; a present one
+            // (even an empty list) replaces them all, like `meals`.
+            'activities' => ['sometimes', 'array', 'max:20'],
+            'activities.*.title' => ['required', 'string', 'max:120'],
+            'activities.*.description' => ['nullable', 'string', 'max:1000'],
+            'activities.*.duration_minutes' => ['required', 'integer', 'between:1,300'],
+            'activities.*.times_per_day' => ['sometimes', 'integer', 'between:1,6'],
+            'activities.*.days_per_week' => ['nullable', 'integer', 'between:1,7'],
         ];
     }
 }

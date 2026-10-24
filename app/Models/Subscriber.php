@@ -106,6 +106,17 @@ class Subscriber extends Model
         return $this->hasMany(PatientMedication::class)->orderBy('id');
     }
 
+    /** Phase 1, B: how often this patient is due to measure (none until the nutritionist sets one). */
+    public function measurementSchedule(): HasOne
+    {
+        return $this->hasOne(SubscriberMeasurementSchedule::class);
+    }
+
+    public function quickRequests(): HasMany
+    {
+        return $this->hasMany(PatientQuickRequest::class)->latest('id');
+    }
+
     /** Clinical batch 1: the structured conditions the nutritionist recorded. */
     public function conditions(): HasMany
     {

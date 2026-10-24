@@ -94,6 +94,8 @@ class MealPlanResource extends JsonResource
             $this->mergeWhen($this->nutritionWarnings !== null && ! Auth::user()?->hasRole('client'), fn () => [
                 'nutrition_warnings' => $this->nutritionWarnings,
             ]),
+            // Phase 1, A: prescribed physical activity, also written for the patient.
+            'activities' => PlanActivityResource::collection($this->whenLoaded('activities')),
             // Only a template is ever given one deliberately — see the
             // migration. Null on a hand-built client plan, which has one
             // audience and doesn't need to be told apart from another.
