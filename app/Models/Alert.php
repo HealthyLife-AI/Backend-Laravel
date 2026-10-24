@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * defense-in-depth the rest of this codebase applies to every
  * route-bound record.
  */
-#[Fillable(['subscriber_id', 'type', 'severity', 'message', 'is_read', 'resolved_at'])]
+#[Fillable(['subscriber_id', 'quick_request_id', 'type', 'severity', 'message', 'is_read', 'resolved_at'])]
 class Alert extends Model
 {
     public const TYPE_NO_LOG = 'no_log';

@@ -53,6 +53,7 @@ class QuickRequestService
         ]);
 
         $subscriber->alerts()->create([
+            'quick_request_id' => $request->id,
             'type' => Alert::TYPE_QUICK_REQUEST,
             'severity' => $this->severity->for($subscriber, Alert::TYPE_QUICK_REQUEST, $request->reason),
             // A fixed sentence, like every alert message: the reason and the note stay on the request.
@@ -81,7 +82,7 @@ class QuickRequestService
             'responded_at' => now(),
         ])->save();
 
-        $this->settleAlerts($request->subscriber_id);
+        $this->settleAlerts($request);
 
         $patient = Subscriber::withoutGlobalScopes()->find($request->subscriber_id)?->user;
 
@@ -96,24 +97,39 @@ class QuickRequestService
     {
         if ($request->status !== PatientQuickRequest::STATUS_CLOSED) {
             $request->forceFill(['status' => PatientQuickRequest::STATUS_CLOSED])->save();
-            $this->settleAlerts($request->subscriber_id);
+            $this->settleAlerts($request);
         }
 
         return $request;
     }
 
     /**
-     * Each open request has one open alert, so after one is settled the
-     * surplus alerts (oldest first) are resolved: the alert count follows
-     * the number of requests still waiting.
+     * Answering or closing a request resolves exactly the alert(s) raised for
+     * IT (alerts.quick_request_id), so an "important" alert can never stay open
+     * for a request that was answered, or be closed for one that was not.
+     *
+     * Alerts raised before the link existed carry no request id. For those
+     * only, the old rule applies: each still-waiting request that has no
+     * linked alert of its own accounts for one legacy alert, and the surplus
+     * (oldest first) is resolved.
      */
-    private function settleAlerts(int $subscriberId): void
+    private function settleAlerts(PatientQuickRequest $request): void
     {
-        $stillOpen = PatientQuickRequest::query()->where('subscriber_id', $subscriberId)->where('status', PatientQuickRequest::STATUS_OPEN)->count();
+        Alert::query()->where('quick_request_id', $request->id)->open()->update(['resolved_at' => now()]);
 
-        $alerts = Alert::query()->where('subscriber_id', $subscriberId)->ofType(Alert::TYPE_QUICK_REQUEST)->open()->orderBy('id')->get();
+        $legacy = Alert::query()->where('subscriber_id', $request->subscriber_id)->ofType(Alert::TYPE_QUICK_REQUEST)
+            ->whereNull('quick_request_id')->open()->orderBy('id')->get();
 
-        foreach ($alerts->take(max(0, $alerts->count() - $stillOpen)) as $alert) {
+        if ($legacy->isEmpty()) {
+            return;
+        }
+
+        $stillWaiting = PatientQuickRequest::query()->where('subscriber_id', $request->subscriber_id)
+            ->where('status', PatientQuickRequest::STATUS_OPEN)
+            ->whereNotIn('id', Alert::query()->where('subscriber_id', $request->subscriber_id)->whereNotNull('quick_request_id')->select('quick_request_id'))
+            ->count();
+
+        foreach ($legacy->take(max(0, $legacy->count() - $stillWaiting)) as $alert) {
             $alert->forceFill(['resolved_at' => now()])->save();
         }
     }

@@ -357,6 +357,72 @@ class QuickRequestsTest extends TestCase
         $this->assertSame(0, Alert::where('type', Alert::TYPE_QUICK_REQUEST)->open()->count());
     }
 
+    public function test_each_alert_is_linked_to_its_request(): void
+    {
+        $id = $this->send()->json('id');
+
+        $this->assertSame($id, Alert::where('type', Alert::TYPE_QUICK_REQUEST)->sole()->quick_request_id);
+    }
+
+    public function test_answering_the_important_request_resolves_the_important_alert_and_leaves_the_normal_one(): void
+    {
+        $this->condition('diabetes_type2');
+        $normalId = $this->send(['reason' => 'special_occasion'])->json('id');
+        $importantId = $this->send(['reason' => 'craving'])->json('id');
+
+        $normal = Alert::where('quick_request_id', $normalId)->sole();
+        $important = Alert::where('quick_request_id', $importantId)->sole();
+        $this->assertSame('normal', $normal->severity);
+        $this->assertSame('important', $important->severity);
+
+        $this->postJson("/api/v1/quick-requests/{$importantId}/respond", ['response' => 'رد'], $this->nutritionistToken)->assertOk();
+
+        $this->assertNotNull($important->fresh()->resolved_at, 'its own alert is resolved');
+        $this->assertNull($normal->fresh()->resolved_at, 'the other request is still waiting');
+    }
+
+    public function test_closing_resolves_its_own_alert_even_when_it_is_not_the_oldest(): void
+    {
+        $first = $this->send(['reason' => 'other'])->json('id');
+        $second = $this->send(['reason' => 'craving'])->json('id');
+
+        $this->postJson("/api/v1/quick-requests/{$second}/close", [], $this->nutritionistToken)->assertOk();
+
+        $this->assertNotNull(Alert::where('quick_request_id', $second)->sole()->resolved_at);
+        $this->assertNull(Alert::where('quick_request_id', $first)->sole()->resolved_at);
+    }
+
+    public function test_deleting_a_request_clears_the_link_and_keeps_the_alert(): void
+    {
+        $id = $this->send()->json('id');
+        $alert = Alert::where('quick_request_id', $id)->sole();
+
+        PatientQuickRequest::find($id)->delete();
+
+        $alert = $alert->fresh();
+        $this->assertNotNull($alert, 'the alert survives');
+        $this->assertNull($alert->quick_request_id);
+    }
+
+    public function test_a_legacy_alert_without_a_link_falls_back_to_the_old_rule(): void
+    {
+        $id = $this->send()->json('id');
+        // Make it look like an alert raised before the link existed.
+        Alert::where('quick_request_id', $id)->update(['quick_request_id' => null]);
+
+        $this->postJson("/api/v1/quick-requests/{$id}/respond", ['response' => 'رد'], $this->nutritionistToken)->assertOk();
+
+        $this->assertSame(0, Alert::where('type', Alert::TYPE_QUICK_REQUEST)->open()->count());
+
+        // And a legacy alert does not swallow a linked, still-waiting request's alert.
+        $linked = $this->send()->json('id');
+        $other = $this->send()->json('id');
+        Alert::where('quick_request_id', $other)->update(['quick_request_id' => null]);
+        $this->postJson("/api/v1/quick-requests/{$other}/close", [], $this->nutritionistToken)->assertOk();
+
+        $this->assertNull(Alert::where('quick_request_id', $linked)->sole()->resolved_at);
+    }
+
     public function test_an_archived_patients_requests_cannot_be_answered(): void
     {
         $id = $this->send()->json('id');
