@@ -37,6 +37,7 @@ class MealPlanService
 
             $this->applyDecision($plan, $data);
             $this->replaceMeals($plan, $data['meals']);
+            $this->replaceActivities($plan, $data);
 
             return $plan;
         });
@@ -108,6 +109,50 @@ class MealPlanService
             // Whatever the submitted form no longer contains.
             $plan->meals()->whereNotIn('id', $keptMealIds ?: [0])->delete();
         });
+    }
+
+    /**
+     * Phase 1, A2: the plan's activities, replaced as a whole - but only when
+     * the payload mentions them, so a request that is about something else
+     * (or an older client that never sends them) never wipes what is stored.
+     *
+     * @param  array<string, mixed>  $data  a validated plan / decision payload
+     */
+    public function replaceActivities(MealPlan $plan, array $data): void
+    {
+        if (! array_key_exists('activities', $data)) {
+            return;
+        }
+
+        DB::transaction(function () use ($plan, $data) {
+            $plan->activities()->delete();
+
+            foreach (array_values($data['activities'] ?? []) as $i => $activity) {
+                $plan->activities()->create([
+                    'title' => $activity['title'],
+                    'description' => $activity['description'] ?? null,
+                    'duration_minutes' => $activity['duration_minutes'],
+                    'times_per_day' => $activity['times_per_day'] ?? 1,
+                    'days_per_week' => $activity['days_per_week'] ?? null,
+                    'sort_order' => $i,
+                ]);
+            }
+        });
+
+        $plan->unsetRelation('activities');
+    }
+
+    /** What the patient sees of the activities, to tell whether an edit changed it. */
+    public function activitySignature(MealPlan $plan): string
+    {
+        return $plan->activities()->get(['title', 'description', 'duration_minutes', 'times_per_day', 'days_per_week'])->toJson();
+    }
+
+    private function cloneActivitiesInto(MealPlan $source, MealPlan $target): void
+    {
+        foreach ($source->activities as $activity) {
+            $target->activities()->create($activity->only(['title', 'description', 'duration_minutes', 'times_per_day', 'days_per_week', 'sort_order']));
+        }
     }
 
     /** A meal is the same meal if it is the same slot on the same day. */
@@ -270,6 +315,10 @@ class MealPlanService
 
     private function cloneMealsInto(MealPlan $source, MealPlan $target): void
     {
+        // Phase 1, A2: the activity prescription travels with the meals - to a
+        // duplicate, into a template, and from a template into a new draft.
+        $this->cloneActivitiesInto($source, $target);
+
         foreach ($source->meals as $meal) {
             $newMeal = $target->meals()->create([
                 'name' => $meal->name,

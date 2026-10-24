@@ -7,6 +7,7 @@ use App\Models\MealItem;
 use App\Models\MealLog;
 use App\Models\Subscriber;
 use App\Services\Adherence\AdherenceService;
+use App\Services\Measurements\MeasurementScheduleService;
 use Carbon\CarbonInterface;
 
 /**
@@ -70,11 +71,16 @@ class PatientEntryService
     {
         $this->window->assertDateNotTooOld($date, 'recorded_at');
 
-        return $subscriber->bodyCompositionReadings()->create($measurements + [
+        $reading = $subscriber->bodyCompositionReadings()->create($measurements + [
             'recorded_at' => $date->toDateString(),
             'source' => BodyCompositionReading::SOURCE_SELF,
             'is_late' => $this->window->isDateLate($date),
         ]);
+
+        // Phase 1, B3: the next measurement is due one interval after this one.
+        app(MeasurementScheduleService::class)->recorded($subscriber, $date);
+
+        return $reading;
     }
 
     /**

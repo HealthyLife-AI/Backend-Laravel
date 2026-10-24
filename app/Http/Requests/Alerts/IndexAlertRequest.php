@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Alerts;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\Alert;
 use Illuminate\Validation\Rule;
 
 /**
@@ -25,6 +26,8 @@ class IndexAlertRequest extends FormRequest
         return [
             'is_read' => ['sometimes', 'boolean'],
             'subscriber_id' => ['sometimes', 'integer', Rule::exists('subscribers', 'id')],
+            // Phase 1, C3: the alerts page filters by importance.
+            'severity' => ['sometimes', Rule::in(Alert::SEVERITIES)],
         ];
     }
 }

@@ -38,7 +38,7 @@ class MealPlanController extends Controller
     ) {}
 
     /** Dotted paths load their intermediate relations too — meals and items don't need listing separately. */
-    private const EAGER_LOAD = ['meals.items.food', 'meals.items.alternatives.food'];
+    private const EAGER_LOAD = ['meals.items.food', 'meals.items.alternatives.food', 'activities'];
 
     /**
      * Pilot feedback 2, A: every single-plan response carries the plan's
@@ -106,6 +106,7 @@ class MealPlanController extends Controller
         }
         $this->plans->applyDecision($mealPlan, $request->validated());
         $this->plans->replaceMeals($mealPlan, $request->validated()['meals']);
+        $this->plans->replaceActivities($mealPlan, $request->validated());
 
         // Only the plan the patient is following; editing a draft tells them nothing.
         if ($mealPlan->status === 'active') {
@@ -163,15 +164,18 @@ class MealPlanController extends Controller
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
-        $before = $mealPlan->patient_instructions;
+        $before = [$mealPlan->patient_instructions, $this->plans->activitySignature($mealPlan)];
 
         $this->plans->applyDecision($mealPlan, $request->validated());
+        $this->plans->replaceActivities($mealPlan, $request->validated());
 
-        // Clinical batch 1, D4: instructions are patient-facing, so changing
-        // them on the plan in force tells the patient it was updated - the
-        // same generic notification and dedupe key as a meal edit, nothing
-        // new, and no re-activation (activated_at is untouched).
-        if ($mealPlan->status === 'active' && $mealPlan->refresh()->patient_instructions !== $before) {
+        // Clinical batch 1, D4 / Phase 1, A2: instructions and activities are
+        // patient-facing, so changing them on the plan in force tells the
+        // patient it was updated - the same generic notification and dedupe
+        // key as a meal edit, nothing new, and no re-activation
+        // (activated_at is untouched).
+        $mealPlan->refresh();
+        if ($mealPlan->status === 'active' && [$mealPlan->patient_instructions, $this->plans->activitySignature($mealPlan)] !== $before) {
             $this->notifyPatient($subscriber, $mealPlan, 'plan_updated');
         }
 

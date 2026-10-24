@@ -177,7 +177,11 @@ class AlertEvaluationService
         $alreadyOpen = $subscriber->alerts()->ofType($type)->open()->exists();
 
         if (! $alreadyOpen) {
-            $subscriber->alerts()->create(['type' => $type, 'message' => $message]);
+            $subscriber->alerts()->create([
+                'type' => $type,
+                'severity' => app(AlertSeverity::class)->for($subscriber, $type),
+                'message' => $message,
+            ]);
         }
     }
 

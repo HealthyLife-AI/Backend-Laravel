@@ -45,6 +45,12 @@ class MealPlan extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** Phase 1, A: the physical activity prescribed with this plan. */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(PlanActivity::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function meals(): HasMany
     {
         return $this->hasMany(Meal::class)->orderBy('day_index')->orderBy('sort_order');

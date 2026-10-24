@@ -4,6 +4,7 @@ namespace App\Console\Commands\HealthRecords;
 
 use App\Models\HealthProfile;
 use App\Models\PatientCondition;
+use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Support\ConditionCodes;
 use Illuminate\Console\Command;
@@ -76,6 +77,11 @@ class MapConditions extends Command
                     PatientCondition::create(['subscriber_id' => $subscriberId, 'code' => $m['code'], 'other_text' => $m['other_text']]);
                 }
                 $records->mirrorConditions((int) $subscriberId);
+
+                // Phase 1, D2: a celiac mapped from free text gets its gluten allergy too.
+                if (collect($items)->contains(fn ($m) => $m['code'] === 'celiac')) {
+                    $records->applyConditionEffects(Subscriber::withoutGlobalScopes()->findOrFail($subscriberId), 'celiac');
+                }
             }
         });
 

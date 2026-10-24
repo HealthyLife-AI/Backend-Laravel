@@ -33,7 +33,12 @@ class AlertController extends Controller
             // every unfiltered request instead of returning everything.
             ->when($request->has('is_read'), fn ($query) => $query->where('is_read', $request->boolean('is_read')))
             ->when($request->filled('subscriber_id'), fn ($query) => $query->where('subscriber_id', $request->integer('subscriber_id')))
-            ->latest()
+            ->when($request->filled('severity'), fn ($query) => $query->where('severity', $request->string('severity')->toString()))
+            // Phase 1, C3: important first, then newest. A string compare, not a
+            // CASE: 'important' sorts before 'normal' on both MySQL and SQLite.
+            ->orderBy('severity')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->paginate();
 
         return AlertResource::collection($alerts);

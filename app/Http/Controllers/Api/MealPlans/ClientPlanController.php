@@ -27,6 +27,6 @@ class ClientPlanController extends Controller
             return response()->noContent(); // 204: no plan assigned yet, not an error
         }
 
-        return new MealPlanResource($plan->load(['meals.items.food', 'meals.items.alternatives.food']));
+        return new MealPlanResource($plan->load(['meals.items.food', 'meals.items.alternatives.food', 'activities']));
     }
 }

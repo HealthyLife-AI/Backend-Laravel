@@ -21,6 +21,9 @@ use App\Http\Controllers\Api\FollowUp\MyReviewController;
 use App\Http\Controllers\Api\Foods\FoodController;
 use App\Http\Controllers\Api\HealthProfiles\BodyCompositionReadingController;
 use App\Http\Controllers\Api\HealthProfiles\HealthProfileController;
+use App\Http\Controllers\Api\HealthProfiles\MeasurementScheduleController;
+use App\Http\Controllers\Api\QuickRequests\ClientQuickRequestController;
+use App\Http\Controllers\Api\QuickRequests\MyQuickRequestController;
 use App\Http\Controllers\Api\HealthRecords\ClientConditionsController;
 use App\Http\Controllers\Api\HealthRecords\ClientHealthRecordsController;
 use App\Http\Controllers\Api\HealthRecords\MyHealthRecordsController;
@@ -112,6 +115,13 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('clients/{subscriber}/meal-logs/daily', [ClientMealLogController::class, 'daily'])->name('clients.meal-logs.daily');
 
         // Phase 2: follow-up between sessions (rating, note, key points, tasks).
+        // Phase 1, E4: patient quick requests. Id-based writes check ownership and
+        // the follow-up state themselves (a request has no {subscriber} segment).
+        Route::get('clients/{subscriber}/quick-requests', [ClientQuickRequestController::class, 'forClient'])->name('clients.quick-requests.index');
+        Route::get('quick-requests', [ClientQuickRequestController::class, 'index'])->name('quick-requests.index');
+        Route::post('quick-requests/{quickRequest}/respond', [ClientQuickRequestController::class, 'respond'])->whereNumber('quickRequest')->name('quick-requests.respond');
+        Route::post('quick-requests/{quickRequest}/close', [ClientQuickRequestController::class, 'close'])->whereNumber('quickRequest')->name('quick-requests.close');
+
         Route::get('clients/{subscriber}/reviews', [ClientReviewController::class, 'index'])->name('clients.reviews.index');
         Route::post('clients/{subscriber}/reviews', [ClientReviewController::class, 'store'])->middleware('follow-up')->name('clients.reviews.store');
         Route::put('clients/{subscriber}/reviews/{review}', [ClientReviewController::class, 'update'])->whereNumber('review')->middleware('follow-up')->name('clients.reviews.update');
@@ -142,6 +152,11 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::put('clients/{subscriber}/health-profile', [HealthProfileController::class, 'update'])
             ->middleware('follow-up')
             ->name('clients.health-profile.update');
+
+        // Phase 1, B: how often this patient measures. Writes carry the follow-up gate.
+        Route::get('clients/{subscriber}/measurement-schedule', [MeasurementScheduleController::class, 'show'])->name('clients.measurement-schedule.show');
+        Route::put('clients/{subscriber}/measurement-schedule', [MeasurementScheduleController::class, 'update'])->middleware('follow-up')->name('clients.measurement-schedule.update');
+        Route::delete('clients/{subscriber}/measurement-schedule', [MeasurementScheduleController::class, 'destroy'])->middleware('follow-up')->name('clients.measurement-schedule.destroy');
 
         Route::get('clients/{subscriber}/body-composition-readings', [BodyCompositionReadingController::class, 'index'])
             ->name('clients.body-composition-readings.index');
@@ -299,6 +314,11 @@ Route::prefix('v1')->name('api.')->group(function () {
     // endpoints: follow_up_ended (jwt), then consent_required.
     Route::middleware(['jwt', 'consent', 'role:client'])->group(function () {
         Route::get('me/health-profile', [MyHealthRecordsController::class, 'show'])->name('me.health-profile.show');
+        Route::get('me/measurement-schedule', [MeasurementScheduleController::class, 'mine'])->name('me.measurement-schedule.show');
+
+        // Phase 1, E2: structured requests to the nutritionist. Sent once, never edited.
+        Route::get('me/quick-requests', [MyQuickRequestController::class, 'index'])->name('me.quick-requests.index');
+        Route::post('me/quick-requests', [MyQuickRequestController::class, 'store'])->name('me.quick-requests.store');
         Route::post('me/proposals', [MyHealthRecordsController::class, 'propose'])->name('me.proposals.store');
         Route::delete('me/proposals/{proposal}', [MyHealthRecordsController::class, 'withdraw'])->whereNumber('proposal')->name('me.proposals.destroy');
 

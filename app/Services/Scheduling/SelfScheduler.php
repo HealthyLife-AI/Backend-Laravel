@@ -21,9 +21,10 @@ use Illuminate\Support\Facades\Cache;
  * overdue job once.
  *
  * Catch-up rules per job:
- * - alerts / weekly summaries: run late rather than never — both are
- *   idempotent (alerts don't duplicate an open one; a week's summary is
- *   replaced, not appended).
+ * - alerts / weekly summaries / measurements: run late rather than never —
+ *   all idempotent (alerts don't duplicate an open one; a week's summary is
+ *   replaced, not appended; a measurement reminder is sent once per due
+ *   date, whenever the job first runs on or after it).
  * - log reminders: only within 3 hours of 20:00. A reminder about "today"
  *   pushed at 3am (because that's when the first request came in) would
  *   be wrong, so a missed evening is skipped instead.
@@ -37,6 +38,7 @@ class SelfScheduler
         'alerts' => 'alerts:evaluate',
         'reminders' => 'notifications:send-log-reminders',
         'summaries' => 'ai-summaries:generate-weekly',
+        'measurements' => 'measurements:remind',
     ];
 
     public function markRan(string $task): void
@@ -107,6 +109,7 @@ class SelfScheduler
             'alerts' => $local->setTime(6, 0),
             'reminders' => $local->setTime(20, 0),
             'summaries' => $local->startOfWeek(CarbonImmutable::MONDAY)->setTime(7, 0),
+            'measurements' => $local->setTime(9, 0),
         };
 
         if ($slot->greaterThan($local)) {

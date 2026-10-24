@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * defense-in-depth the rest of this codebase applies to every
  * route-bound record.
  */
-#[Fillable(['subscriber_id', 'type', 'message', 'is_read', 'resolved_at'])]
+#[Fillable(['subscriber_id', 'quick_request_id', 'type', 'severity', 'message', 'is_read', 'resolved_at'])]
 class Alert extends Model
 {
     public const TYPE_NO_LOG = 'no_log';
@@ -26,6 +26,23 @@ class Alert extends Model
     public const TYPE_CALORIES_EXCEEDED = 'calories_exceeded';
 
     public const TYPE_MILESTONE = 'milestone';
+
+    /** Phase 1: the measurement is 3+ days past its due date. */
+    public const TYPE_MEASUREMENT_OVERDUE = 'measurement_overdue';
+
+    /** Phase 1: the patient sent a quick request. */
+    public const TYPE_QUICK_REQUEST = 'quick_request';
+
+    public const TYPES = [
+        self::TYPE_NO_LOG, self::TYPE_CALORIES_EXCEEDED, self::TYPE_MILESTONE,
+        self::TYPE_MEASUREMENT_OVERDUE, self::TYPE_QUICK_REQUEST,
+    ];
+
+    public const SEVERITY_NORMAL = 'normal';
+
+    public const SEVERITY_IMPORTANT = 'important';
+
+    public const SEVERITIES = [self::SEVERITY_NORMAL, self::SEVERITY_IMPORTANT];
 
     protected function casts(): array
     {
