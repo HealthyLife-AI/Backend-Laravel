@@ -39,7 +39,7 @@ return [
     'closing_ar' => 'وأخصائيتك بتتابع معك.',
 
     /** A reply containing any of these (substring) is rejected. No medical, diagnostic or calorie talk. */
-    'blocklist' => ['دواء', 'أدوية', 'ادوية', 'مرض', 'سكري', 'سكر', 'ضغط', 'تشخيص', 'سعرة', 'سعرات', 'علاج', 'كالوري'],
+    'blocklist' => ['دواء', 'أدوية', 'ادوية', 'أدويت', 'مرض', 'سكري', 'سكر', 'ضغط', 'تشخيص', 'سعرة', 'سعرات', 'علاج', 'كالوري'],
 
     /*
     | Used when the model is not configured, fails, or its reply is rejected.

@@ -263,24 +263,40 @@ class WeightInsightService
     }
 
     /**
-     * The first blocklisted word the text contains AS A WORD, with or without
-     * the definite article ("سكر", "السكر"). A longer word that merely contains
-     * one ("مسكرات", "ضغطك") is not a match. Spelling variants of alef, taa
-     * marbuta and the diacritics are ignored.
+     * The first blocklisted word the text contains AS A WORD, counting the
+     * prefixes and suffixes Arabic writes onto it:
+     *
+     * - prefixes, in this order: و / ف, then ب / ل / ك, then ال (or the
+     *   contracted لل): "السكر", "للسكري", "بالسكري", "والضغط", "فالدواء", "كالدواء";
+     * - pronoun suffixes: ك كم كن ه ها هم هن ي نا (كِ loses its vowel mark first):
+     *   "دوائك", "مرضها", "علاجي", "ضغطك".
+     *
+     * A longer word that merely contains one ("مسكرات", "اضغط") is not a match.
+     * Over-blocking ("ضغط الشغل") is accepted on purpose: the patient then gets
+     * the fixed text. Spelling variants of alef, taa marbuta, the diacritics and
+     * the hamza carriers are ignored, so "دواء" is found inside "دوائك".
      */
     private function blockedWord(string $text): ?string
     {
-        $haystack = (string) ArabicText::normalize($text);
+        $haystack = $this->bare($text);
 
         foreach ((array) config('weight_insight.blocklist') as $word) {
-            $needle = preg_quote((string) ArabicText::normalize($word), '/');
+            $needle = preg_quote($this->bare($word), '/');
 
-            if (preg_match('/(?<![\p{L}\p{N}])(?:ال)?'.$needle.'(?![\p{L}\p{N}])/u', $haystack) === 1) {
+            $pattern = '/(?<![\p{L}\p{N}])(?:[وف])?(?:لل|[بلك]?(?:ال)?)'.$needle.'(?:كم|كن|ها|هم|هن|نا|ك|ه|ي)?(?![\p{L}\p{N}])/u';
+
+            if (preg_match($pattern, $haystack) === 1) {
                 return $word;
             }
         }
 
         return null;
+    }
+
+    /** Normalized spelling with the hamza carriers dropped (دواء / دوائك share a stem). */
+    private function bare(string $text): string
+    {
+        return strtr((string) ArabicText::normalize($text), ['ء' => '', 'ئ' => '', 'ؤ' => '']);
     }
 
     /**

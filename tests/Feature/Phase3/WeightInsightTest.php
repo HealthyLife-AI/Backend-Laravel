@@ -559,16 +559,43 @@ class WeightInsightTest extends TestCase
     public static function blocklistCases(): array
     {
         return [
+            // the bare word, the article, diacritics
             'the bare word' => ['هذا سكر', true],
             'with the article' => ['كثرة السكر', true],
             'a diabetes word' => ['مرضى السكري', true],
             'pressure as a word' => ['ارتفاع الضغط', true],
             'with diacritics' => ['السُّكَّر', true],
             'a medicine variant' => ['الأدوية', true],
+            // prefixes: و/ف, then ب/ل/ك, then ال (or لل)
+            'ل + ال contracted' => ['انتبه للسكري', true],
+            'ب + ال' => ['اهتم بالسكري', true],
+            'و + ال' => ['والضغط يتأثر', true],
+            'ف + ال' => ['فالدواء مهم', true],
+            'ك + ال' => ['كالدواء تمامًا', true],
+            'و + ب + ال' => ['وبالضغط', true],
+            'ف + ل contracted' => ['فللسكر', true],
+            'و + ل without the article' => ['ولمرض', true],
+            'ب without the article' => ['بدواء', true],
+            // suffixes
+            'ك' => ['دوائك', true],
+            'ك with a vowel mark' => ['ضغطِكِ', true],
+            'كم' => ['أدويتكم', true],
+            'كن' => ['علاجكن', true],
+            'ه' => ['ضغطه', true],
+            'ها' => ['مرضها', true],
+            'هم' => ['علاجهم', true],
+            'هن' => ['سكرهن', true],
+            'ي' => ['علاجي', true],
+            'نا' => ['مرضنا', true],
+            'hamza stem + suffix' => ['دوائي', true],
+            'a prefix and a suffix together' => ['بدوائك', true],
+            'over-blocking an ordinary use is accepted' => ['ضغط الشغل', true],
+            // whole words only
             'a word that only contains it' => ['مسكرات', false],
             'a verb that only contains it' => ['اضغط هنا', false],
             'a longer word' => ['سكرتير', false],
             'a different word entirely' => ['وزنك ماشي كويس', false],
+            'a suffix that is not a pronoun' => ['ضغطات', false],
         ];
     }
 
