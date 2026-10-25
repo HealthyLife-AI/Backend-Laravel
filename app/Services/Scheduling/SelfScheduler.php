@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Cache;
  *   all idempotent (alerts don't duplicate an open one; a week's summary is
  *   replaced, not appended; a measurement reminder is sent once per due
  *   date, whenever the job first runs on or after it).
+ * - the morning message (07:30): like the log reminders, only within 3 hours of its slot.
  * - log reminders: only within 3 hours of 20:00. A reminder about "today"
  *   pushed at 3am (because that's when the first request came in) would
  *   be wrong, so a missed evening is skipped instead.
@@ -40,6 +41,7 @@ class SelfScheduler
         'summaries' => 'ai-summaries:generate-weekly',
         'measurements' => 'measurements:remind',
         'checkins' => 'checkins:open',
+        'morning' => 'morning:send',
     ];
 
     public function markRan(string $task): void
@@ -94,7 +96,8 @@ class SelfScheduler
             return false;
         }
 
-        if ($task === 'reminders') {
+        // Like the evening reminder, a "good morning" at 3pm is wrong: a missed morning is skipped.
+        if ($task === 'reminders' || $task === 'morning') {
             return $now->lessThan($slot->addHours(self::REMINDER_WINDOW_HOURS));
         }
 
@@ -111,6 +114,7 @@ class SelfScheduler
             'reminders' => $local->setTime(20, 0),
             'summaries' => $local->startOfWeek(CarbonImmutable::MONDAY)->setTime(7, 0),
             'measurements', 'checkins' => $local->setTime(9, 0),
+            'morning' => $local->setTime(7, 30),
         };
 
         if ($slot->greaterThan($local)) {

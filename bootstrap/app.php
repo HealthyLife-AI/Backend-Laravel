@@ -49,6 +49,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // Phase 2, A4. 09:00 clinic time: opens due periodic check-ins and expires old ones.
         $schedule->command('checkins:open')->dailyAt('09:00')->timezone(config('scheduling.timezone'));
 
+        // Phase 3, B3. 07:30 clinic time: the morning push for patients with an active plan.
+        $schedule->command('morning:send')->dailyAt('07:30')->timezone(config('scheduling.timezone'));
+
         // The jobs above also run without this cron at all — any API
         // request that finds one overdue runs it after its response (see
         // RunOverdueScheduledTasks / SelfScheduler). The cron just makes

@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 #[Fillable(['user_id', 'category', 'type', 'title', 'body', 'data', 'dedupe_key'])]
 class PatientNotification extends Model
 {
-    public const CATEGORIES = ['meals', 'measurements', 'nutritionist', 'plan', 'system'];
+    public const CATEGORIES = ['meals', 'measurements', 'nutritionist', 'plan', 'education', 'morning', 'system'];
 
     protected function casts(): array
     {
