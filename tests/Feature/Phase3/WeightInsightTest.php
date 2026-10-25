@@ -434,8 +434,8 @@ class WeightInsightTest extends TestCase
             'longer than 350 characters' => [str_repeat('كلام طويل ', 40).'وأخصائيتك بتتابع معك.'],
             'the word medicine' => ['يمكن بسبب دواء جديد. وأخصائيتك بتتابع معك.'],
             'the word disease' => ['ممكن يكون مرض. وأخصائيتك بتتابع معك.'],
-            'the word diabetes' => ['انتبه للسكري. وأخصائيتك بتتابع معك.'],
-            'the word pressure' => ['ضغطك يؤثر. وأخصائيتك بتتابع معك.'],
+            'the word diabetes' => ['انتبه من السكري. وأخصائيتك بتتابع معك.'],
+            'the word pressure' => ['الضغط يؤثر. وأخصائيتك بتتابع معك.'],
             'the word diagnosis' => ['هذا تشخيص واضح. وأخصائيتك بتتابع معك.'],
             'the word calorie' => ['قلّل السعرات شوي. وأخصائيتك بتتابع معك.'],
             'nothing' => [''],
@@ -484,6 +484,170 @@ class WeightInsightTest extends TestCase
         Http::assertNothingSent();
     }
 
+    // ---- why it fell back ---------------------------------------------------------------------------
+
+    /** @return array<string, array{string, string}> reply => expected reason */
+    public static function rejectionReasons(): array
+    {
+        return [
+            'empty' => ['', 'empty'],
+            'a number' => ['نزل وزنك 3 كيلو. وأخصائيتك بتتابع معك.', 'rejected_digit'],
+            'only spaces' => ['   ', 'empty'],
+            'a blocked word' => ['ممكن بسبب دواء جديد. وأخصائيتك بتتابع معك.', 'rejected_blocklist:دواء'],
+            'the same word with the article' => ['انتبه من السكر. وأخصائيتك بتتابع معك.', 'rejected_blocklist:سكر'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('rejectionReasons')]
+    public function test_the_reason_for_the_fallback_is_stored_and_shown_to_the_nutritionist(string $reply, string $reason): void
+    {
+        $insight = $this->insightFor($reply);
+
+        $this->assertSame($reason, $insight['fallback_reason']);
+        $this->assertSame($reason, WeightInsight::first()->fallback_reason);
+    }
+
+    public function test_a_long_reply_has_its_own_reason(): void
+    {
+        $insight = $this->insightFor(str_repeat('كلام طويل ', 40));
+
+        $this->assertSame('rejected_length', $insight['fallback_reason']);
+    }
+
+    public function test_provider_failure_and_no_provider_have_their_reasons(): void
+    {
+        $this->fourteenDays();
+        Http::fake(['*' => Http::response(null, 500)]);
+        $this->getJson($this->url(), $this->nutritionistToken)->assertJsonPath('insight.fallback_reason', 'provider_failed');
+
+        WeightInsight::query()->delete();
+        config(['ai.base_url' => '', 'ai.api_key' => '']);
+        $this->getJson($this->url(), $this->nutritionistToken)->assertJsonPath('insight.fallback_reason', 'not_configured');
+    }
+
+    public function test_a_model_text_has_no_reason(): void
+    {
+        $insight = $this->insightFor('نزل وزنك شوي. وأخصائيتك بتتابع معك.');
+
+        $this->assertFalse($insight['is_fallback']);
+        $this->assertNull($insight['fallback_reason']);
+    }
+
+    public function test_the_patient_never_sees_the_reason(): void
+    {
+        $this->fourteenDays();
+        $this->subscriber->forceFill(['show_weight_insight' => true])->save();
+        Http::fake(['*' => Http::response(null, 500)]);
+
+        $response = $this->getJson('/api/v1/me/weight-insight', $this->clientToken)->assertOk();
+
+        $this->assertSame(['from_date', 'to_date', 'change_kg', 'text_ar'], array_keys($response->json()));
+        $this->assertStringNotContainsString('provider_failed', $response->getContent());
+    }
+
+    public function test_the_reason_is_logged_like_the_other_ai_suggestions(): void
+    {
+        \Illuminate\Support\Facades\Log::spy();
+        $this->insightFor('ممكن بسبب دواء جديد. وأخصائيتك بتتابع معك.');
+
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('info')->withArgs(fn ($message, $context = []) => str_contains($message, 'Weight insight') && ($context['reason'] ?? null) === 'rejected_blocklist:دواء')->once();
+    }
+
+    // ---- the blocklist matches words, not letters ------------------------------------------------------
+
+    /** @return array<string, array{string, bool}> text => blocked? */
+    public static function blocklistCases(): array
+    {
+        return [
+            // the bare word, the article, diacritics
+            'the bare word' => ['هذا سكر', true],
+            'with the article' => ['كثرة السكر', true],
+            'a diabetes word' => ['مرضى السكري', true],
+            'pressure as a word' => ['ارتفاع الضغط', true],
+            'with diacritics' => ['السُّكَّر', true],
+            'a medicine variant' => ['الأدوية', true],
+            // prefixes: و/ف, then ب/ل/ك, then ال (or لل)
+            'ل + ال contracted' => ['انتبه للسكري', true],
+            'ب + ال' => ['اهتم بالسكري', true],
+            'و + ال' => ['والضغط يتأثر', true],
+            'ف + ال' => ['فالدواء مهم', true],
+            'ك + ال' => ['كالدواء تمامًا', true],
+            'و + ب + ال' => ['وبالضغط', true],
+            'ف + ل contracted' => ['فللسكر', true],
+            'و + ل without the article' => ['ولمرض', true],
+            'ب without the article' => ['بدواء', true],
+            // suffixes
+            'ك' => ['دوائك', true],
+            'ك with a vowel mark' => ['ضغطِكِ', true],
+            'كم' => ['أدويتكم', true],
+            'كن' => ['علاجكن', true],
+            'ه' => ['ضغطه', true],
+            'ها' => ['مرضها', true],
+            'هم' => ['علاجهم', true],
+            'هن' => ['سكرهن', true],
+            'ي' => ['علاجي', true],
+            'نا' => ['مرضنا', true],
+            'hamza stem + suffix' => ['دوائي', true],
+            'a prefix and a suffix together' => ['بدوائك', true],
+            'over-blocking an ordinary use is accepted' => ['ضغط الشغل', true],
+            // whole words only
+            'a word that only contains it' => ['مسكرات', false],
+            'a verb that only contains it' => ['اضغط هنا', false],
+            'a longer word' => ['سكرتير', false],
+            'a different word entirely' => ['وزنك ماشي كويس', false],
+            'a suffix that is not a pronoun' => ['ضغطات', false],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('blocklistCases')]
+    public function test_the_blocklist_matches_whole_words_only(string $text, bool $blocked): void
+    {
+        $result = app(WeightInsightService::class)->evaluate($text.'. '.config('weight_insight.closing_ar'), ['change_kg' => -1.2, 'days' => 14]);
+
+        $this->assertSame($blocked, $result[0] === null, $text);
+        if ($blocked) {
+            $this->assertStringStartsWith('rejected_blocklist:', (string) $result[1]);
+        }
+    }
+
+    // ---- the window and the day counts -----------------------------------------------------------------
+
+    public function test_every_count_covers_the_days_after_the_first_weighing_up_to_the_last(): void
+    {
+        $this->reading(6, 80.0);   // the window: 6 days after this one
+        $this->reading(0, 79.0);
+
+        $this->log(6, 'off_plan', $this->salty());   // the day of the first weighing: before the change
+        foreach ([5, 4, 3, 2, 1, 0] as $d) {
+            $this->log($d, 'planned');
+        }
+
+        $facts = $this->facts()['facts'];
+
+        $this->assertSame(6, $facts['days']);
+        $this->assertSame(6, $facts['logged_days'], 'the six days after the first weighing, not seven');
+        $this->assertSame(0, $facts['off_plan_meals'], 'and the log of the first weighing day is outside');
+        $this->assertSame(0, $facts['high_sodium_logs']);
+    }
+
+    public function test_logged_days_never_exceed_days(): void
+    {
+        $this->reading(10, 80.0);
+        $this->reading(0, 79.0);
+
+        // Several logs a day, on every day around the window.
+        for ($d = 12; $d >= 0; $d--) {
+            $this->log($d, 'planned');
+            $this->log($d, 'off_plan');
+        }
+
+        $facts = $this->facts()['facts'];
+
+        $this->assertSame(10, $facts['days']);
+        $this->assertLessThanOrEqual($facts['days'], $facts['logged_days']);
+        $this->assertSame(10, $facts['logged_days']);
+    }
+
     // ---- the fallback texts -------------------------------------------------------------------------------------------
 
     public function test_the_fallback_is_chosen_by_the_booleans(): void
@@ -499,7 +663,21 @@ class WeightInsightTest extends TestCase
         $this->assertStringContainsString('بيمشي مع التزامك', $consistent);
         $this->assertStringNotContainsString('الماء والملح', $neutral);
         $this->assertStringNotContainsString('بيمشي مع التزامك', $neutral);
-        $this->assertStringContainsString('نزل وزنك حوالي 1.2 كغ خلال 14 يوم', $neutral);
+        $this->assertStringContainsString('نزل وزنك حوالي 1.2 كغ خلال 14 يومًا', $neutral);
+    }
+
+    public function test_the_fallback_counts_days_in_correct_arabic(): void
+    {
+        $service = app(WeightInsightService::class);
+        $base = ['change_kg' => -1.0, 'likely_water_fluctuation' => false, 'consistent_with_plan' => false];
+
+        foreach ([5 => '5 أيام', 6 => '6 أيام', 10 => '10 أيام', 11 => '11 يومًا', 14 => '14 يومًا', 28 => '28 يومًا'] as $days => $phrase) {
+            $this->assertStringContainsString("خلال {$phrase}.", $service->fallbackText(['days' => $days] + $base), "{$days} days");
+        }
+
+        // 1 and 2 are not reachable by the window rules, but the text must still be right.
+        $this->assertStringContainsString('خلال يوم واحد.', $service->fallbackText(['days' => 1] + $base));
+        $this->assertStringContainsString('خلال يومين.', $service->fallbackText(['days' => 2] + $base));
     }
 
     public function test_the_fallback_says_up_down_or_steady(): void
