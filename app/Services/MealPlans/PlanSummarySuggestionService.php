@@ -38,7 +38,10 @@ class PlanSummarySuggestionService
     ) {}
 
     /**
-     * @return array{suggested_summary: string, suggested_approved_calories: ?int, is_fallback: bool}
+     * `fallback_reason` says why only the first line came back: not_configured | provider_failed | empty |
+     * rejected_length | rejected_digit | macro_label (null when the model's note was used).
+     *
+     * @return array{suggested_summary: string, suggested_approved_calories: ?int, is_fallback: bool, fallback_reason: ?string}
      */
     public function suggest(MealPlan $plan, Subscriber $subscriber): array
     {
@@ -68,7 +71,8 @@ class PlanSummarySuggestionService
 
         $reason = match (true) {
             $note === '' => 'empty',
-            mb_strlen($note) > self::MAX_MODEL_CHARS || $this->inventsNumbers($note, $headline) => 'numbers_or_length',
+            mb_strlen($note) > self::MAX_MODEL_CHARS => 'rejected_length',
+            $this->inventsNumbers($note, $headline) => 'rejected_digit',
             $this->claimsMacroPattern($note, $figures['labels']) => 'macro_label',
             default => null,
         };
@@ -76,13 +80,14 @@ class PlanSummarySuggestionService
         if ($reason !== null) {
             Log::info('Plan summary suggestion: reply rejected.', ['reason' => $reason]);
 
-            return $this->fallback($headline, $approved, 'rejected');
+            return $this->fallback($headline, $approved, $reason);
         }
 
         return [
             'suggested_summary' => $headline."\n".$note,
             'suggested_approved_calories' => $approved,
             'is_fallback' => false,
+            'fallback_reason' => null,
         ];
     }
 
@@ -138,6 +143,7 @@ class PlanSummarySuggestionService
             'suggested_summary' => $headline,
             'suggested_approved_calories' => $approved,
             'is_fallback' => true,
+            'fallback_reason' => $reason,
         ];
     }
 
