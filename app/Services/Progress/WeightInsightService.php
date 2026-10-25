@@ -203,7 +203,7 @@ class WeightInsightService
             $reply = $this->llm->chatJson([
                 ['role' => 'system', 'content' => $this->systemPrompt()],
                 ['role' => 'user', 'content' => json_encode($facts, JSON_UNESCAPED_UNICODE)],
-            ], ['max_completion_tokens' => 300]);
+            ], ['max_completion_tokens' => 600]);
         } catch (AiGenerationException $e) {
             // The message, never the facts.
             Log::warning('Weight insight: provider failed.', ['reason' => $e->getMessage()]);

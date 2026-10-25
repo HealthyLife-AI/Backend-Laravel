@@ -112,6 +112,29 @@ class PlanSummarySuggestionTest extends TestCase
             ->assertJsonPath('suggested_approved_calories', 1650);
     }
 
+    private function jsonModeRefused(): array
+    {
+        return ['error' => ['message' => 'Failed to validate JSON.', 'type' => 'invalid_request_error', 'code' => 'json_validate_failed', 'failed_generation' => '{"summary": "cut']];
+    }
+
+    /** The provider refuses its JSON mode once: the client retries as plain text and the note is used. */
+    public function test_the_note_survives_a_refused_json_mode(): void
+    {
+        Http::fake(['*' => Http::sequence()
+            ->push($this->jsonModeRefused(), 400)
+            ->push(['choices' => [['message' => ['content' => 'إليك الملخص: {"summary": "قليل الكربوهيدرات، عالي البروتين. راجعي الالتزام في الزيارة القادمة."}']]]])]);
+
+        $this->suggest()->assertOk()->assertJsonPath('is_fallback', false);
+        Http::assertSentCount(2);
+    }
+
+    public function test_the_first_line_alone_when_json_mode_is_refused_twice(): void
+    {
+        Http::fake(['*' => Http::sequence()->push($this->jsonModeRefused(), 400)->push($this->jsonModeRefused(), 400)]);
+
+        $this->suggest()->assertOk()->assertJsonPath('is_fallback', true)->assertJsonPath('suggested_approved_calories', 1650);
+    }
+
     public function test_the_first_line_alone_when_no_provider_is_configured(): void
     {
         config(['ai.base_url' => '', 'ai.api_key' => '']);
