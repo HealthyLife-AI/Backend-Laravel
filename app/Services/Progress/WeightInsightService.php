@@ -8,6 +8,8 @@ use App\Models\Subscriber;
 use App\Models\WeightInsight;
 use App\Services\Adherence\AdherenceService;
 use App\Services\Ai\OpenAiCompatibleClient;
+use App\Support\ArabicCount;
+use App\Support\ArabicText;
 use App\Support\ClinicDay;
 use App\Support\Digits;
 use Carbon\CarbonImmutable;
@@ -57,10 +59,15 @@ class WeightInsightService
         $days = (int) $from['at']->diffInDays($to['at']);
         $change = round($to['kg'] - $from['kg'], 1);
 
-        $adherence = $this->adherence->summary($subscriber, $from['at']->toDateString(), $to['at']->toDateString());
+        // One window for every count below: the `days` calendar days AFTER the first weigh-in, up to and
+        // including the last (the change happened in them). So `logged_days` can never exceed `days`.
+        $start = $from['at']->addDay()->toDateString();
+        $end = $to['at']->toDateString();
+
+        $adherence = $this->adherence->summary($subscriber, $start, $end);
 
         $logs = $subscriber->mealLogs()->reorder()
-            ->loggedBetween($from['at']->toDateString(), $to['at']->toDateString())
+            ->loggedBetween($start, $end)
             ->with('food:id,sodium_mg_per_100g')->get(['id', 'food_id', 'logged_at']);
 
         $sodiumLimit = (float) config('nutrition.high_sodium_mg_per_100g');
@@ -82,7 +89,7 @@ class WeightInsightService
                 'logged_days' => $loggedDays,
                 'off_plan_meals' => (int) $adherence['off_plan_logs'],
                 'high_sodium_logs' => $highSodium,
-                'checkins' => $this->checkinSignals($subscriber, $from['at']->toDateString(), $to['at']->toDateString()),
+                'checkins' => $this->checkinSignals($subscriber, $start, $end),
                 'likely_water_fluctuation' => $water,
                 'consistent_with_plan' => $this->directionMatchesGoal($subscriber, $change)
                     && $adherencePercent !== null && $adherencePercent >= (float) config('weight_insight.consistent_adherence_percent'),
@@ -157,6 +164,8 @@ class WeightInsightService
             'change_kg' => (float) $insight->facts['change_kg'],
             'text_ar' => $insight->text_ar,
             'is_fallback' => $insight->is_fallback,
+            // Nutritionist only: why the fixed text was used (null when the model's was).
+            'fallback_reason' => $insight->fallback_reason,
             'generated_at' => $insight->generated_at->toIso8601String(),
             'facts' => $insight->facts,
         ];
@@ -165,27 +174,29 @@ class WeightInsightService
     /** @param  array{from_date: string, to_date: string, facts: array<string, mixed>}  $computed */
     private function store(Subscriber $subscriber, array $computed): WeightInsight
     {
-        [$text, $isFallback] = $this->words($computed['facts']);
+        [$text, $reason] = $this->words($computed['facts']);
 
         // whereDate: a date column may carry a time part on some drivers (SQLite), and the unique key must still find its row.
         $insight = WeightInsight::query()->where('subscriber_id', $subscriber->id)->whereDate('to_date', $computed['to_date'])->first()
             ?? new WeightInsight(['subscriber_id' => $subscriber->id, 'to_date' => $computed['to_date']]);
 
         $insight->fill([
-            'from_date' => $computed['from_date'], 'facts' => $computed['facts'], 'text_ar' => $text, 'is_fallback' => $isFallback, 'generated_at' => now(),
+            'from_date' => $computed['from_date'], 'facts' => $computed['facts'], 'text_ar' => $text, 'is_fallback' => $reason !== null, 'fallback_reason' => $reason, 'generated_at' => now(),
         ])->save();
 
         return $insight;
     }
 
     /**
+     * The text to show and, when it is the fixed fallback, why (null = the model's own words).
+     *
      * @param  array<string, mixed>  $facts
-     * @return array{0: string, 1: bool} text, is_fallback
+     * @return array{0: string, 1: string|null} text, fallback_reason
      */
     public function words(array $facts): array
     {
         if (! $this->llm->isConfigured()) {
-            return [$this->fallbackText($facts), true];
+            return $this->fallback($facts, 'not_configured');
         }
 
         try {
@@ -197,32 +208,37 @@ class WeightInsightService
             // The message, never the facts.
             Log::warning('Weight insight: provider failed.', ['reason' => $e->getMessage()]);
 
-            return [$this->fallbackText($facts), true];
+            return $this->fallback($facts, 'provider_failed');
         }
 
-        $text = $this->accepted((string) ($reply['text'] ?? ''), $facts);
+        [$text, $reason] = $this->evaluate((string) ($reply['text'] ?? ''), $facts);
 
-        if ($text === null) {
-            return [$this->fallbackText($facts), true];
-        }
-
-        return [$text, false];
+        return $text === null ? $this->fallback($facts, $reason) : [$text, null];
     }
 
     /**
-     * The reply as it will be shown, or null when it must be thrown away: empty,
-     * too long, a number that is not in the facts, or a blocklisted word.
+     * The reply as it will be shown, or null when it must be thrown away.
      *
      * @param  array<string, mixed>  $facts
      */
     public function accepted(string $text, array $facts): ?string
     {
+        return $this->evaluate($text, $facts)[0];
+    }
+
+    /**
+     * Judges a reply: empty, too long, a number that is not in the facts, or a
+     * blocklisted whole word. Returns the text to show, or null and the reason.
+     *
+     * @param  array<string, mixed>  $facts
+     * @return array{0: string|null, 1: string|null} text, reason
+     */
+    public function evaluate(string $text, array $facts): array
+    {
         $text = trim($text);
 
         if ($text === '') {
-            Log::info('Weight insight: reply rejected.', ['reason' => 'empty']);
-
-            return null;
+            return [null, 'empty'];
         }
 
         $closing = (string) config('weight_insight.closing_ar');
@@ -231,26 +247,52 @@ class WeightInsightService
         }
 
         if (mb_strlen($text) > (int) config('weight_insight.max_chars')) {
-            Log::info('Weight insight: reply rejected.', ['reason' => 'length']);
-
-            return null;
+            return [null, 'rejected_length'];
         }
 
         if ($this->inventsNumbers($text, $facts)) {
-            Log::info('Weight insight: reply rejected.', ['reason' => 'numbers']);
-
-            return null;
+            return [null, 'rejected_digit'];
         }
 
-        foreach ((array) config('weight_insight.blocklist') as $word) {
-            if (mb_stripos($text, $word) !== false) {
-                Log::info('Weight insight: reply rejected.', ['reason' => 'blocklist']);
+        $word = $this->blockedWord($text);
+        if ($word !== null) {
+            return [null, "rejected_blocklist:{$word}"];
+        }
 
-                return null;
+        return [$text, null];
+    }
+
+    /**
+     * The first blocklisted word the text contains AS A WORD, with or without
+     * the definite article ("سكر", "السكر"). A longer word that merely contains
+     * one ("مسكرات", "ضغطك") is not a match. Spelling variants of alef, taa
+     * marbuta and the diacritics are ignored.
+     */
+    private function blockedWord(string $text): ?string
+    {
+        $haystack = (string) ArabicText::normalize($text);
+
+        foreach ((array) config('weight_insight.blocklist') as $word) {
+            $needle = preg_quote((string) ArabicText::normalize($word), '/');
+
+            if (preg_match('/(?<![\p{L}\p{N}])(?:ال)?'.$needle.'(?![\p{L}\p{N}])/u', $haystack) === 1) {
+                return $word;
             }
         }
 
-        return $text;
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $facts
+     * @return array{0: string, 1: string} text, reason
+     */
+    private function fallback(array $facts, ?string $reason): array
+    {
+        $reason ??= 'rejected';
+        Log::info('Weight insight: fixed text used.', ['reason' => $reason]);
+
+        return [$this->fallbackText($facts), $reason];
     }
 
     /** @param  array<string, mixed>  $facts */
@@ -269,7 +311,7 @@ class WeightInsightService
             default => 'neutral',
         };
 
-        return strtr((string) config("weight_insight.fallback.{$key}"), [':change' => $phrase, ':days' => (string) $facts['days']]);
+        return strtr((string) config("weight_insight.fallback.{$key}"), [':change' => $phrase, ':days' => ArabicCount::days((int) $facts['days'])]);
     }
 
     /**
@@ -292,7 +334,7 @@ class WeightInsightService
             You write a short note for a patient of a nutritionist, in Arabic, explaining why their weight changed.
 
             You are given computed facts as JSON. Use ONLY these facts. Do not compute, estimate or add anything.
-            Fields: change_kg (negative = lost weight), days, adherence_percent (share of logged meals that were on the plan),
+            Fields: change_kg (negative = lost weight), days (the period),  adherence_percent (share of logged meals that were on the plan),
             logged_days, off_plan_meals, high_sodium_logs, checkins (what the patient reported: appetite, sleep, main barriers; may be null),
             likely_water_fluctuation, consistent_with_plan.
 
@@ -305,6 +347,7 @@ class WeightInsightService
 
             Never give medical advice, never name a disease, medicine or diagnosis, never mention calories,
             never blame the patient, never promise a result. Use only numbers that appear in the facts.
+            Write counts with correct Arabic agreement: يوم واحد، يومين، 5 أيام، 12 يومًا.
             PROMPT;
     }
 

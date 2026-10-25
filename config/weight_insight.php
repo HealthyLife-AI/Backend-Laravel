@@ -44,13 +44,13 @@ return [
     /*
     | Used when the model is not configured, fails, or its reply is rejected.
     | Placeholders: :change (e.g. "نزل وزنك حوالي 1.2 كغ", or "وزنك ثابت تقريبًا"
-    | when it did not move), :days. Picked by the facts' booleans: water
+    | when it did not move), :days (already with its noun in correct Arabic agreement: يوم واحد، يومين، 5 أيام، 12 يومًا). Picked by the facts' booleans: water
     | fluctuation first, then consistent with the plan, then neutral.
     */
     'fallback' => [
-        'water_fluctuation' => ':change خلال :days يوم. هذا التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فما تقلق منه. وأخصائيتك بتتابع معك.',
-        'consistent' => ':change خلال :days يوم، وهذا بيمشي مع التزامك بالخطة. كمّل على نفس الطريقة. وأخصائيتك بتتابع معك.',
-        'neutral' => ':change خلال :days يوم. الوزن بيتأثر بأشياء كثيرة غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
+        'water_fluctuation' => ':change خلال :days. هذا التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فما تقلق منه. وأخصائيتك بتتابع معك.',
+        'consistent' => ':change خلال :days، وهذا بيمشي مع التزامك بالخطة. كمّل على نفس الطريقة. وأخصائيتك بتتابع معك.',
+        'neutral' => ':change خلال :days. الوزن بيتأثر بأشياء كثيرة غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
     ],
 
     'change_phrase' => [

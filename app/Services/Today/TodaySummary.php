@@ -9,6 +9,7 @@ use App\Models\PatientQuickRequest;
 use App\Models\Subscriber;
 use App\Models\SubscriberMeasurementSchedule;
 use App\Services\Posts\PostService;
+use App\Support\ArabicCount;
 use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
 
@@ -152,12 +153,7 @@ class TodaySummary
 
     private function unreadPostsText(int $count): string
     {
-        return match (true) {
-            $count === 1 => 'عندك نصيحة جديدة من أخصائيتك.',
-            $count === 2 => 'عندك نصيحتان جديدتان من أخصائيتك.',
-            $count <= 10 => "عندك {$count} نصائح جديدة من أخصائيتك.",
-            default => "عندك {$count} نصيحة جديدة من أخصائيتك.",
-        };
+        return 'عندك '.ArabicCount::newTips($count).' من أخصائيتك.';
     }
 
     private function motivation(Subscriber $subscriber, CarbonImmutable $date): ?string
