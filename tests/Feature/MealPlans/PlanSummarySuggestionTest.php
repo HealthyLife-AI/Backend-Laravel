@@ -250,6 +250,56 @@ class PlanSummarySuggestionTest extends TestCase
         $this->suggest()->assertOk()->assertJsonPath('is_fallback', false);
     }
 
+    // ---- why only the first line came back --------------------------------------------------------------
+
+    public function test_a_note_from_the_model_has_no_fallback_reason(): void
+    {
+        Http::fake(['*' => Http::response($this->reply('نمط متوازن. متابعة بعد أسبوعين.'))]);
+
+        $this->suggest()->assertOk()->assertJsonPath('is_fallback', false)->assertJsonPath('fallback_reason', null);
+    }
+
+    /** @return array<string, array{string, string}> reply => reason */
+    public static function rejectionReasons(): array
+    {
+        return [
+            'a macro label the numbers do not earn' => ['نمط قليل الكربوهيدرات. متابعة بعد أسبوعين.', 'macro_label'],
+            'an invented number' => ['خطة ممتازة عند 1450 سعرة. متابعة بعد أسبوعين.', 'rejected_digit'],
+            'nothing' => ['', 'empty'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('rejectionReasons')]
+    public function test_a_rejected_note_says_why(string $reply, string $reason): void
+    {
+        Http::fake(['*' => Http::response($this->reply($reply))]);
+
+        $this->suggest()->assertOk()->assertJsonPath('is_fallback', true)->assertJsonPath('fallback_reason', $reason);
+    }
+
+    public function test_a_long_note_has_its_own_reason(): void
+    {
+        Http::fake(['*' => Http::response($this->reply(str_repeat('ا', 251)))]);
+
+        $this->suggest()->assertOk()->assertJsonPath('fallback_reason', 'rejected_length');
+    }
+
+    public function test_provider_failure_and_no_provider_have_their_reasons(): void
+    {
+        Http::fake(['*' => Http::response(null, 500)]);
+        $this->suggest()->assertOk()->assertJsonPath('fallback_reason', 'provider_failed');
+
+        config(['ai.base_url' => '', 'ai.api_key' => '']);
+        $this->suggest()->assertOk()->assertJsonPath('fallback_reason', 'not_configured');
+    }
+
+    public function test_the_response_shape_is_the_four_fields(): void
+    {
+        Http::fake(['*' => Http::response($this->reply('نمط متوازن. متابعة بعد أسبوعين.'))]);
+
+        $this->assertSame(['suggested_summary', 'suggested_approved_calories', 'is_fallback', 'fallback_reason'], array_keys($this->suggest()->json()));
+    }
+
     public function test_the_first_line_alone_when_no_provider_is_configured(): void
     {
         config(['ai.base_url' => '', 'ai.api_key' => '']);
