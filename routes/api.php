@@ -45,7 +45,11 @@ use App\Http\Controllers\Api\Nutritionists\MyNutritionistController;
 use App\Http\Controllers\Api\Nutritionists\NutritionistProfileController;
 use App\Http\Controllers\Api\Progress\AdherenceController;
 use App\Http\Controllers\Api\Progress\GoalProjectionController;
+use App\Http\Controllers\Api\Posts\MyPostController;
+use App\Http\Controllers\Api\Posts\PostController;
 use App\Http\Controllers\Api\Progress\OwnProgressController;
+use App\Http\Controllers\Api\Progress\WeightInsightController;
+use App\Http\Controllers\Api\Today\TodayController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
 use App\Http\Controllers\Api\System\FcmStatusController;
@@ -134,6 +138,17 @@ Route::prefix('v1')->name('api.')->group(function () {
 
         Route::get('dashboard/overview', [DashboardController::class, 'overview'])->name('dashboard.overview');
 
+        // Phase 3, A3: education posts ("نصائح أخصائيتك"). Own posts only; no patient id in the path.
+        Route::get('posts/templates', [PostController::class, 'templates'])->name('posts.templates');
+        Route::get('posts', [PostController::class, 'index'])->name('posts.index');
+        Route::post('posts', [PostController::class, 'store'])->name('posts.store');
+        Route::get('posts/{post}', [PostController::class, 'show'])->whereNumber('post')->name('posts.show');
+        Route::put('posts/{post}', [PostController::class, 'update'])->whereNumber('post')->name('posts.update');
+        Route::delete('posts/{post}', [PostController::class, 'destroy'])->whereNumber('post')->name('posts.destroy');
+        Route::post('posts/{post}/publish', [PostController::class, 'publish'])->whereNumber('post')->name('posts.publish');
+        Route::post('posts/{post}/unpublish', [PostController::class, 'unpublish'])->whereNumber('post')->name('posts.unpublish');
+        Route::get('posts/{post}/stats', [PostController::class, 'stats'])->whereNumber('post')->name('posts.stats');
+
         // Step 2: appointments and the nutritionist's weekly availability.
         Route::get('me/availability', [NutritionistAppointmentController::class, 'availability'])->name('me.availability.show');
         Route::put('me/availability', [NutritionistAppointmentController::class, 'updateAvailability'])->name('me.availability.update');
@@ -161,6 +176,14 @@ Route::prefix('v1')->name('api.')->group(function () {
         // Phase 2, C: the goal projection and whether the patient sees it. Nutritionist only (not the progress.view group a client also holds).
         Route::get('clients/{subscriber}/goal-projection', [GoalProjectionController::class, 'show'])->name('clients.goal-projection.show');
         Route::put('clients/{subscriber}/goal-projection-visibility', [GoalProjectionController::class, 'visibility'])->middleware('follow-up')->name('clients.goal-projection.visibility');
+
+        // Phase 3, C: the weight-change insight and whether the patient sees it. Regenerating is the paid LLM call: throttled.
+        Route::get('clients/{subscriber}/weight-insight', [WeightInsightController::class, 'show'])->name('clients.weight-insight.show');
+        Route::put('clients/{subscriber}/weight-insight-visibility', [WeightInsightController::class, 'visibility'])->middleware('follow-up')->name('clients.weight-insight.visibility');
+        Route::post('clients/{subscriber}/weight-insight/regenerate', [WeightInsightController::class, 'regenerate'])->middleware(['follow-up', 'throttle:weight-insight'])->name('clients.weight-insight.regenerate');
+
+        // Phase 3, B4: what the patient sees this morning (read-only preview).
+        Route::get('clients/{subscriber}/today', [TodayController::class, 'forClient'])->name('clients.today');
 
         // Phase 2, B3: likes and dislikes. What she writes is never removed by the patient's own edit.
         Route::get('clients/{subscriber}/food-preferences', [ClientFoodPreferenceController::class, 'show'])->name('clients.food-preferences.show');
@@ -338,6 +361,14 @@ Route::prefix('v1')->name('api.')->group(function () {
 
         // Phase 2, C2: the patient's own goal projection (null while the nutritionist keeps it hidden).
         Route::get('me/goal-projection', [GoalProjectionController::class, 'mine'])->name('me.goal-projection.show');
+
+        // Phase 3: education posts, the morning message, the weight-change insight.
+        Route::get('me/posts', [MyPostController::class, 'index'])->name('me.posts.index');
+        Route::get('me/posts/unread-count', [MyPostController::class, 'unreadCount'])->name('me.posts.unread-count');
+        Route::get('me/posts/{id}', [MyPostController::class, 'show'])->whereNumber('id')->name('me.posts.show');
+        Route::post('me/posts/{id}/read', [MyPostController::class, 'read'])->whereNumber('id')->name('me.posts.read');
+        Route::get('me/today', [TodayController::class, 'mine'])->name('me.today');
+        Route::get('me/weight-insight', [WeightInsightController::class, 'mine'])->name('me.weight-insight.show');
 
         // Phase 2, B2: the patient's own likes and dislikes.
         Route::get('me/food-preferences', [MyFoodPreferenceController::class, 'show'])->name('me.food-preferences.show');

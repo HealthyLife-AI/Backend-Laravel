@@ -25,7 +25,12 @@ class MyQuickRequestController extends Controller
 
         abort_if($subscriber === null, 403, 'This account is not set up as a client.');
 
-        return QuickRequestResource::collection($subscriber->quickRequests()->get());
+        $requests = $subscriber->quickRequests()->get();
+
+        // Opening the list is reading the answers: the morning message stops mentioning them (Phase 3, B1).
+        $subscriber->quickRequests()->where('status', 'answered')->whereNull('response_seen_at')->update(['response_seen_at' => now()]);
+
+        return QuickRequestResource::collection($requests);
     }
 
     public function store(StoreQuickRequestRequest $request): JsonResponse

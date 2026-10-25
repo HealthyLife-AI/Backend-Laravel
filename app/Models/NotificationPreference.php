@@ -10,13 +10,13 @@ use Illuminate\Database\Eloquent\Model;
  * on), quiet hours in their own timezone, and the language notifications
  * are written in. A null timezone means config('scheduling.timezone').
  */
-#[Fillable(['user_id', 'locale', 'meals', 'measurements', 'nutritionist', 'plan', 'quiet_hours_enabled', 'quiet_start', 'quiet_end', 'timezone'])]
+#[Fillable(['user_id', 'locale', 'meals', 'measurements', 'nutritionist', 'plan', 'education', 'morning', 'quiet_hours_enabled', 'quiet_start', 'quiet_end', 'timezone'])]
 class NotificationPreference extends Model
 {
     public const LOCALES = ['ar', 'en'];
 
     /** Categories the patient can switch off; `system` can't be. */
-    public const TOGGLEABLE = ['meals', 'measurements', 'nutritionist', 'plan'];
+    public const TOGGLEABLE = ['meals', 'measurements', 'nutritionist', 'plan', 'education', 'morning'];
 
     protected function casts(): array
     {
@@ -25,6 +25,8 @@ class NotificationPreference extends Model
             'measurements' => 'boolean',
             'nutritionist' => 'boolean',
             'plan' => 'boolean',
+            'education' => 'boolean',
+            'morning' => 'boolean',
             'quiet_hours_enabled' => 'boolean',
         ];
     }

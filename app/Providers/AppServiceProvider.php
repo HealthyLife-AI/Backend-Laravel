@@ -129,6 +129,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->user()->id);
         });
 
+        // Phase 3, C: regenerating a weight insight is one LLM call, like a summary suggestion; its own counter.
+        RateLimiter::for('weight-insight', function (Request $request) {
+            return Limit::perMinute(5)->by($request->user()->id);
+        });
+
         // B2: the unauthenticated auth routes, each with its OWN counter. The
         // bare `throttle:N,1` form keys every route by the same IP signature,
         // so ten token refreshes used to lock login and activation for that

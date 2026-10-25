@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * (not a chat): one of a fixed set of reasons, an optional short note, and
  * one plain-text answer. No automatic plan change ever follows from it.
  */
-#[Fillable(['subscriber_id', 'reason', 'note', 'occasion_date', 'status', 'response', 'responded_by', 'responded_at'])]
+#[Fillable(['subscriber_id', 'reason', 'note', 'occasion_date', 'status', 'response', 'responded_by', 'responded_at', 'response_seen_at'])]
 class PatientQuickRequest extends Model
 {
     public const REASONS = ['special_occasion', 'food_unavailable', 'craving', 'cannot_continue', 'other'];
@@ -32,6 +32,7 @@ class PatientQuickRequest extends Model
         return [
             'occasion_date' => 'date',
             'responded_at' => 'datetime',
+            'response_seen_at' => 'datetime',
         ];
     }
 
