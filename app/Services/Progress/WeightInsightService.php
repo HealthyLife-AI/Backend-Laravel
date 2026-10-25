@@ -93,6 +93,8 @@ class WeightInsightService
                 'likely_water_fluctuation' => $water,
                 'consistent_with_plan' => $this->directionMatchesGoal($subscriber, $change)
                     && $adherencePercent !== null && $adherencePercent >= (float) config('weight_insight.consistent_adherence_percent'),
+                // The only personal detail the model gets: the grammatical gender to address the patient in.
+                'gender' => $this->gender($subscriber),
             ],
         ];
     }
@@ -112,6 +114,8 @@ class WeightInsightService
         $cached = WeightInsight::query()->where('subscriber_id', $subscriber->id)->whereDate('to_date', $computed['to_date'])->first();
 
         if ($cached !== null
+            && (int) $cached->text_version === (int) config('weight_insight.text_version')
+            && ($cached->facts['gender'] ?? null) === $computed['facts']['gender']
             && $cached->from_date->toDateString() === $computed['from_date']
             && (float) ($cached->facts['change_kg'] ?? NAN) === (float) $computed['facts']['change_kg']) {
             return $cached;
@@ -181,7 +185,7 @@ class WeightInsightService
             ?? new WeightInsight(['subscriber_id' => $subscriber->id, 'to_date' => $computed['to_date']]);
 
         $insight->fill([
-            'from_date' => $computed['from_date'], 'facts' => $computed['facts'], 'text_ar' => $text, 'is_fallback' => $reason !== null, 'fallback_reason' => $reason, 'generated_at' => now(),
+            'from_date' => $computed['from_date'], 'facts' => $computed['facts'], 'text_ar' => $text, 'is_fallback' => $reason !== null, 'fallback_reason' => $reason, 'text_version' => (int) config('weight_insight.text_version'), 'generated_at' => now(),
         ])->save();
 
         return $insight;
@@ -254,6 +258,11 @@ class WeightInsightService
             return [null, 'rejected_digit'];
         }
 
+        $dialect = $this->dialectWord($text);
+        if ($dialect !== null) {
+            return [null, "rejected_dialect:{$dialect}"];
+        }
+
         $word = $this->blockedWord($text);
         if ($word !== null) {
             return [null, "rejected_blocklist:{$word}"];
@@ -293,6 +302,33 @@ class WeightInsightService
         return null;
     }
 
+    /**
+     * An Egyptian form ("ده", "كده", "إزاي") used as a word, with at most a و / ف in front ("وده").
+     * Exact on purpose: no other prefix or suffix, so "بدي" (Levantine "I want") is not "دي".
+     */
+    private function dialectWord(string $text): ?string
+    {
+        $haystack = $this->bare($text);
+
+        foreach ((array) config('weight_insight.dialect_blocklist') as $word) {
+            $needle = preg_quote($this->bare($word), '/');
+
+            if (preg_match('/(?<![\p{L}\p{N}])[وف]?'.$needle.'(?![\p{L}\p{N}])/u', $haystack) === 1) {
+                return $word;
+            }
+        }
+
+        return null;
+    }
+
+    /** male | female | unknown: the grammatical gender the patient is addressed in. */
+    private function gender(Subscriber $subscriber): string
+    {
+        $gender = $subscriber->healthProfile?->gender;
+
+        return in_array($gender, ['male', 'female'], true) ? $gender : 'unknown';
+    }
+
     /** Normalized spelling with the hamza carriers dropped (دواء / دوائك share a stem). */
     private function bare(string $text): string
     {
@@ -327,21 +363,36 @@ class WeightInsightService
             default => 'neutral',
         };
 
-        return strtr((string) config("weight_insight.fallback.{$key}"), [':change' => $phrase, ':days' => ArabicCount::days((int) $facts['days'])]);
+        $gender = in_array($facts['gender'] ?? null, ['male', 'female'], true) ? $facts['gender'] : 'unknown';
+
+        return strtr((string) config("weight_insight.fallback.{$key}.{$gender}"), [':change' => $phrase, ':days' => ArabicCount::days((int) $facts['days'])]);
     }
 
     /**
-     * Any digit sequence in the reply that is not one of the facts' own means
-     * the model produced a figure: reject the whole reply rather than repair it.
+     * The only figures a reply may carry: the size of the change (one decimal,
+     * "1.2") and the number of days. Adherence, off-plan meals, sodium logs and
+     * the check-in signals are described in words, never with a number. Any other
+     * number, in Latin or Arabic-Indic digits, means the model wrote a figure the
+     * rules do not allow: reject the whole reply rather than repair it.
      *
      * @param  array<string, mixed>  $facts
      */
     private function inventsNumbers(string $text, array $facts): bool
     {
-        preg_match_all('/\d+/u', Digits::toLatin((string) json_encode($facts)), $allowed);
-        preg_match_all('/\d+/u', Digits::toLatin($text), $found);
+        $allowed = [
+            number_format(abs((float) ($facts['change_kg'] ?? 0)), 1, '.', ''),
+            (string) (int) ($facts['days'] ?? 0),
+        ];
 
-        return array_diff($found[0], $allowed[0]) !== [];
+        preg_match_all('/\d+(?:[.,٫]\d+)?/u', Digits::toLatin($text), $found);
+
+        foreach ($found[0] as $number) {
+            if (! in_array(str_replace([',', '٫'], '.', $number), $allowed, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function systemPrompt(): string
@@ -350,20 +401,30 @@ class WeightInsightService
             You write a short note for a patient of a nutritionist, in Arabic, explaining why their weight changed.
 
             You are given computed facts as JSON. Use ONLY these facts. Do not compute, estimate or add anything.
-            Fields: change_kg (negative = lost weight), days (the period),  adherence_percent (share of logged meals that were on the plan),
+            Fields: change_kg (negative = lost weight), days (the period), adherence_percent (share of logged meals that were on the plan),
             logged_days, off_plan_meals, high_sodium_logs, checkins (what the patient reported: appetite, sleep, main barriers; may be null),
-            likely_water_fluctuation, consistent_with_plan.
+            likely_water_fluctuation, consistent_with_plan, gender (the patient's grammatical gender: male, female or unknown).
 
             Reply as JSON: {"text": "..."}
 
+            Language:
+            - Palestinian Levantine Arabic, as spoken in Palestine (e.g. هاد، هيك، كتير، بيطلع، بدك). NO Egyptian forms at all:
+              never ده، دي، كده، إزاي، عشان كده.
+            - Address the patient by gender. male: masculine forms (كمّل، ما تقلق). female: feminine forms (كمّلي، ما تقلقي).
+              unknown: gender-neutral phrasing that avoids gendered verbs and adjectives addressed to the patient (use "خلّينا نكمّل").
+
             The text must be:
-            - 2 to 3 short sentences in friendly Egyptian/Levantine-friendly Arabic, addressed to the patient ("وزنك", "أكلك");
+            - 2 to 3 short sentences, friendly, addressed to the patient ("وزنك", "أكلك");
             - based only on the facts; when likely_water_fluctuation is true, say that part of the change is normal water and salt fluctuation;
             - at most 350 characters, ending with exactly: وأخصائيتك بتتابع معك.
 
-            Never give medical advice, never name a disease, medicine or diagnosis, never mention calories,
-            never blame the patient, never promise a result. Use only numbers that appear in the facts.
+            Numbers: the ONLY numbers allowed are change_kg, written as "حوالي X كغ" with one decimal and no minus sign, and days.
+            Describe everything else in words, never with a number: adherence ("التزامك كان عالي / متوسط / قليل"), off-plan meals
+            ("كم وجبة برّا الخطة"), high-sodium logs, logged days, and the check-in answers.
             Write counts with correct Arabic agreement: يوم واحد، يومين، 5 أيام، 12 يومًا.
+
+            Never give medical advice, never name a disease, medicine or diagnosis, never mention calories,
+            never blame the patient, never promise a result.
             PROMPT;
     }
 
