@@ -4,6 +4,7 @@ namespace Tests\Feature\Phase3;
 
 use App\Models\BodyCompositionReading;
 use App\Models\Food;
+use App\Models\HealthProfile;
 use App\Models\MealLog;
 use App\Models\PatientCheckin;
 use App\Models\PatientCondition;
@@ -391,7 +392,7 @@ class WeightInsightTest extends TestCase
 
             return count($messages) === 2
                 && $messages[0]['role'] === 'system' && $messages[1]['role'] === 'user'
-                && array_keys($facts) === ['change_kg', 'days', 'adherence_percent', 'logged_days', 'off_plan_meals', 'high_sodium_logs', 'checkins', 'likely_water_fluctuation', 'consistent_with_plan']
+                && array_keys($facts) === ['change_kg', 'days', 'adherence_percent', 'logged_days', 'off_plan_meals', 'high_sodium_logs', 'checkins', 'likely_water_fluctuation', 'consistent_with_plan', 'gender']
                 && $facts['change_kg'] === -1.2 && $facts['days'] === 14;
         });
     }
@@ -648,6 +649,280 @@ class WeightInsightTest extends TestCase
         $this->assertSame(10, $facts['logged_days']);
     }
 
+    // ---- numbers: only the change and the days ------------------------------------------------------------
+
+    /** @return array<string, array{string, bool}> text => rejected? */
+    public static function numberCases(): array
+    {
+        return [
+            'the change, one decimal' => ['نزل وزنك حوالي 1.2 كغ', false],
+            'the change in Arabic-Indic digits' => ['نزل وزنك حوالي ١٫٢ كغ', false],
+            'the change with a comma' => ['نزل وزنك حوالي 1,2 كغ', false],
+            'the days' => ['خلال 14 يوم', false],
+            'the days in Arabic-Indic digits' => ['خلال ١٤ يوم', false],
+            'both' => ['نزل وزنك حوالي 1.2 كغ خلال 14 يوم', false],
+            'no number at all' => ['التزامك كان عالي وكم وجبة برّا الخطة', false],
+            'the change without its decimal' => ['نزل وزنك حوالي 1 كغ', true],
+            'another decimal' => ['نزل وزنك حوالي 1.3 كغ', true],
+            'two decimals' => ['نزل وزنك حوالي 1.20 كغ', true],
+            'the adherence percent' => ['التزامك 67% من وجباتك', true],
+            'the adherence percent, Arabic-Indic' => ['التزامك ٦٧ من وجباتك', true],
+            'the off-plan count' => ['3 وجبات برّا الخطة', true],
+            'the sodium count' => ['4 مرات أكلت مالح', true],
+            'the logged days' => ['سجلت 9 أيام', true],
+            'a check-in figure' => ['نومك 7 ساعات', true],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('numberCases')]
+    public function test_only_the_change_and_the_days_may_appear_as_numbers(string $text, bool $rejected): void
+    {
+        // Facts that DO hold the other numbers: they were allowed before, and must not be now.
+        $facts = ['change_kg' => -1.2, 'days' => 14, 'adherence_percent' => 67.0, 'logged_days' => 9, 'off_plan_meals' => 3, 'high_sodium_logs' => 4];
+
+        $result = app(WeightInsightService::class)->evaluate($text.'. '.config('weight_insight.closing_ar'), $facts);
+
+        $this->assertSame($rejected, $result[0] === null, $text);
+        if ($rejected) {
+            $this->assertSame('rejected_digit', $result[1]);
+        }
+    }
+
+    public function test_the_change_is_matched_by_its_size_not_its_sign(): void
+    {
+        $service = app(WeightInsightService::class);
+
+        $this->assertNotNull($service->accepted('زاد وزنك حوالي 2.5 كغ. '.config('weight_insight.closing_ar'), ['change_kg' => 2.5, 'days' => 8]));
+        $this->assertNotNull($service->accepted('نزل وزنك حوالي 2.5 كغ. '.config('weight_insight.closing_ar'), ['change_kg' => -2.5, 'days' => 8]));
+        $this->assertNull($service->accepted('نزل وزنك حوالي 2.4 كغ. '.config('weight_insight.closing_ar'), ['change_kg' => -2.5, 'days' => 8]));
+    }
+
+    // ---- dialect --------------------------------------------------------------------------------------------
+
+    /** @return array<string, array{string, bool}> text => rejected? */
+    public static function dialectCases(): array
+    {
+        return [
+            'ده' => ['ده طبيعي جدًا', true],
+            'وده (with the و)' => ['وده طبيعي جدًا', true],
+            'دي' => ['دي حاجة عادية', true],
+            'كده' => ['خليك كده', true],
+            'إزاي' => ['إزاي ده حصل', true],
+            'ازاي without the hamza' => ['ازاي هيك صار', true],
+            'عشان كده' => ['عشان كده وزنك نزل', true],
+            'فده (with the ف)' => ['فده كويس', true],
+            // Levantine and Palestinian words that must stay
+            'هاد' => ['هاد التغيّر طبيعي', false],
+            'هيك' => ['هيك بيصير عادة', false],
+            'كتير' => ['الوزن بيتأثر بأشياء كتير', false],
+            'بدي (contains دي)' => ['بدي أطمنك إنه طبيعي', false],
+            'ديك (contains دي)' => ['الديك بياكل', false],
+            'ما تقلق' => ['ما تقلق منه', false],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('dialectCases')]
+    public function test_egyptian_forms_send_the_reply_to_the_fallback(string $text, bool $rejected): void
+    {
+        $result = app(WeightInsightService::class)->evaluate($text.'. '.config('weight_insight.closing_ar'), ['change_kg' => -1.2, 'days' => 14]);
+
+        $this->assertSame($rejected, $result[0] === null, $text);
+        if ($rejected) {
+            $this->assertStringStartsWith('rejected_dialect:', (string) $result[1]);
+        }
+    }
+
+    public function test_the_dialect_list_is_the_configured_one(): void
+    {
+        $this->assertSame(['ده', 'دي', 'كده', 'إزاي', 'عشان كده'], config('weight_insight.dialect_blocklist'));
+    }
+
+    public function test_an_egyptian_reply_falls_back_end_to_end_with_its_reason(): void
+    {
+        $insight = $this->insightFor('وده طبيعي، كده الوزن بيتغير. وأخصائيتك بتتابع معك.');
+
+        $this->assertTrue($insight['is_fallback']);
+        $this->assertSame('rejected_dialect:ده', $insight['fallback_reason']);
+        $this->assertDoesNotMatchRegularExpression('/(?<!\p{L})[وف]?(ده|دي|كده)(?!\p{L})/u', $insight['text_ar']);
+    }
+
+    public function test_the_fallback_texts_are_palestinian(): void
+    {
+        foreach (config('weight_insight.fallback') as $variants) {
+            foreach ($variants as $text) {
+                $this->assertNull(app(WeightInsightService::class)->evaluate($text, ['change_kg' => 0, 'days' => 1])[1], 'every template passes the dialect, blocklist and number rules');
+                $this->assertStringNotContainsString('هذا', $text, 'هاد, not هذا');
+                $this->assertStringNotContainsString('كثيرة', $text, 'كتير');
+            }
+        }
+    }
+
+    // ---- gender ---------------------------------------------------------------------------------------------
+
+    private function gender(?string $gender): void
+    {
+        HealthProfile::query()->updateOrCreate(['subscriber_id' => $this->subscriber->id], [
+            'weight_kg' => 70, 'height_cm' => 170, 'age' => 35, 'gender' => $gender, 'activity_level' => 'light', 'daily_calorie_needs' => 1900,
+        ]);
+        $this->subscriber->unsetRelation('healthProfile');
+    }
+
+    public function test_the_facts_carry_the_grammatical_gender(): void
+    {
+        $this->fourteenDays();
+
+        $this->assertSame('unknown', $this->facts()['facts']['gender'], 'no profile');
+
+        $this->gender('female');
+        $this->assertSame('female', $this->facts()['facts']['gender']);
+
+        $this->gender('male');
+        $this->assertSame('male', $this->facts()['facts']['gender']);
+
+    }
+
+    public function test_the_fallback_is_addressed_by_gender(): void
+    {
+        $service = app(WeightInsightService::class);
+        $base = ['change_kg' => -1.2, 'days' => 14, 'likely_water_fluctuation' => false, 'consistent_with_plan' => false];
+
+        $water = fn (string $g) => $service->fallbackText(['likely_water_fluctuation' => true, 'gender' => $g] + $base);
+        $this->assertStringContainsString('فما تقلق منه', $water('male'));
+        $this->assertStringContainsString('فما تقلقي منه', $water('female'));
+        $this->assertStringNotContainsString('تقلق', $water('unknown'), 'no gendered verb for an unknown gender');
+        $this->assertStringContainsString('للقلق', $water('unknown'));
+
+        $steady = fn (string $g) => $service->fallbackText(['consistent_with_plan' => true, 'gender' => $g] + $base);
+        $this->assertStringContainsString('كمّل على', $steady('male'));
+        $this->assertStringContainsString('كمّلي على', $steady('female'));
+        $this->assertStringContainsString('خلّينا نكمّل', $steady('unknown'));
+        $this->assertStringNotContainsString('كمّلي', $steady('male'));
+        $this->assertStringNotContainsString(' كمّل على', $steady('unknown'), 'the imperative is for a known gender only');
+    }
+
+    public function test_the_variants_are_the_same_text_with_adjusted_verbs(): void
+    {
+        $service = app(WeightInsightService::class);
+        $facts = ['change_kg' => -1.2, 'days' => 14, 'likely_water_fluctuation' => true, 'consistent_with_plan' => false];
+
+        $male = $service->fallbackText(['gender' => 'male'] + $facts);
+        $female = $service->fallbackText(['gender' => 'female'] + $facts);
+
+        $this->assertSame($male, str_replace('تقلقي', 'تقلق', $female), 'only the verb differs');
+        $this->assertSame($service->fallbackText($facts), $service->fallbackText(['gender' => 'unknown'] + $facts), 'a missing gender reads as unknown');
+    }
+
+    public function test_the_model_is_sent_the_gender_and_told_to_use_it(): void
+    {
+        $this->fourteenDays();
+        $this->gender('female');
+        Http::fake(['*' => Http::response($this->reply('نزل وزنك شوي. وأخصائيتك بتتابع معك.'))]);
+
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+
+        Http::assertSent(function (Request $request): bool {
+            $system = $request['messages'][0]['content'];
+            $facts = json_decode($request['messages'][1]['content'], true);
+
+            return $facts['gender'] === 'female'
+                && str_contains($system, 'Palestinian Levantine')
+                && str_contains($system, 'هاد، هيك، كتير')
+                && str_contains($system, 'NO Egyptian forms')
+                && str_contains($system, 'ده، دي، كده، إزاي، عشان كده')
+                && str_contains($system, 'كمّلي')
+                && str_contains($system, 'gender-neutral')
+                && ! str_contains($system, 'Egyptian/Levantine-friendly')
+                && str_contains($system, 'the ONLY numbers allowed are change_kg');
+        });
+    }
+
+    public function test_a_stored_insight_follows_a_change_of_gender(): void
+    {
+        $this->fourteenDays();
+        Http::fake(['*' => Http::sequence()
+            ->push($this->reply('الأولى. وأخصائيتك بتتابع معك.'))
+            ->push($this->reply('الثانية. وأخصائيتك بتتابع معك.'))]);
+
+        $this->getJson($this->url(), $this->nutritionistToken)->assertJsonPath('insight.facts.gender', 'unknown');
+
+        $this->gender('female');
+        $this->getJson($this->url(), $this->nutritionistToken)->assertJsonPath('insight.facts.gender', 'female')->assertJsonPath('insight.text_ar', 'الثانية. وأخصائيتك بتتابع معك.');
+
+        Http::assertSentCount(2);
+    }
+
+    // ---- stored insights from before the rules --------------------------------------------------------------------
+
+    public function test_an_insight_written_under_older_rules_is_regenerated_on_its_next_read(): void
+    {
+        $this->fourteenDays();
+        Http::fake(['*' => Http::sequence()
+            ->push($this->reply('الأولى. وأخصائيتك بتتابع معك.'))
+            ->push($this->reply('نزل وزنك حوالي 1.2 كغ، وهاد طبيعي. وأخصائيتك بتتابع معك.'))]);
+
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+        $this->assertSame(2, (int) WeightInsight::first()->text_version, 'new rows carry the current version');
+
+        // What production holds today: an Egyptian text, written before the version existed.
+        WeightInsight::query()->update(['text_ar' => 'وده كده طبيعي. وأخصائيتك بتتابع معك.', 'text_version' => 1]);
+
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk()
+            ->assertJsonPath('insight.text_ar', 'نزل وزنك حوالي 1.2 كغ، وهاد طبيعي. وأخصائيتك بتتابع معك.');
+
+        Http::assertSentCount(2);
+        $this->assertSame(1, WeightInsight::count());
+        $this->assertSame(2, (int) WeightInsight::first()->text_version);
+    }
+
+    public function test_the_patient_never_gets_an_old_text(): void
+    {
+        $this->fourteenDays();
+        $this->subscriber->forceFill(['show_weight_insight' => true])->save();
+        Http::fake(['*' => Http::sequence()
+            ->push($this->reply('الأولى. وأخصائيتك بتتابع معك.'))
+            ->push($this->reply('الجديدة. وأخصائيتك بتتابع معك.'))]);
+
+        $this->getJson('/api/v1/me/weight-insight', $this->clientToken)->assertOk();
+        WeightInsight::query()->update(['text_ar' => 'وده كده. وأخصائيتك بتتابع معك.', 'text_version' => 1]);
+
+        $this->getJson('/api/v1/me/weight-insight', $this->clientToken)->assertOk()->assertJsonPath('text_ar', 'الجديدة. وأخصائيتك بتتابع معك.');
+    }
+
+    public function test_a_current_insight_is_still_served_from_the_cache(): void
+    {
+        $this->fourteenDays();
+        Http::fake(['*' => Http::response($this->reply('نص. وأخصائيتك بتتابع معك.'))]);
+
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_a_raised_version_invalidates_everything_stored(): void
+    {
+        $this->fourteenDays();
+        Http::fake(['*' => Http::response($this->reply('نص. وأخصائيتك بتتابع معك.'))]);
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+
+        config(['weight_insight.text_version' => 3]);
+        $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
+
+        Http::assertSentCount(2);
+        $this->assertSame(3, (int) WeightInsight::first()->text_version);
+    }
+
+    public function test_the_migration_marks_existing_rows_as_version_one(): void
+    {
+        $this->fourteenDays();
+        \Illuminate\Support\Facades\DB::table('weight_insights')->insert([
+            'subscriber_id' => $this->subscriber->id, 'from_date' => $this->day(14), 'to_date' => $this->day(0), 'facts' => '{}',
+            'text_ar' => 'قديم', 'is_fallback' => true, 'generated_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->assertSame(1, (int) WeightInsight::first()->text_version, 'the column default, for rows from before it');
+    }
+
     // ---- the fallback texts -------------------------------------------------------------------------------------------
 
     public function test_the_fallback_is_chosen_by_the_booleans(): void
@@ -694,13 +969,15 @@ class WeightInsightTest extends TestCase
     {
         $service = app(WeightInsightService::class);
 
-        foreach ([[false, false], [true, false], [false, true]] as [$water, $consistent]) {
-            foreach ([-12.5, -1.2, 0.0, 3.4] as $change) {
-                $facts = ['change_kg' => $change, 'days' => 28, 'likely_water_fluctuation' => $water, 'consistent_with_plan' => $consistent];
-                $text = $service->fallbackText($facts);
+        foreach (['male', 'female', 'unknown'] as $gender) {
+            foreach ([[false, false], [true, false], [false, true]] as [$water, $consistent]) {
+                foreach ([-12.5, -1.2, 0.0, 3.4] as $change) {
+                    $facts = ['change_kg' => $change, 'days' => 28, 'likely_water_fluctuation' => $water, 'consistent_with_plan' => $consistent, 'gender' => $gender];
+                    $text = $service->fallbackText($facts);
 
-                $this->assertSame($text, $service->accepted($text, $facts), "the fallback for {$change} is acceptable as it stands");
-                $this->assertStringEndsWith(config('weight_insight.closing_ar'), $text);
+                    $this->assertSame($text, $service->accepted($text, $facts), "the {$gender} fallback for {$change} is acceptable as it stands");
+                    $this->assertStringEndsWith(config('weight_insight.closing_ar'), $text);
+                }
             }
         }
     }

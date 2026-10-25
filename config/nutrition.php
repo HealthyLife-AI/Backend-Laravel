@@ -111,4 +111,15 @@ return [
 
     'sodium_conditions' => ['hypertension', 'fluid_retention', 'kidney_disease'],
 
+    /*
+    | When a plan may be CALLED low-carb / high-protein / low-fat (the AI plan
+    | summary note, Phase 3 review). Shares of the plan's macro energy, in
+    | percent. PENDING CLINICAL REVIEW. The note is only allowed that label when
+    | its share crosses the line: low_carb below `low_carb_max`, high_protein above
+    | `high_protein_min`, low_fat below `low_fat_max`. No other macro label is
+    | allowed at all.
+    */
+
+    'macro_labels' => ['low_carb_max' => 26, 'high_protein_min' => 30, 'low_fat_max' => 20],
+
 ];

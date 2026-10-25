@@ -38,6 +38,20 @@ return [
     /** Always ends the text; added when the model leaves it out. */
     'closing_ar' => 'وأخصائيتك بتتابع معك.',
 
+    /**
+     * The wording of the fixed texts changes when this number does: an insight stored under an older
+     * version is regenerated on its next read (the old texts may carry wording the rules now refuse).
+     * 2: Palestinian dialect, qualitative figures, addressed by gender.
+     */
+    'text_version' => 2,
+
+    /**
+     * Egyptian forms the Palestinian audience does not use: a reply with any of these as a word
+     * (optionally after و / ف, "وده") is thrown away for the fixed text. Matched exactly, with no other
+     * prefix or suffix, so Levantine words that contain them ("بدي") are left alone.
+     */
+    'dialect_blocklist' => ['ده', 'دي', 'كده', 'إزاي', 'عشان كده'],
+
     /** A reply containing any of these (substring) is rejected. No medical, diagnostic or calorie talk. */
     'blocklist' => ['دواء', 'أدوية', 'ادوية', 'أدويت', 'مرض', 'سكري', 'سكر', 'ضغط', 'تشخيص', 'سعرة', 'سعرات', 'علاج', 'كالوري'],
 
@@ -48,9 +62,21 @@ return [
     | fluctuation first, then consistent with the plan, then neutral.
     */
     'fallback' => [
-        'water_fluctuation' => ':change خلال :days. هذا التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فما تقلق منه. وأخصائيتك بتتابع معك.',
-        'consistent' => ':change خلال :days، وهذا بيمشي مع التزامك بالخطة. كمّل على نفس الطريقة. وأخصائيتك بتتابع معك.',
-        'neutral' => ':change خلال :days. الوزن بيتأثر بأشياء كثيرة غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
+        'water_fluctuation' => [
+            'male' => ':change خلال :days. هاد التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فما تقلق منه. وأخصائيتك بتتابع معك.',
+            'female' => ':change خلال :days. هاد التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فما تقلقي منه. وأخصائيتك بتتابع معك.',
+            'unknown' => ':change خلال :days. هاد التغيّر عادة بيكون من الماء والملح وبيطلع وبينزل من يوم ليوم، فمش مدعاة للقلق. وأخصائيتك بتتابع معك.',
+        ],
+        'consistent' => [
+            'male' => ':change خلال :days، وهاد بيمشي مع التزامك بالخطة. كمّل على نفس الطريقة. وأخصائيتك بتتابع معك.',
+            'female' => ':change خلال :days، وهاد بيمشي مع التزامك بالخطة. كمّلي على نفس الطريقة. وأخصائيتك بتتابع معك.',
+            'unknown' => ':change خلال :days، وهاد بيمشي مع التزامك بالخطة. خلّينا نكمّل على نفس الطريقة. وأخصائيتك بتتابع معك.',
+        ],
+        'neutral' => [
+            'male' => ':change خلال :days. الوزن بيتأثر بأشياء كتير غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
+            'female' => ':change خلال :days. الوزن بيتأثر بأشياء كتير غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
+            'unknown' => ':change خلال :days. الوزن بيتأثر بأشياء كتير غير الأكل، فالمهم الاتجاه على المدى الطويل. وأخصائيتك بتتابع معك.',
+        ],
     ],
 
     'change_phrase' => [
