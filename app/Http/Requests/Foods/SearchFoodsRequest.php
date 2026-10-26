@@ -20,6 +20,9 @@ class SearchFoodsRequest extends FormRequest
         return [
             'q' => ['required', 'string', 'min:2', 'max:255'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            // Phase 4, B4: the plan designer's chips. Only foods a nutritionist has tagged can match.
+            'economical' => ['sometimes', 'boolean'],
+            'quick_prep' => ['sometimes', 'boolean'],
         ];
     }
 }

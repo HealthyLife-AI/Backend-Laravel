@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * defense-in-depth the rest of this codebase applies to every
  * route-bound record.
  */
-#[Fillable(['subscriber_id', 'quick_request_id', 'checkin_id', 'type', 'severity', 'message', 'is_read', 'resolved_at'])]
+#[Fillable(['subscriber_id', 'quick_request_id', 'checkin_id', 'patient_report_id', 'type', 'severity', 'message', 'is_read', 'resolved_at'])]
 class Alert extends Model
 {
     public const TYPE_NO_LOG = 'no_log';
@@ -36,9 +36,12 @@ class Alert extends Model
     /** Phase 2: a submitted check-in whose answers need the nutritionist's attention. */
     public const TYPE_CHECKIN_FLAG = 'checkin_flag';
 
+    /** Phase 4, A6: a patient uploaded a medical report. */
+    public const TYPE_REPORT_UPLOADED = 'report_uploaded';
+
     public const TYPES = [
         self::TYPE_NO_LOG, self::TYPE_CALORIES_EXCEEDED, self::TYPE_MILESTONE,
-        self::TYPE_MEASUREMENT_OVERDUE, self::TYPE_QUICK_REQUEST, self::TYPE_CHECKIN_FLAG,
+        self::TYPE_MEASUREMENT_OVERDUE, self::TYPE_QUICK_REQUEST, self::TYPE_CHECKIN_FLAG, self::TYPE_REPORT_UPLOADED,
     ];
 
     public const SEVERITY_NORMAL = 'normal';

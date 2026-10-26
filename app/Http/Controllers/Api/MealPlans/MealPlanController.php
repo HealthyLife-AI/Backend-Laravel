@@ -304,9 +304,15 @@ class MealPlanController extends Controller
         // on. Same bounds as the plan requests, for the same reason.
         $approved = request()->validate([
             'approved_calories' => ['sometimes', 'nullable', 'integer', 'between:800,6000'],
-        ])['approved_calories'] ?? null;
+            // Phase 4, B6: soft cost / preparation preferences for the draft. Off unless sent.
+            'prefer_economical' => ['sometimes', 'boolean'],
+            'prefer_easy_prep' => ['sometimes', 'boolean'],
+        ]);
 
-        $plan = $this->aiDraft->generateDraft($subscriber, request()->user(), $approved);
+        $plan = $this->aiDraft->generateDraft($subscriber, request()->user(), $approved['approved_calories'] ?? null, [
+            'prefer_economical' => (bool) ($approved['prefer_economical'] ?? false),
+            'prefer_easy_prep' => (bool) ($approved['prefer_easy_prep'] ?? false),
+        ]);
 
         // An allergy the patient proposed is not used until approved: say so before the plan is approved.
         $warnings = app(HealthRecordService::class)->hasPendingAllergyProposal($subscriber) ? ['pending_allergy_proposal'] : [];

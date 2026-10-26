@@ -47,6 +47,10 @@ class AdminFoodController extends Controller
             'submitted_by' => $request->user()->id,
         ]);
 
+        if ($food->cost_tier !== null || $food->prep_level !== null) {
+            $food->forceFill(['tags_reviewed_at' => now(), 'tags_reviewed_by' => $request->user()->id])->save();
+        }
+
         return (new FoodResource($food))->response()->setStatusCode(201);
     }
 
@@ -62,7 +66,7 @@ class AdminFoodController extends Controller
 
         // Only nutrition values affect plans and logs; re-tagging (allergens,
         // shopping section) needs no in-use confirmation.
-        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section'])->all())->isDirty();
+        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section', 'cost_tier', 'prep_level'])->all())->isDirty();
 
         if ($changesValues && ($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
             return response()->json([
@@ -72,7 +76,14 @@ class AdminFoodController extends Controller
             ], 409);
         }
 
-        $food->update($request->validated());
+        $food->fill($request->validated());
+
+        // Phase 4, B3: a tag changed by hand is a reviewed tag: who and when.
+        if ($food->isDirty(['cost_tier', 'prep_level'])) {
+            $food->forceFill(['tags_reviewed_at' => now(), 'tags_reviewed_by' => $request->user()->id]);
+        }
+
+        $food->save();
 
         return new FoodResource($food);
     }

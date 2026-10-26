@@ -49,7 +49,12 @@ use App\Http\Controllers\Api\Posts\MyPostController;
 use App\Http\Controllers\Api\Posts\PostController;
 use App\Http\Controllers\Api\Progress\OwnProgressController;
 use App\Http\Controllers\Api\Progress\WeightInsightController;
+use App\Http\Controllers\Api\Reports\ClientReportController;
+use App\Http\Controllers\Api\Reports\MyReportController;
 use App\Http\Controllers\Api\Today\TodayController;
+use App\Http\Middleware\EnsureMedicalReportsEnabled;
+use App\Http\Controllers\Api\Wellbeing\ClientWellbeingController;
+use App\Http\Controllers\Api\Wellbeing\MyWellbeingController;
 use App\Http\Controllers\Api\Progress\ProgressController;
 use App\Http\Controllers\Api\System\AiStatusController;
 use App\Http\Controllers\Api\System\FcmStatusController;
@@ -181,6 +186,16 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('clients/{subscriber}/weight-insight', [WeightInsightController::class, 'show'])->name('clients.weight-insight.show');
         Route::put('clients/{subscriber}/weight-insight-visibility', [WeightInsightController::class, 'visibility'])->middleware('follow-up')->name('clients.weight-insight.visibility');
         Route::post('clients/{subscriber}/weight-insight/regenerate', [WeightInsightController::class, 'regenerate'])->middleware(['follow-up', 'throttle:weight-insight'])->name('clients.weight-insight.regenerate');
+
+        // Phase 4, A6: a patient's medical reports, for their own nutritionist (404 while the feature is off).
+        Route::middleware(EnsureMedicalReportsEnabled::class)->group(function () {
+            Route::get('clients/{subscriber}/reports', [ClientReportController::class, 'index'])->name('clients.reports.index');
+            Route::get('clients/{subscriber}/reports/{report}/file', [ClientReportController::class, 'file'])->whereNumber('report')->middleware('throttle:report-stream')->name('clients.reports.file');
+            Route::patch('clients/{subscriber}/reports/{report}', [ClientReportController::class, 'update'])->whereNumber('report')->middleware('follow-up')->name('clients.reports.update');
+        });
+
+        // Phase 4, C3: the patient's sleep / stress / mood, and its 14-day summary.
+        Route::get('clients/{subscriber}/wellbeing', [ClientWellbeingController::class, 'show'])->name('clients.wellbeing.show');
 
         // Phase 3, B4: what the patient sees this morning (read-only preview).
         Route::get('clients/{subscriber}/today', [TodayController::class, 'forClient'])->name('clients.today');
@@ -368,6 +383,19 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me/posts/{id}', [MyPostController::class, 'show'])->whereNumber('id')->name('me.posts.show');
         Route::post('me/posts/{id}/read', [MyPostController::class, 'read'])->whereNumber('id')->name('me.posts.read');
         Route::get('me/today', [TodayController::class, 'mine'])->name('me.today');
+
+        // Phase 4, A5: medical reports (404 while the feature is off).
+        Route::middleware(EnsureMedicalReportsEnabled::class)->group(function () {
+            Route::get('me/reports', [MyReportController::class, 'index'])->name('me.reports.index');
+            Route::post('me/reports', [MyReportController::class, 'store'])->name('me.reports.store');
+            Route::get('me/reports/{id}/file', [MyReportController::class, 'file'])->whereNumber('id')->middleware('throttle:report-stream')->name('me.reports.file');
+            Route::delete('me/reports/{id}', [MyReportController::class, 'destroy'])->whereNumber('id')->name('me.reports.destroy');
+        });
+
+        // Phase 4, C2: daily sleep / stress / mood.
+        Route::get('me/wellbeing', [MyWellbeingController::class, 'index'])->name('me.wellbeing.index');
+        Route::put('me/wellbeing/{date}', [MyWellbeingController::class, 'upsert'])->where('date', '\d{4}-\d{2}-\d{2}')->name('me.wellbeing.upsert');
+        Route::delete('me/wellbeing/{date}', [MyWellbeingController::class, 'destroy'])->where('date', '\d{4}-\d{2}-\d{2}')->name('me.wellbeing.destroy');
         Route::get('me/weight-insight', [WeightInsightController::class, 'mine'])->name('me.weight-insight.show');
 
         // Phase 2, B2: the patient's own likes and dislikes.

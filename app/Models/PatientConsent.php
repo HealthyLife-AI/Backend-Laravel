@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * policy URL); this is the record of who agreed to which version, when,
  * and from where.
  */
-#[Fillable(['user_id', 'version', 'accepted_at', 'ip_address', 'user_agent'])]
+#[Fillable(['user_id', 'type', 'version', 'accepted_at', 'ip_address', 'user_agent'])]
 class PatientConsent extends Model
 {
     protected function casts(): array

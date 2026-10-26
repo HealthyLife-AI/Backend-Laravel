@@ -8,6 +8,7 @@ use App\Models\Subscriber;
 use App\Models\WeightInsight;
 use App\Services\Adherence\AdherenceService;
 use App\Services\Ai\OpenAiCompatibleClient;
+use App\Services\Wellbeing\WellbeingService;
 use App\Support\ArabicCount;
 use App\Support\ArabicText;
 use App\Support\ClinicDay;
@@ -93,6 +94,8 @@ class WeightInsightService
                 'likely_water_fluctuation' => $water,
                 'consistent_with_plan' => $this->directionMatchesGoal($subscriber, $change)
                     && $adherencePercent !== null && $adherencePercent >= (float) config('weight_insight.consistent_adherence_percent'),
+                // Phase 4, C4: three or more short nights in the window. A yes / no only: the model never sees hours or nights.
+                'short_sleep' => app(WellbeingService::class)->shortNights($subscriber, $start, $end) >= (int) config('weight_insight.short_sleep_nights'),
                 // The only personal detail the model gets: the grammatical gender to address the patient in.
                 'gender' => $this->gender($subscriber),
             ],
@@ -403,7 +406,8 @@ class WeightInsightService
             You are given computed facts as JSON. Use ONLY these facts. Do not compute, estimate or add anything.
             Fields: change_kg (negative = lost weight), days (the period), adherence_percent (share of logged meals that were on the plan),
             logged_days, off_plan_meals, high_sodium_logs, checkins (what the patient reported: appetite, sleep, main barriers; may be null),
-            likely_water_fluctuation, consistent_with_plan, gender (the patient's grammatical gender: male, female or unknown).
+            likely_water_fluctuation, consistent_with_plan, short_sleep (true when the patient slept little on several nights; you may say sleep has been short, in words only: never hours or a number of nights),
+            gender (the patient's grammatical gender: male, female or unknown).
 
             Reply as JSON: {"text": "..."}
 

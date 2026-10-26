@@ -46,7 +46,7 @@ class ConsentService
 
     public function hasAcceptedCurrent(User $user): bool
     {
-        return PatientConsent::query()->where('user_id', $user->id)->where('version', $this->currentVersion())->exists();
+        return PatientConsent::query()->where('user_id', $user->id)->where('type', 'privacy')->where('version', $this->currentVersion())->exists();
     }
 
     /** The patient's most recent acceptance, of any version. */
@@ -54,6 +54,7 @@ class ConsentService
     {
         return PatientConsent::query()
             ->where('user_id', $user->id)
+            ->where('type', 'privacy')
             ->orderByDesc('accepted_at')
             ->orderByDesc('id')
             ->first();
@@ -97,6 +98,43 @@ class ConsentService
         ];
     }
 
+    /** Phase 4, A4: has the patient given the consent for uploading medical reports (current version)? */
+    public function hasMedicalReportsConsent(User $user): bool
+    {
+        return PatientConsent::query()->where('user_id', $user->id)->where('type', 'medical_reports')
+            ->where('version', (string) config('medical_reports.consent.version'))->exists();
+    }
+
+    /** @return array<string, mixed> */
+    public function medicalReportsStatus(User $user): array
+    {
+        $latest = PatientConsent::query()->where('user_id', $user->id)->where('type', 'medical_reports')
+            ->orderByDesc('accepted_at')->orderByDesc('id')->first();
+
+        return [
+            'type' => 'medical_reports',
+            'required' => ! $this->hasMedicalReportsConsent($user),
+            'current_version' => (string) config('medical_reports.consent.version'),
+            'accepted_version' => $latest?->version,
+            'accepted_at' => $latest?->accepted_at?->toIso8601String(),
+            'text_ar' => (string) config('medical_reports.consent.text_ar'),
+        ];
+    }
+
+    public function acceptMedicalReports(User $user, Request $request, ?string $version = null): PatientConsent
+    {
+        $current = (string) config('medical_reports.consent.version');
+
+        if ($version !== null && $version !== $current) {
+            throw new ApiCodeException('The consent text has changed. Fetch the current version and ask again.', 'consent_version_mismatch', 409, ['current_version' => $current]);
+        }
+
+        return PatientConsent::query()->firstOrCreate(
+            ['user_id' => $user->id, 'version' => $current, 'type' => 'medical_reports'],
+            ['accepted_at' => now(), 'ip_address' => $request->ip(), 'user_agent' => mb_substr((string) $request->userAgent(), 0, 512) ?: null],
+        );
+    }
+
     /**
      * Records the patient's acceptance of the current version, with the
      * IP and user agent it came from. Idempotent per version: a second
@@ -119,7 +157,7 @@ class ConsentService
         }
 
         return PatientConsent::query()->firstOrCreate(
-            ['user_id' => $user->id, 'version' => $current],
+            ['user_id' => $user->id, 'version' => $current, 'type' => 'privacy'],
             [
                 'accepted_at' => now(),
                 'ip_address' => $request->ip(),

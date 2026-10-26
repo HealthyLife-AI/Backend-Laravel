@@ -47,6 +47,16 @@ return [
             'report' => false,
         ],
 
+        // Phase 4, A: medical reports. PRIVATE: no url, no visibility, never linked
+        // from public/. Point REPORTS_ROOT at a persistent mount in production.
+        'reports' => [
+            'driver' => 'local',
+            'root' => env('REPORTS_ROOT', storage_path('app/private/reports')),
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

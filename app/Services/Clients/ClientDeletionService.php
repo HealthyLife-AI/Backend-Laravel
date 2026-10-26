@@ -27,6 +27,9 @@ class ClientDeletionService
 {
     public function delete(Subscriber $subscriber, bool $noticeForNutritionist = false): void
     {
+        // Phase 4, A: the encrypted report files go first and for good; the rows cascade away with the patient.
+        app(\App\Services\Reports\ReportService::class)->purgeAllFor($subscriber);
+
         DB::transaction(function () use ($subscriber, $noticeForNutritionist) {
             $user = $subscriber->user()->first();
 

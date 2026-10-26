@@ -42,8 +42,15 @@ return [
      * The wording of the fixed texts changes when this number does: an insight stored under an older
      * version is regenerated on its next read (the old texts may carry wording the rules now refuse).
      * 2: Palestinian dialect, qualitative figures, addressed by gender.
+     * 3: the short_sleep fact (Phase 4).
      */
-    'text_version' => 2,
+    'text_version' => 3,
+
+    /** A night under this many hours of sleep is a short night. */
+    'short_sleep_hours' => 6,
+
+    /** This many short nights in the window set the `short_sleep` fact (qualitative in the text, never a number). */
+    'short_sleep_nights' => 3,
 
     /**
      * Egyptian forms the Palestinian audience does not use: a reply with any of these as a word

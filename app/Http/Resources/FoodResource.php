@@ -37,6 +37,9 @@ class FoodResource extends JsonResource
                 'allergens_verified' => $this->allergens !== null,
             ]),
             'shopping_section' => $this->shopping_section ?? 'other',
+            // Phase 4, B: null until a nutritionist has reviewed the food; the app then shows no badge.
+            'cost_tier' => $this->cost_tier,
+            'prep_level' => $this->prep_level,
         ];
     }
 }

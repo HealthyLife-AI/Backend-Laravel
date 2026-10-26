@@ -22,6 +22,8 @@ class FoodController extends Controller
         $foods = Food::query()
             ->approved()
             ->search(trim($request->string('q')))
+            ->when($request->boolean('economical'), fn ($q) => $q->where('cost_tier', 'economical'))
+            ->when($request->boolean('quick_prep'), fn ($q) => $q->whereIn('prep_level', ['no_cook', 'easy']))
             ->paginate($request->integer('per_page', 20));
 
         return FoodResource::collection($foods);
