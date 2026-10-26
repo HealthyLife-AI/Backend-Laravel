@@ -392,7 +392,7 @@ class WeightInsightTest extends TestCase
 
             return count($messages) === 2
                 && $messages[0]['role'] === 'system' && $messages[1]['role'] === 'user'
-                && array_keys($facts) === ['change_kg', 'days', 'adherence_percent', 'logged_days', 'off_plan_meals', 'high_sodium_logs', 'checkins', 'likely_water_fluctuation', 'consistent_with_plan', 'gender']
+                && array_keys($facts) === ['change_kg', 'days', 'adherence_percent', 'logged_days', 'off_plan_meals', 'high_sodium_logs', 'checkins', 'likely_water_fluctuation', 'consistent_with_plan', 'short_sleep', 'gender']
                 && $facts['change_kg'] === -1.2 && $facts['days'] === 14;
         });
     }
@@ -861,7 +861,7 @@ class WeightInsightTest extends TestCase
             ->push($this->reply('نزل وزنك حوالي 1.2 كغ، وهاد طبيعي. وأخصائيتك بتتابع معك.'))]);
 
         $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
-        $this->assertSame(2, (int) WeightInsight::first()->text_version, 'new rows carry the current version');
+        $this->assertSame(3, (int) WeightInsight::first()->text_version, 'new rows carry the current version');
 
         // What production holds today: an Egyptian text, written before the version existed.
         WeightInsight::query()->update(['text_ar' => 'وده كده طبيعي. وأخصائيتك بتتابع معك.', 'text_version' => 1]);
@@ -871,7 +871,7 @@ class WeightInsightTest extends TestCase
 
         Http::assertSentCount(2);
         $this->assertSame(1, WeightInsight::count());
-        $this->assertSame(2, (int) WeightInsight::first()->text_version);
+        $this->assertSame(3, (int) WeightInsight::first()->text_version);
     }
 
     public function test_the_patient_never_gets_an_old_text(): void
@@ -905,11 +905,11 @@ class WeightInsightTest extends TestCase
         Http::fake(['*' => Http::response($this->reply('نص. وأخصائيتك بتتابع معك.'))]);
         $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
 
-        config(['weight_insight.text_version' => 3]);
+        config(['weight_insight.text_version' => 4]);
         $this->getJson($this->url(), $this->nutritionistToken)->assertOk();
 
         Http::assertSentCount(2);
-        $this->assertSame(3, (int) WeightInsight::first()->text_version);
+        $this->assertSame(4, (int) WeightInsight::first()->text_version);
     }
 
     public function test_the_migration_marks_existing_rows_as_version_one(): void

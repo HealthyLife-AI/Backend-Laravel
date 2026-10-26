@@ -517,3 +517,25 @@ review first:
 Every other migration in `database/migrations/` is a plain additive
 `up()`/`down()` pair and rolls back safely. Take a backup (above) before
 rolling back past any of the three named here regardless.
+
+
+## Medical reports storage (Phase 4)
+
+The feature is OFF until `MEDICAL_REPORTS_ENABLED=true`. Uploaded files are encrypted and written to the private `reports` disk (`REPORTS_ROOT`, default `storage/app/private/reports`). A Dokku container is ephemeral: without a persistent mount every deploy deletes every report.
+
+One-time setup on the Dokku host (app name `healthylife-api` as an example):
+
+```
+sudo mkdir -p /var/lib/dokku/data/storage/healthylife-api/reports
+sudo chown -R 1000:1000 /var/lib/dokku/data/storage/healthylife-api   # the app user of the nixpacks image
+dokku storage:mount healthylife-api /var/lib/dokku/data/storage/healthylife-api/reports:/app/storage/app/private/reports
+dokku config:set healthylife-api MEDICAL_REPORTS_ENABLED=true
+dokku ps:rebuild healthylife-api
+```
+
+Also:
+- Body size: reports are up to 10 MB. Set `dokku nginx:set healthylife-api client-max-body-size 12m` (the default is 1m, which answers 413 before Laravel sees the file) and `dokku proxy:build-config healthylife-api`.
+- Back up the mounted directory AND `APP_KEY`: the files are encrypted with it, so a backup without the key is unreadable and rotating the key makes existing files unreadable.
+- Alternative: point `MEDICAL_REPORTS_DISK` at an S3-compatible disk instead of mounting (a private bucket, no public ACL).
+- The daily job `reports:purge` (03:30 clinic time, in the schedule) removes files of reports a patient deleted more than 30 days ago; the Dokku cron entry already runs `schedule:run`.
+- Verify after a deploy: upload a test report, run `dokku run healthylife-api ls storage/app/private/reports`, redeploy, and open the report again.

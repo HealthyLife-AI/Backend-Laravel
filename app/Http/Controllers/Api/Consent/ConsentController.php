@@ -18,8 +18,14 @@ class ConsentController extends Controller
 {
     public function __construct(private readonly ConsentService $consent) {}
 
-    public function show(): JsonResponse
+    public function show(Request $request): JsonResponse
     {
+        if ($request->query('type') === 'medical_reports') {
+            abort_unless(config('medical_reports.enabled'), 404);
+
+            return response()->json($this->consent->medicalReportsStatus(Auth::user()));
+        }
+
         return response()->json($this->consent->status(Auth::user()));
     }
 
@@ -30,8 +36,17 @@ class ConsentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate(['version' => ['nullable', 'string', 'max:64']]);
+        $data = $request->validate(['version' => ['nullable', 'string', 'max:64'], 'type' => ['nullable', 'in:privacy,medical_reports']]);
         $user = Auth::user();
+
+        // Phase 4, A4: the consent for uploading medical reports (only while the feature is on).
+        if (($data['type'] ?? 'privacy') === 'medical_reports') {
+            abort_unless(config('medical_reports.enabled'), 404);
+
+            $consent = $this->consent->acceptMedicalReports($user, $request, $data['version'] ?? null);
+
+            return response()->json($this->consent->medicalReportsStatus($user), $consent->wasRecentlyCreated ? 201 : 200);
+        }
 
         $consent = $this->consent->accept($user, $request, $data['version'] ?? null);
 

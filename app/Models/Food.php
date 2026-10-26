@@ -25,6 +25,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'carbs_g_per_100g',
     'fat_g_per_100g',
     'fiber_g_per_100g',
+    'cost_tier',
+    'prep_level',
 ])]
 class Food extends Model
 {
@@ -34,6 +36,12 @@ class Food extends Model
     // "sheep") and would otherwise guess the table name as `food`, not
     // `foods` — override explicitly rather than rely on the convention.
     protected $table = 'foods';
+
+    /** Phase 4, B: how costly a food is. Null = not reviewed (shows nothing). */
+    public const COST_TIERS = ['economical', 'standard', 'premium'];
+
+    /** Phase 4, B: how much preparation it needs. Null = not reviewed. */
+    public const PREP_LEVELS = ['no_cook', 'easy', 'normal'];
 
     /** Keeps the search column in step with every Eloquent write of `name_ar`. */
     protected static function booted(): void
@@ -60,6 +68,7 @@ class Food extends Model
             'allergens' => 'array',
             'sodium_mg_per_100g' => 'decimal:1',
             'nutrition_reviewed_at' => 'datetime',
+            'tags_reviewed_at' => 'datetime',
             'calories_per_100g' => 'decimal:1',
             'protein_g_per_100g' => 'decimal:1',
             'carbs_g_per_100g' => 'decimal:1',

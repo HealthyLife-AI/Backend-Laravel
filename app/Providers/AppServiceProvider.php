@@ -129,6 +129,11 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($request->user()->id);
         });
 
+        // Phase 4, A7: file streams per user.
+        RateLimiter::for('report-stream', function (Request $request) {
+            return Limit::perMinute((int) config('medical_reports.streams_per_minute'))->by($request->user()->id);
+        });
+
         // Phase 3, C: regenerating a weight insight is one LLM call, like a summary suggestion; its own counter.
         RateLimiter::for('weight-insight', function (Request $request) {
             return Limit::perMinute(5)->by($request->user()->id);

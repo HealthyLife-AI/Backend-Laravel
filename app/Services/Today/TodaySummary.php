@@ -6,9 +6,11 @@ use App\Models\Appointment;
 use App\Models\MealPlan;
 use App\Models\PatientCheckin;
 use App\Models\PatientQuickRequest;
+use App\Models\PatientWellbeingLog;
 use App\Models\Subscriber;
 use App\Models\SubscriberMeasurementSchedule;
 use App\Services\Posts\PostService;
+use App\Services\Wellbeing\WellbeingService;
 use App\Support\ArabicCount;
 use App\Support\ClinicDay;
 use Carbon\CarbonImmutable;
@@ -38,7 +40,7 @@ class TodaySummary
         'dinner' => 'العشاء',
     ];
 
-    public function __construct(private readonly PostService $posts) {}
+    public function __construct(private readonly PostService $posts, private readonly WellbeingService $wellbeing) {}
 
     /**
      * @return array{date: string, meals: list<array{name: string, name_ar: string, window: string}>, activities: list<array{title: string, duration_minutes: int, times_per_day: int}>, reminders: list<array{type: string, text_ar: string}>, motivation_ar?: string}
@@ -146,6 +148,12 @@ class TodaySummary
         $unread = $this->posts->unreadCount($subscriber);
         if ($unread > 0) {
             $reminders[] = ['type' => 'posts', 'text_ar' => $this->unreadPostsText($unread)];
+        }
+
+        // Phase 4, C5: "how did you sleep?", one reminder, until last night is logged. Only for a
+        // patient who has used the log in the last 14 days: new users are not nagged.
+        if ($this->wellbeing->find($subscriber, $today) === null && $this->wellbeing->loggedWithin($subscriber, PatientWellbeingLog::SUMMARY_DAYS, $date)) {
+            $reminders[] = ['type' => 'wellbeing', 'text_ar' => 'كيف كان نومك مبارح؟'];
         }
 
         return $reminders;

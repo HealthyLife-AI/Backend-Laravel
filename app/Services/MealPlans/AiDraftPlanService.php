@@ -102,7 +102,7 @@ class AiDraftPlanService
      * the number she is deciding on, not the one on the stored plan.
      * Without it, the effective target (Item C).
      */
-    public function generateDraft(Subscriber $subscriber, User $creator, ?int $approvedCalories = null): MealPlan
+    public function generateDraft(Subscriber $subscriber, User $creator, ?int $approvedCalories = null, array $options = []): MealPlan
     {
         $profile = $subscriber->healthProfile;
 
@@ -130,17 +130,23 @@ class AiDraftPlanService
         $pool = $safeFoods->reject(fn (Food $food) => in_array($food->id, $dislikedIds, true));
         $safeFoods = $pool->count() >= self::MIN_FOODS_AFTER_DISLIKES ? $pool : $safeFoods;
 
+        // Phase 4, B6: soft cost / preparation preferences, only when the nutritionist ticked them.
+        $softTags = [
+            'economical' => (bool) ($options['prefer_economical'] ?? false),
+            'easy_prep' => (bool) ($options['prefer_easy_prep'] ?? false),
+        ];
+
         $meals = null;
 
         if ($this->llm->isConfigured()) {
-            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups, $likedNames);
+            $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups, $likedNames, $softTags);
         } else {
             Log::info('AI draft: no provider configured, using rule-based generation.', ['reason' => 'not_configured']);
         }
 
         $isFallback = $meals === null;
         if ($isFallback) {
-            $meals = $this->generateRuleBasedMeals($safeFoods, $dailyCalories);
+            $meals = $this->generateRuleBasedMeals($this->tagPreferred($safeFoods, $softTags), $dailyCalories);
         }
 
         // The draft carries the target it was actually built to, so the
@@ -164,13 +170,13 @@ class AiDraftPlanService
      *
      * @return array<int, array<string, mixed>>|null
      */
-    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = []): ?array
+    private function tryGenerateWithLlm(Collection $safeFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = [], array $softTags = []): ?array
     {
-        $candidates = $this->menuFor($safeFoods);
+        $candidates = $this->menuFor($safeFoods, $softTags);
 
         $messages = [
             ['role' => 'system', 'content' => $this->systemPrompt()],
-            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups, $foodNames)],
+            ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups, $foodNames, $softTags)],
         ];
 
         // One retry for a passing hiccup, so a single click doesn't fall back:
@@ -329,6 +335,7 @@ class AiDraftPlanService
         - Never choose a food that contains or derives from anything in must_avoid_allergies (rule 6).
         - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
         - client_profile.liked_foods / disliked_foods are SOFT preferences, by name: prefer a liked food when it fits, and do not choose a disliked one when another food fits as well. They never override an allergy, the calorie targets or the rules above.
+        - "soft_constraints" (when present) are SOFT preferences too. prefer_economical_foods: prefer foods whose cost_tier is "economical" over "premium". prefer_no_cook_or_easy_prep_foods: prefer foods whose prep_level is "no_cook" or "easy" over "normal". A null tag means not reviewed: neither prefer nor avoid it. Never at the cost of an allergy, the calorie targets or the rules above.
         PROMPT;
     }
 
@@ -353,6 +360,31 @@ class AiDraftPlanService
     }
 
     /**
+     * Phase 4, B6: with a cost / preparation preference ticked, the foods that
+     * match it come first (stable: the order is otherwise kept), so they make it
+     * into the menu the model is shown and the rule-based pool. Nothing is removed.
+     *
+     * @param  Collection<int, Food>  $foods
+     * @param  array{economical?: bool, easy_prep?: bool}  $softTags
+     * @return Collection<int, Food>
+     */
+    private function tagPreferred(Collection $foods, array $softTags): Collection
+    {
+        if (! ($softTags['economical'] ?? false) && ! ($softTags['easy_prep'] ?? false)) {
+            return $foods;
+        }
+
+        return $foods->values()->sortBy(fn (Food $food, int $i) => [$this->tagScore($food, $softTags), $i])->values();
+    }
+
+    /** 0 = matches every ticked preference ... 2 = matches none; always 0 with nothing ticked. */
+    private function tagScore(Food $food, array $softTags): int
+    {
+        return (($softTags['economical'] ?? false) && $food->cost_tier !== 'economical' ? 1 : 0)
+            + (($softTags['easy_prep'] ?? false) && ! in_array($food->prep_level, ['no_cook', 'easy'], true) ? 1 : 0);
+    }
+
+    /**
      * Which safe foods the model is shown, best first: the curated Arabic
      * dishes, then foods the admin or a nutritionist added, then catalog foods
      * that have an Arabic name (the common ingredients), then the rest. The
@@ -360,10 +392,12 @@ class AiDraftPlanService
      *
      * @return Collection<int, Food>
      */
-    private function menuFor(Collection $safeFoods): Collection
+    private function menuFor(Collection $safeFoods, array $softTags = []): Collection
     {
         return $safeFoods
             ->sortBy(fn (Food $food) => [
+                // Phase 4, B6: a ticked cost / preparation preference decides who makes the menu at all.
+                $this->tagScore($food, $softTags),
                 match (true) {
                     $food->seed_key !== null => 0,
                     $food->source !== 'usda' => 1,
@@ -377,17 +411,21 @@ class AiDraftPlanService
     }
 
     /** @param  array{likes?: list<string>, dislikes?: list<string>}  $foodNames  Arabic names only */
-    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = []): string
+    private function userPrompt(Collection $candidateFoods, int $dailyCalories, HealthProfile $profile, ?string $goal, array $groups = [], array $foodNames = [], array $softTags = []): string
     {
+        // Phase 4, B6: a tag column only for a preference that was ticked, so nothing else new reaches the model.
+        $withCost = (bool) ($softTags['economical'] ?? false);
+        $withPrep = (bool) ($softTags['easy_prep'] ?? false);
+
         // Compact rows, one array per food, in the order of food_columns.
-        $foods = $candidateFoods->map(fn (Food $food) => [
+        $foods = $candidateFoods->map(fn (Food $food) => array_merge([
             $food->id,
             $food->name_en ?? $food->name_ar,
             round((float) $food->calories_per_100g),
             round((float) $food->protein_g_per_100g, 1),
             round((float) $food->carbs_g_per_100g, 1),
             round((float) $food->fat_g_per_100g, 1),
-        ])->values()->all();
+        ], $withCost ? [$food->cost_tier] : [], $withPrep ? [$food->prep_level] : []))->values()->all();
 
         $mealTargets = [];
         foreach (self::MEAL_CALORIE_SHARE as $mealName => $share) {
@@ -421,9 +459,17 @@ class AiDraftPlanService
         $payload = [
             'daily_calorie_target' => $dailyCalories,
             'meal_calorie_targets' => $mealTargets,
-            'food_columns' => ['id', 'name', 'kcal_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g'],
+            'food_columns' => array_merge(['id', 'name', 'kcal_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g'], $withCost ? ['cost_tier'] : [], $withPrep ? ['prep_level'] : []),
             'available_foods' => $foods,
         ];
+
+        if ($withCost || $withPrep) {
+            // SOFT: the system prompt says so; null in a tag column means "not reviewed".
+            $payload = ['soft_constraints' => array_filter([
+                'prefer_economical_foods' => $withCost ?: null,
+                'prefer_no_cook_or_easy_prep_foods' => $withPrep ?: null,
+            ])] + $payload;
+        }
 
         if ($clientProfile !== []) {
             $payload = ['client_profile' => $clientProfile] + $payload;

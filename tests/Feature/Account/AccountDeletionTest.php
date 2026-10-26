@@ -100,6 +100,12 @@ class AccountDeletionTest extends TestCase
         DB::table('nutritionist_post_targets')->insert(['post_id' => $postId, 'subscriber_id' => $subscriber->id]);
         DB::table('nutritionist_post_reads')->insert(['post_id' => $postId, 'subscriber_id' => $subscriber->id, 'read_at' => now()]);
         DB::table('weight_insights')->insert(['subscriber_id' => $subscriber->id, 'from_date' => now()->subDays(10)->toDateString(), 'to_date' => now()->toDateString(), 'facts' => '{}', 'text_ar' => 'x', 'is_fallback' => true, 'generated_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+        config(['medical_reports.enabled' => true, 'medical_reports.disk' => 'reports']);
+        \Illuminate\Support\Facades\Storage::fake('reports');
+        \Illuminate\Support\Facades\Storage::disk('reports')->put('purge-me.enc', 'encrypted-bytes');
+        $reportId = DB::table('patient_reports')->insertGetId(['subscriber_id' => $subscriber->id, 'uploaded_by' => $subscriber->user_id, 'category' => 'lab_test', 'title' => 't', 'mime' => 'application/pdf', 'size_bytes' => 10, 'path' => \Illuminate\Support\Facades\Crypt::encryptString('purge-me.enc'), 'sha256' => str_repeat('a', 64), 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('report_access_logs')->insert(['report_id' => $reportId, 'user_id' => $subscriber->user_id, 'role' => 'client', 'accessed_at' => now()]);
+        DB::table('patient_wellbeing_logs')->insert(['subscriber_id' => $subscriber->id, 'log_date' => now()->toDateString(), 'mood' => 'ok', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('plan_activities')->insert(['meal_plan_id' => $planId, 'title' => 'walk', 'duration_minutes' => 30, 'times_per_day' => 1, 'created_at' => now(), 'updated_at' => now()]);
         DB::table('subscriber_measurement_schedules')->insert(['subscriber_id' => $subscriber->id, 'interval_days' => 14, 'next_due_on' => now()->addDays(14)->toDateString(), 'created_at' => now(), 'updated_at' => now()]);
         DB::table('patient_quick_requests')->insert(['subscriber_id' => $subscriber->id, 'reason' => 'craving', 'status' => 'open', 'created_at' => now(), 'updated_at' => now()]);
@@ -214,7 +220,7 @@ class AccountDeletionTest extends TestCase
             'meals', 'meal_items', 'nutritionist_profiles', 'foods', 'patient_deletion_notices', 'permissions', 'roles', 'role_has_permissions',
             'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations',
             'follow_up_reviews', 'follow_up_tasks', 'patient_notifications', 'notification_preferences',
-            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests', 'plan_activities', 'subscriber_checkin_settings', 'patient_checkins', 'patient_food_preferences', 'nutritionist_post_targets', 'nutritionist_post_reads', 'weight_insights'];
+            'patient_goals', 'patient_medications', 'patient_allergies', 'profile_proposals', 'appointments', 'appointment_holds', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests', 'plan_activities', 'subscriber_checkin_settings', 'patient_checkins', 'patient_food_preferences', 'nutritionist_post_targets', 'nutritionist_post_reads', 'weight_insights', 'patient_reports', 'report_access_logs', 'patient_wellbeing_logs'];
         foreach (Schema::getTables() as $table) {
             $name = $table['name'];
             $columns = Schema::getColumnListing($name);
@@ -223,8 +229,10 @@ class AccountDeletionTest extends TestCase
             }
         }
 
+        $this->assertFalse(\Illuminate\Support\Facades\Storage::disk('reports')->exists('purge-me.enc'), 'the report file is purged with the account');
+        $this->assertSame(1, DB::table('report_access_logs')->count(), 'only the other patient log is left');
         $this->assertSame(0, DB::table('subscribers')->where('id', $subscriberId)->count());
-        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests', 'subscriber_checkin_settings', 'patient_checkins', 'patient_food_preferences', 'nutritionist_post_targets', 'nutritionist_post_reads', 'weight_insights'] as $table) {
+        foreach (['health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites', 'follow_up_reviews', 'follow_up_tasks', 'patient_medications', 'patient_allergies', 'profile_proposals', 'subscriber_alert_settings', 'patient_conditions', 'subscriber_measurement_schedules', 'patient_quick_requests', 'subscriber_checkin_settings', 'patient_checkins', 'patient_food_preferences', 'nutritionist_post_targets', 'nutritionist_post_reads', 'weight_insights', 'patient_reports', 'patient_wellbeing_logs'] as $table) {
             $this->assertSame(0, DB::table($table)->where('subscriber_id', $subscriberId)->count(), "{$table} still has the patient's rows");
         }
         $this->assertSame(0, DB::table('meals')->whereIn('meal_plan_id', $planIds)->count());
