@@ -214,7 +214,7 @@ class AiDraftPlanService
             }
 
             if ($attempt >= 2) {
-                Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'response' => $response]);
+                Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'keys' => array_keys($response)]);
 
                 return null;
             }

@@ -67,7 +67,8 @@ class FcmPushService
         }
 
         if (! $response->successful()) {
-            throw new PushNotificationException("FCM returned HTTP {$response->status()}: {$response->body()}");
+            // The status and FCM's error code only: the response body can echo the device token.
+            throw new PushNotificationException("FCM returned HTTP {$response->status()}".(is_string($code = $response->json('error.status')) ? " ({$code})" : ''));
         }
     }
 

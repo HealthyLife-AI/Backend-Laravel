@@ -23,7 +23,7 @@ return [
     'release' => env('SENTRY_RELEASE'),
 
     // When left empty or `null` the Laravel environment will be used (usually discovered from `APP_ENV` in your `.env`)
-    'environment' => env('SENTRY_ENVIRONMENT'),
+    'environment' => env('SENTRY_ENVIRONMENT', env('APP_ENV', 'production')),
 
     // Override the organization ID used for trace continuation checks.
     'org_id' => env('SENTRY_ORG_ID') === null ? null : (int) env('SENTRY_ORG_ID'),
@@ -32,10 +32,15 @@ return [
     'sample_rate' => env('SENTRY_SAMPLE_RATE') === null ? 1.0 : (float) env('SENTRY_SAMPLE_RATE'),
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#traces_sample_rate
-    'traces_sample_rate' => env('SENTRY_TRACES_SAMPLE_RATE') === null ? null : (float) env('SENTRY_TRACES_SAMPLE_RATE'),
+    // Performance tracing is off unless SENTRY_TRACES_SAMPLE_RATE says otherwise (errors only).
+    'traces_sample_rate' => (float) env('SENTRY_TRACES_SAMPLE_RATE', 0),
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#profiles_sample_rate
-    'profiles_sample_rate' => env('SENTRY_PROFILES_SAMPLE_RATE') === null ? null : (float) env('SENTRY_PROFILES_SAMPLE_RATE'),
+    // Profiling is never on.
+    'profiles_sample_rate' => 0.0,
+
+    // Request bodies (health data, notes, uploaded files) are never captured by the SDK at all.
+    'max_request_body_size' => 'never',
 
     // Only continue incoming traces when the organization IDs are compatible with this SDK instance.
     'strict_trace_continuation' => env('SENTRY_STRICT_TRACE_CONTINUATION', false),
@@ -57,6 +62,10 @@ return [
     'send_default_pii' => false,
 
     'before_send' => [SentryScrubber::class, 'beforeSend'],
+
+    'before_send_transaction' => [SentryScrubber::class, 'beforeSendTransaction'],
+
+    'before_breadcrumb' => [SentryScrubber::class, 'beforeBreadcrumb'],
 
     // @see: https://docs.sentry.io/platforms/php/guides/laravel/configuration/options/#ignore_exceptions
     // 'ignore_exceptions' => [],
@@ -82,7 +91,8 @@ return [
         'sql_queries' => env('SENTRY_BREADCRUMBS_SQL_QUERIES_ENABLED', true),
 
         // Capture SQL query bindings (parameters) in SQL query breadcrumbs
-        'sql_bindings' => env('SENTRY_BREADCRUMBS_SQL_BINDINGS_ENABLED', false),
+        // Never: bindings are patient data. Not an env switch on purpose.
+        'sql_bindings' => false,
 
         // Capture queue job information as breadcrumbs
         'queue_info' => env('SENTRY_BREADCRUMBS_QUEUE_INFO_ENABLED', true),
@@ -109,7 +119,8 @@ return [
         'sql_queries' => env('SENTRY_TRACE_SQL_QUERIES_ENABLED', true),
 
         // Capture SQL query bindings (parameters) in SQL query spans
-        'sql_bindings' => env('SENTRY_TRACE_SQL_BINDINGS_ENABLED', false),
+        // Never, as above.
+        'sql_bindings' => false,
 
         // Capture where the SQL query originated from on the SQL query spans
         'sql_origin' => env('SENTRY_TRACE_SQL_ORIGIN_ENABLED', true),
