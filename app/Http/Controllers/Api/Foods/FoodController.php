@@ -10,6 +10,7 @@ use App\Models\Food;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 
 /**
  * FR-25: search the approved food database in Arabic and English.
@@ -32,12 +33,20 @@ class FoodController extends Controller
     /** BR-5: enters `status = 'pending'` — never publicly searchable until an admin approves it. */
     public function store(SubmitFoodRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+
         $food = Food::create([
-            ...$request->validated(),
+            ...Arr::except($validated, ['glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source']),
             'source' => 'nutritionist',
             'status' => 'pending',
             'submitted_by' => $request->user()->id,
         ]);
+
+        // Suggested values: stored on the pending food, never stamped as reviewed (that is the admin's).
+        $suggested = Arr::only($validated, ['glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source']);
+        if ($suggested !== []) {
+            $food->forceFill($suggested)->save();
+        }
 
         return (new FoodResource($food))->response()->setStatusCode(201);
     }
@@ -58,17 +67,29 @@ class FoodController extends Controller
     {
         $foods = Food::query()
             ->where('status', 'pending')
+            ->with('nutritionReviewer')
             ->latest()
             ->paginate(20);
 
         return FoodResource::collection($foods);
     }
 
-    public function approve(Food $food): FoodResource
+    /**
+     * Approving never waits for missing fields (the resource says what is missing). A glycemic
+     * index or sodium value a nutritionist suggested and nobody has reviewed is stamped with
+     * the approver: approving it is the review.
+     */
+    public function approve(Request $request, Food $food): FoodResource
     {
-        $food->update(['status' => 'approved']);
+        $food->status = 'approved';
 
-        return new FoodResource($food);
+        if (($food->glycemic_index !== null || $food->sodium_mg_per_100g !== null) && $food->nutrition_reviewed_by === null) {
+            $food->forceFill(['nutrition_reviewed_at' => now(), 'nutrition_reviewed_by' => $request->user()->id]);
+        }
+
+        $food->save();
+
+        return new FoodResource($food->load('nutritionReviewer'));
     }
 
     public function reject(Food $food): FoodResource

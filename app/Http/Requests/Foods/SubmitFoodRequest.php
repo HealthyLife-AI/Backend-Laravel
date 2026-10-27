@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Foods;
 
+use App\Models\Food;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * S3-05 / FR-24, BR-5: a nutritionist submitting a local food for the
@@ -32,6 +34,13 @@ class SubmitFoodRequest extends FormRequest
             'carbs_g_per_100g' => ['required', 'numeric', 'min:0', 'max:999'],
             'fat_g_per_100g' => ['required', 'numeric', 'min:0', 'max:999'],
             'fiber_g_per_100g' => ['nullable', 'numeric', 'min:0', 'max:999'],
+            // Optional nutrition values a nutritionist can suggest from a published table. Never
+            // auto-reviewed: the stamp is the admin's (AdminFoodController / FoodController::approve).
+            'glycemic_index' => ['nullable', 'integer', 'between:0,110'],
+            'sodium_mg_per_100g' => ['nullable', 'numeric', 'between:0,40000'],
+            'nutrition_review_source' => ['nullable', 'string', 'max:255', 'required_with:glycemic_index,sodium_mg_per_100g'],
+            'cost_tier' => ['nullable', Rule::in(Food::COST_TIERS)],
+            'prep_level' => ['nullable', Rule::in(Food::PREP_LEVELS)],
         ];
     }
 }

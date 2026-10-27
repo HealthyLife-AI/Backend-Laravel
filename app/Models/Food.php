@@ -43,6 +43,9 @@ class Food extends Model
     /** Phase 4, B: how much preparation it needs. Null = not reviewed. */
     public const PREP_LEVELS = ['no_cook', 'easy', 'normal'];
 
+    /** Carbohydrate from which a missing glycemic index is worth chasing (g per 100 g, fibre taken off). */
+    public const GI_RELEVANT_AVAILABLE_CARBS = 5;
+
     /** Keeps the search column in step with every Eloquent write of `name_ar`. */
     protected static function booted(): void
     {
@@ -86,6 +89,42 @@ class Food extends Model
     public function isSeeded(): bool
     {
         return $this->usda_fdc_id !== null || $this->seed_key !== null;
+    }
+
+    /** The nutritionist or admin who last set the glycemic index / sodium. */
+    public function nutritionReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'nutrition_reviewed_by');
+    }
+
+    /**
+     * What a reviewer still has to fill in, in a fixed order: glycemic_index (only for a
+     * food with at least 5 g available carbohydrate per 100 g: meat and oils have no index),
+     * sodium, cost_tier, prep_level.
+     *
+     * @return list<string>
+     */
+    public function missingFields(): array
+    {
+        $availableCarbs = (float) $this->carbs_g_per_100g - (float) ($this->fiber_g_per_100g ?? 0);
+
+        return array_values(array_filter([
+            $this->glycemic_index === null && $availableCarbs >= self::GI_RELEVANT_AVAILABLE_CARBS ? 'glycemic_index' : null,
+            $this->sodium_mg_per_100g === null ? 'sodium' : null,
+            $this->cost_tier === null ? 'cost_tier' : null,
+            $this->prep_level === null ? 'prep_level' : null,
+        ]));
+    }
+
+    /** The same rule as missingFields(), as a query: glycemic_index | sodium | tags. */
+    public function scopeMissing(Builder $query, string $kind): void
+    {
+        match ($kind) {
+            'glycemic_index' => $query->whereNull('glycemic_index')->whereRaw('(carbs_g_per_100g - COALESCE(fiber_g_per_100g, 0)) >= ?', [self::GI_RELEVANT_AVAILABLE_CARBS]),
+            'sodium' => $query->whereNull('sodium_mg_per_100g'),
+            'tags' => $query->where(fn (Builder $q) => $q->whereNull('cost_tier')->orWhereNull('prep_level')),
+            default => null,
+        };
     }
 
     /** Only what's publicly searchable — BR-5. */

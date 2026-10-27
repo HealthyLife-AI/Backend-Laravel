@@ -40,6 +40,16 @@ class FoodResource extends JsonResource
             // Phase 4, B: null until a nutritionist has reviewed the food; the app then shows no badge.
             'cost_tier' => $this->cost_tier,
             'prep_level' => $this->prep_level,
+            // The glycemic index, sodium and what a reviewer still has to fill in. Not for the patient
+            // app: its payloads (a plan's foods, a meal log's food) stay exactly as they were.
+            $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => [
+                'glycemic_index' => $this->glycemic_index === null ? null : (int) $this->glycemic_index,
+                'sodium_mg_per_100g' => $this->sodium_mg_per_100g === null ? null : (float) $this->sodium_mg_per_100g,
+                'nutrition_review_source' => $this->nutrition_review_source,
+                'nutrition_reviewed_at' => $this->nutrition_reviewed_at?->toIso8601String(),
+                'nutrition_reviewer_name' => $this->whenLoaded('nutritionReviewer', fn () => $this->nutritionReviewer?->name),
+                'missing' => $this->missingFields(),
+            ]),
         ];
     }
 }

@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Admin;
 
 use App\Http\Requests\Foods\SubmitFoodRequest;
-use App\Models\Food;
 use App\Support\FoodTagger;
 use Illuminate\Validation\Rule;
 
@@ -25,9 +24,6 @@ class AdminFoodRequest extends SubmitFoodRequest
             'allergens' => ['sometimes', 'array'],
             'allergens.*' => ['distinct', Rule::in(FoodTagger::GROUPS)],
             'shopping_section' => ['sometimes', Rule::in(FoodTagger::SECTIONS)],
-            // Phase 4, B3: null clears the tag (back to unknown).
-            'cost_tier' => ['sometimes', 'nullable', Rule::in(Food::COST_TIERS)],
-            'prep_level' => ['sometimes', 'nullable', Rule::in(Food::PREP_LEVELS)],
         ];
     }
 }

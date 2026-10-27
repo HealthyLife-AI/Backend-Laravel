@@ -9,6 +9,7 @@ use App\Models\Food;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,6 +26,8 @@ class AdminFoodController extends Controller
             'q' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', 'in:approved,pending,rejected'],
             'source' => ['nullable', 'in:usda,admin,nutritionist'],
+            // What still needs a reviewer: glycemic_index | sodium | tags.
+            'missing' => ['nullable', 'in:glycemic_index,sodium,tags'],
         ]);
 
         $term = trim($validated['q'] ?? '');
@@ -32,6 +35,8 @@ class AdminFoodController extends Controller
         $foods = Food::query()
             ->when($validated['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->when($validated['source'] ?? null, fn ($q, $source) => $q->where('source', $source))
+            ->when($validated['missing'] ?? null, fn ($q, $kind) => $q->missing($kind))
+            ->with('nutritionReviewer')
             ->when($term !== '', fn ($q) => $q->search($term), fn ($q) => $q->latest('id'))
             ->paginate(25);
 
@@ -40,18 +45,23 @@ class AdminFoodController extends Controller
 
     public function store(AdminFoodRequest $request): JsonResponse
     {
+        $validated = $request->validated();
+
         $food = Food::create([
-            ...$request->validated(),
+            ...Arr::except($validated, ['glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source']),
             'source' => 'admin',
             'status' => 'approved',
             'submitted_by' => $request->user()->id,
         ]);
 
+        $this->applyNutritionValues($food, $validated, $request->user()->id);
+        $food->save();
+
         if ($food->cost_tier !== null || $food->prep_level !== null) {
             $food->forceFill(['tags_reviewed_at' => now(), 'tags_reviewed_by' => $request->user()->id])->save();
         }
 
-        return (new FoodResource($food))->response()->setStatusCode(201);
+        return (new FoodResource($food->load('nutritionReviewer')))->response()->setStatusCode(201);
     }
 
     /**
@@ -66,7 +76,7 @@ class AdminFoodController extends Controller
 
         // Only nutrition values affect plans and logs; re-tagging (allergens,
         // shopping section) needs no in-use confirmation.
-        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section', 'cost_tier', 'prep_level'])->all())->isDirty();
+        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section', 'cost_tier', 'prep_level', 'glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source'])->all())->isDirty();
 
         if ($changesValues && ($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
             return response()->json([
@@ -76,7 +86,9 @@ class AdminFoodController extends Controller
             ], 409);
         }
 
-        $food->fill($request->validated());
+        $validated = $request->validated();
+        $food->fill(Arr::except($validated, ['glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source']));
+        $this->applyNutritionValues($food, $validated, $request->user()->id);
 
         // Phase 4, B3: a tag changed by hand is a reviewed tag: who and when.
         if ($food->isDirty(['cost_tier', 'prep_level'])) {
@@ -85,7 +97,31 @@ class AdminFoodController extends Controller
 
         $food->save();
 
-        return new FoodResource($food);
+        return new FoodResource($food->load('nutritionReviewer'));
+    }
+
+    /**
+     * A glycemic index or sodium value in the request (a number, or an explicit null that
+     * clears it) is the admin's review: stamped with who and when. With both cleared the
+     * source goes too: a source for nothing is noise. Only the keys present are touched.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function applyNutritionValues(Food $food, array $validated, int $adminId): void
+    {
+        $touched = array_key_exists('glycemic_index', $validated) || array_key_exists('sodium_mg_per_100g', $validated);
+
+        $food->forceFill(Arr::only($validated, ['glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source']));
+
+        if (! $touched) {
+            return;
+        }
+
+        $food->forceFill(['nutrition_reviewed_at' => now(), 'nutrition_reviewed_by' => $adminId]);
+
+        if ($food->glycemic_index === null && $food->sodium_mg_per_100g === null) {
+            $food->forceFill(['nutrition_review_source' => null]);
+        }
     }
 
     /**
