@@ -96,6 +96,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Reports to Sentry only when SENTRY_LARAVEL_DSN is set (a no-op otherwise).
         Integration::handles($exceptions);
 
+        // Expected business answers (a 409, a locked account, an ended follow-up) are not errors: they
+        // are not reported, so they neither flood Sentry nor carry anything about the patient.
+        $exceptions->dontReport([ApiCodeException::class, AccountLockedException::class, FollowUpEndedException::class]);
+
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );

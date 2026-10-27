@@ -180,7 +180,8 @@ class WeeklySummaryService
         $summary = $response['summary'] ?? null;
 
         if (! is_string($summary) || mb_strlen(trim($summary)) < self::MIN_SUMMARY_LENGTH || mb_strlen($summary) > self::MAX_SUMMARY_LENGTH) {
-            Log::warning('Weekly summary: LLM response failed validation, falling back to templated summary.', ['response' => $response]);
+            // The shape only, never the text: it is about a patient's week.
+            Log::warning('Weekly summary: LLM response failed validation, falling back to templated summary.', ['keys' => array_keys($response), 'summary_length' => is_string($summary) ? mb_strlen($summary) : null]);
 
             return null;
         }
