@@ -43,6 +43,9 @@ class Food extends Model
     /** Phase 4, B: how much preparation it needs. Null = not reviewed. */
     public const PREP_LEVELS = ['no_cook', 'easy', 'normal'];
 
+    /** Carbohydrate from which a missing glycemic index is worth chasing (g per 100 g, fibre taken off). */
+    public const GI_RELEVANT_AVAILABLE_CARBS = 5;
+
     /** Keeps the search column in step with every Eloquent write of `name_ar`. */
     protected static function booted(): void
     {
@@ -88,15 +91,11 @@ class Food extends Model
         return $this->usda_fdc_id !== null || $this->seed_key !== null;
     }
 
-    /** Only what's publicly searchable — BR-5. */
-    /** Phase 4 follow-up: the nutritionist or admin who last set the glycemic index / sodium. */
+    /** The nutritionist or admin who last set the glycemic index / sodium. */
     public function nutritionReviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'nutrition_reviewed_by');
     }
-
-    /** Carbohydrate from which a missing glycemic index is worth chasing (g per 100 g, fibre taken off). */
-    public const GI_RELEVANT_AVAILABLE_CARBS = 5;
 
     /**
      * What a reviewer still has to fill in, in a fixed order: glycemic_index (only for a
@@ -128,6 +127,7 @@ class Food extends Model
         };
     }
 
+    /** Only what's publicly searchable — BR-5. */
     public function scopeApproved(Builder $query): void
     {
         $query->where('status', 'approved');
