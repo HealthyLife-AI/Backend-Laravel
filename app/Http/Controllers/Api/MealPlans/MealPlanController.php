@@ -317,8 +317,18 @@ class MealPlanController extends Controller
         // An allergy the patient proposed is not used until approved: say so before the plan is approved.
         $warnings = app(HealthRecordService::class)->hasPendingAllergyProposal($subscriber) ? ['pending_allergy_proposal'] : [];
 
+        // The monthly cap on AI drafts: this one is the rule-based fallback, and says why.
+        $limit = null;
+        if ($this->aiDraft->limitReached) {
+            $warnings[] = 'ai_draft_limit_reached';
+            $limit = [
+                'message_ar' => 'وصلت إلى الحد الشهري لمسودات الذكاء الاصطناعي. هذه مسودة آلية بسيطة بدون ذكاء اصطناعي، ويتجدد الحد في بداية الشهر القادم.',
+                'message_en' => 'You reached the monthly limit of AI drafts. This is the simple rule-based draft without AI; the limit renews next month.',
+            ];
+        }
+
         $response = $this->present($plan, $subscriber)->response();
-        $response->setData(['warnings' => $warnings] + $response->getData(true));
+        $response->setData(['warnings' => $warnings, 'ai_limit' => $limit] + $response->getData(true));
 
         return $response;
     }

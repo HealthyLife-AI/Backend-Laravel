@@ -181,7 +181,7 @@ class WeightInsightService
     /** @param  array{from_date: string, to_date: string, facts: array<string, mixed>}  $computed */
     private function store(Subscriber $subscriber, array $computed): WeightInsight
     {
-        [$text, $reason] = $this->words($computed['facts']);
+        [$text, $reason] = $this->words($computed['facts'], $subscriber);
 
         // whereDate: a date column may carry a time part on some drivers (SQLite), and the unique key must still find its row.
         $insight = WeightInsight::query()->where('subscriber_id', $subscriber->id)->whereDate('to_date', $computed['to_date'])->first()
@@ -200,7 +200,7 @@ class WeightInsightService
      * @param  array<string, mixed>  $facts
      * @return array{0: string, 1: string|null} text, fallback_reason
      */
-    public function words(array $facts): array
+    public function words(array $facts, ?Subscriber $subscriber = null): array
     {
         if (! $this->llm->isConfigured()) {
             return $this->fallback($facts, 'not_configured');
@@ -210,7 +210,7 @@ class WeightInsightService
             $reply = $this->llm->chatJson([
                 ['role' => 'system', 'content' => $this->systemPrompt()],
                 ['role' => 'user', 'content' => json_encode($facts, JSON_UNESCAPED_UNICODE)],
-            ], ['max_completion_tokens' => 600]);
+            ], ['max_completion_tokens' => 600], ['feature' => 'weight_insight', 'nutritionist_id' => $subscriber?->nutritionist_id, 'subscriber_id' => $subscriber?->id]);
         } catch (AiGenerationException $e) {
             // The message, never the facts.
             Log::warning('Weight insight: provider failed.', ['reason' => $e->getMessage()]);

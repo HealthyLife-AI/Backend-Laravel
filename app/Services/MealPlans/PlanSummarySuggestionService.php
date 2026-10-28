@@ -59,7 +59,7 @@ class PlanSummarySuggestionService
             $reply = $this->llm->chatJson([
                 ['role' => 'system', 'content' => $this->systemPrompt()],
                 ['role' => 'user', 'content' => $this->userPrompt($figures, $subscriber, $approved)],
-            ], ['max_completion_tokens' => 600]);
+            ], ['max_completion_tokens' => 600], ['feature' => 'plan_summary', 'nutritionist_id' => $subscriber->nutritionist_id, 'subscriber_id' => $subscriber->id]);
         } catch (AiGenerationException $e) {
             // The message, never the plan: nothing from the file reaches a log line.
             Log::warning('Plan summary suggestion: provider failed.', ['reason' => $e->getMessage()]);

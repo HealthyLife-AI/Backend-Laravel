@@ -215,7 +215,7 @@ class AccountDeletionTest extends TestCase
 
         // Every table that can point at a user or a subscriber, found from the schema
         // itself, so a table added later is caught rather than silently skipped.
-        $covered = ['subscribers', 'health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites',
+        $covered = ['ai_usage_logs', 'subscribers', 'health_profiles', 'body_composition_readings', 'meal_plans', 'meal_logs', 'alerts', 'ai_summaries', 'client_invites',
             'patient_consents', 'refresh_tokens', 'sessions', 'password_reset_tokens', 'model_has_roles', 'model_has_permissions', 'users',
             'meals', 'meal_items', 'nutritionist_profiles', 'foods', 'patient_deletion_notices', 'permissions', 'roles', 'role_has_permissions',
             'cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'migrations',

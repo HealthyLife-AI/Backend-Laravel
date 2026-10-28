@@ -66,6 +66,33 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Usage and cost tracking
+    |--------------------------------------------------------------------------
+    |
+    | Every provider response writes one ai_usage_logs row (token counts only). The
+    | prices below are USD per million tokens and are applied when a report is READ,
+    | never stored, so changing them re-prices the whole history. Override with
+    | AI_PRICE_PER_MILLION_INPUT / _OUTPUT / _CACHED_INPUT to match the provider's
+    | current price list. Reasoning tokens are part of completion_tokens (billed as output).
+    |
+    | `max_drafts_per_nutritionist_per_month`: a nutritionist's AI plan drafts per
+    | calendar month (clinic timezone); at the cap she gets the rule-based draft.
+    | 0 = unlimited. `usage_retention_months`: older rows are pruned daily.
+    |
+    */
+
+    'price_per_million_input' => (float) env('AI_PRICE_PER_MILLION_INPUT', 0.15),
+
+    'price_per_million_output' => (float) env('AI_PRICE_PER_MILLION_OUTPUT', 0.60),
+
+    'price_per_million_cached_input' => (float) env('AI_PRICE_PER_MILLION_CACHED_INPUT', 0.075),
+
+    'max_drafts_per_nutritionist_per_month' => (int) env('AI_MAX_DRAFTS_PER_NUTRITIONIST_PER_MONTH', 300),
+
+    'usage_retention_months' => (int) env('AI_USAGE_RETENTION_MONTHS', 13),
+
     'summary' => [
         'base_url' => env('OPENAI_SUMMARY_BASE_URL', env('OPENAI_BASE_URL')),
         'api_key' => env('OPENAI_SUMMARY_API_KEY', env('OPENAI_API_KEY')),

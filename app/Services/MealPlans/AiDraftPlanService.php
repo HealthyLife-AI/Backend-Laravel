@@ -9,6 +9,7 @@ use App\Models\HealthProfile;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Ai\AiUsageReport;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\FoodPreferences\FoodPreferenceService;
@@ -85,6 +86,12 @@ class AiDraftPlanService
     /** The drafting nutritionist's country and the regional cost rows for it (food id => tier); set per draft. */
     private string $costCountry = 'PS';
 
+    /** True when the last draft skipped the model because the nutritionist reached the monthly cap. */
+    public bool $limitReached = false;
+
+    /** @var array{feature: string, nutritionist_id: int|null, subscriber_id: int|null} Who this draft is for, for the usage log. */
+    private array $usageContext = ['feature' => 'ai_draft', 'nutritionist_id' => null, 'subscriber_id' => null];
+
     /** @var array<int, string> */
     private array $regionalTiers = [];
 
@@ -150,7 +157,14 @@ class AiDraftPlanService
 
         $meals = null;
 
-        if ($this->llm->isConfigured()) {
+        // The monthly cap: a nutritionist at it gets the rule-based draft (the same fallback as a provider outage),
+        // flagged so the app can say why. Counted from the usage log: successful ai_draft provider responses.
+        $this->limitReached = $this->llm->isConfigured() && app(AiUsageReport::class)->draftCapReached($creator);
+        $this->usageContext = ['feature' => 'ai_draft', 'nutritionist_id' => $creator->id, 'subscriber_id' => $subscriber->id];
+
+        if ($this->limitReached) {
+            Log::info('AI draft: monthly cap reached, using rule-based generation.', ['reason' => 'monthly_cap']);
+        } elseif ($this->llm->isConfigured()) {
             $meals = $this->tryGenerateWithLlm($safeFoods, $dailyCalories, $profile, $subscriber->patientGoal?->goal_type ?? $subscriber->goal, $groups, $likedNames, $softTags);
         } else {
             Log::info('AI draft: no provider configured, using rule-based generation.', ['reason' => 'not_configured']);
@@ -199,7 +213,7 @@ class AiDraftPlanService
         // discards the whole response.
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = $this->llm->chatJson($messages, $this->requestOptions());
+                $response = $this->llm->chatJson($messages, $this->requestOptions(), $this->usageContext + ['attempt_base' => $attempt - 1]);
             } catch (AiGenerationException $e) {
                 $retryable = $attempt === 1 && (
                     ($e->getCode() === 429 && $e->retryAfter !== null && $e->retryAfter <= self::MAX_INTERACTIVE_WAIT_SECONDS)
