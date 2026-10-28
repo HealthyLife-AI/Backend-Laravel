@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use App\Support\ArabicText;
+use App\Support\RegionalCountry;
 use App\Support\FoodTagger;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'source',
@@ -36,6 +38,14 @@ class Food extends Model
     // "sheep") and would otherwise guess the table name as `food`, not
     // `foods` — override explicitly rather than rely on the convention.
     protected $table = 'foods';
+
+    /**
+     * The regional cost rows for the CURRENT request's country, loaded with every food in
+     * one extra query per batch (never per food): see RegionalCountry and costTier().
+     *
+     * @var list<string>
+     */
+    protected $with = ['regionalCosts'];
 
     /** Phase 4, B: how costly a food is. Null = not reviewed (shows nothing). */
     public const COST_TIERS = ['economical', 'standard', 'premium'];
@@ -91,6 +101,74 @@ class Food extends Model
         return $this->usda_fdc_id !== null || $this->seed_key !== null;
     }
 
+    /** This food's cost row for the current request's country (at most one; eager-loaded with every food). */
+    public function regionalCosts(): HasMany
+    {
+        return $this->hasMany(FoodRegionalCost::class)->where('country', RegionalCountry::current());
+    }
+
+    /** Every country's cost row (admin screens). */
+    public function allRegionalCosts(): HasMany
+    {
+        return $this->hasMany(FoodRegionalCost::class)->orderBy('country');
+    }
+
+    /**
+     * The ONE rule for a food's cost tier in a country:
+     *  - a regional row for that country, if there is one;
+     *  - else foods.cost_tier, but only for the default country (PS, whose value it is);
+     *  - else null (unknown). Another country never inherits the PS value.
+     */
+    public static function resolveCostTier(string $country, ?string $regionalTier, ?string $baseTier): ?string
+    {
+        return $regionalTier ?? ($country === RegionalCountry::default() ? $baseTier : null);
+    }
+
+    public function costTierFor(string $country): ?string
+    {
+        // The eager-loaded row is for the current request's country; any other country is asked of the database.
+        $regional = $this->relationLoaded('regionalCosts') && $country === RegionalCountry::current()
+            ? $this->regionalCosts->first()?->cost_tier
+            : FoodRegionalCost::query()->where('food_id', $this->id)->where('country', $country)->value('cost_tier');
+
+        return self::resolveCostTier($country, $regional, $this->getAttribute('cost_tier'));
+    }
+
+    /** The cost tier as the current request's viewer sees it (their nutritionist's country). */
+    public function costTier(): ?string
+    {
+        return $this->costTierFor(RegionalCountry::current());
+    }
+
+    /**
+     * The same rule as costTierFor(), as a query, for foods whose tier in `$country` is one of `$tiers`.
+     *
+     * @param  list<string>  $tiers
+     */
+    public function scopeCostTierIn(Builder $query, string $country, array $tiers): void
+    {
+        $regional = fn ($q) => $q->selectRaw('1')->from('food_regional_costs as r')
+            ->whereColumn('r.food_id', 'foods.id')->where('r.country', $country);
+
+        $query->where(function (Builder $w) use ($regional, $tiers, $country) {
+            $w->whereExists(fn ($e) => $regional($e)->whereIn('r.cost_tier', $tiers));
+
+            if ($country === RegionalCountry::default()) {
+                $w->orWhere(fn (Builder $p) => $p->whereIn('foods.cost_tier', $tiers)->whereNotExists(fn ($e) => $regional($e)));
+            }
+        });
+    }
+
+    /** Foods with no known cost tier in `$country` (the complement of costTierIn() over every tier). */
+    public function scopeCostTierUnknown(Builder $query, string $country): void
+    {
+        $query->whereNotExists(fn ($e) => $e->selectRaw('1')->from('food_regional_costs as r')->whereColumn('r.food_id', 'foods.id')->where('r.country', $country));
+
+        if ($country === RegionalCountry::default()) {
+            $query->whereNull('foods.cost_tier');
+        }
+    }
+
     /** The nutritionist or admin who last set the glycemic index / sodium. */
     public function nutritionReviewer(): BelongsTo
     {
@@ -111,18 +189,20 @@ class Food extends Model
         return array_values(array_filter([
             $this->glycemic_index === null && $availableCarbs >= self::GI_RELEVANT_AVAILABLE_CARBS ? 'glycemic_index' : null,
             $this->sodium_mg_per_100g === null ? 'sodium' : null,
-            $this->cost_tier === null ? 'cost_tier' : null,
+            $this->costTier() === null ? 'cost_tier' : null,
             $this->prep_level === null ? 'prep_level' : null,
         ]));
     }
 
     /** The same rule as missingFields(), as a query: glycemic_index | sodium | tags. */
-    public function scopeMissing(Builder $query, string $kind): void
+    public function scopeMissing(Builder $query, string $kind, ?string $country = null): void
     {
+        $country ??= RegionalCountry::default();
+
         match ($kind) {
             'glycemic_index' => $query->whereNull('glycemic_index')->whereRaw('(carbs_g_per_100g - COALESCE(fiber_g_per_100g, 0)) >= ?', [self::GI_RELEVANT_AVAILABLE_CARBS]),
             'sodium' => $query->whereNull('sodium_mg_per_100g'),
-            'tags' => $query->where(fn (Builder $q) => $q->whereNull('cost_tier')->orWhereNull('prep_level')),
+            'tags' => $query->where(fn (Builder $q) => $q->costTierUnknown($country)->orWhereNull('foods.prep_level')),
             default => null,
         };
     }

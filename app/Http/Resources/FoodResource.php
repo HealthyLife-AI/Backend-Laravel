@@ -17,6 +17,8 @@ class FoodResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $isAdmin = (bool) Auth::user()?->hasRole('admin');
+
         return [
             'id' => $this->id,
             'name_en' => $this->name_en,
@@ -38,8 +40,19 @@ class FoodResource extends JsonResource
             ]),
             'shopping_section' => $this->shopping_section ?? 'other',
             // Phase 4, B: null until a nutritionist has reviewed the food; the app then shows no badge.
-            'cost_tier' => $this->cost_tier,
+            // The viewer's nutritionist's country (a patient's: theirs); the admin sees foods.cost_tier itself (the PS value)
+            // with the regional rows listed beside it, so editing it never copies an override into it.
+            'cost_tier' => $isAdmin ? $this->getAttribute('cost_tier') : $this->costTier(),
             'prep_level' => $this->prep_level,
+            $this->mergeWhen($isAdmin && $this->relationLoaded('allRegionalCosts'), fn () => [
+                'regional_costs' => $this->allRegionalCosts->map(fn ($row) => [
+                    'country' => $row->country,
+                    'country_name' => config('countries.list')[$row->country] ?? $row->country,
+                    'cost_tier' => $row->cost_tier,
+                    'set_by_name' => $row->relationLoaded('setter') ? $row->setter?->name : null,
+                    'updated_at' => $row->updated_at?->toIso8601String(),
+                ])->values()->all(),
+            ]),
             // The glycemic index, sodium and what a reviewer still has to fill in. Not for the patient
             // app: its payloads (a plan's foods, a meal log's food) stay exactly as they were.
             $this->mergeUnless(Auth::user()?->hasRole('client'), fn () => [

@@ -484,6 +484,8 @@ Route::prefix('v1')->name('api.')->group(function () {
     Route::middleware(['jwt', 'permission:foods.suggest'])->group(function () {
         Route::post('foods', [FoodController::class, 'store'])->name('foods.store');
         Route::get('foods/mine', [FoodController::class, 'mine'])->name('foods.mine');
+        // The nutritionist's cost tier for a food in their OWN country (never a country from the request).
+        Route::put('foods/{food}/cost', [FoodController::class, 'setCost'])->whereNumber('food')->name('foods.cost');
     });
 
     Route::middleware(['jwt', 'permission:foods.approve'])->group(function () {
@@ -499,11 +501,14 @@ Route::prefix('v1')->name('api.')->group(function () {
             Route::post('foods', [AdminFoodController::class, 'store'])->name('foods.store');
             Route::put('foods/{food}', [AdminFoodController::class, 'update'])->name('foods.update');
             Route::delete('foods/{food}', [AdminFoodController::class, 'destroy'])->name('foods.destroy');
+            // A food's cost tier in any country (PUT with cost_tier null clears it).
+            Route::put('foods/{food}/regional-costs/{country}', [AdminFoodController::class, 'setRegionalCost'])->whereNumber('food')->where('country', '[A-Z]{2}')->name('foods.regional-costs.set');
         });
 
         Route::middleware(['jwt', 'permission:users.manage'])->group(function () {
             Route::get('overview', AdminOverviewController::class)->name('overview');
             Route::get('nutritionists', [AdminNutritionistController::class, 'index'])->name('nutritionists.index');
+            Route::put('nutritionists/{nutritionist}/country', [AdminNutritionistController::class, 'setCountry'])->whereNumber('nutritionist')->name('nutritionists.country');
         });
     });
 

@@ -4,6 +4,7 @@ namespace App\Services\MealPlans;
 
 use App\Exceptions\Ai\AiGenerationException;
 use App\Models\Food;
+use App\Models\FoodRegionalCost;
 use App\Models\HealthProfile;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
@@ -12,6 +13,7 @@ use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\FoodPreferences\FoodPreferenceService;
 use App\Services\Nutrition\CalorieTarget;
+use App\Support\RegionalCountry;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -80,6 +82,12 @@ class AiDraftPlanService
      */
     private const MAX_CANDIDATE_FOODS = 80;
 
+    /** The drafting nutritionist's country and the regional cost rows for it (food id => tier); set per draft. */
+    private string $costCountry = 'PS';
+
+    /** @var array<int, string> */
+    private array $regionalTiers = [];
+
     private const MAX_COMPLETION_TOKENS = 6000;
 
     /** A plated meal: a main dish and up to three sides. */
@@ -129,6 +137,10 @@ class AiDraftPlanService
         $dislikedIds = \App\Models\PatientFoodPreference::query()->where('subscriber_id', $subscriber->id)->where('kind', 'dislike')->pluck('food_id')->all();
         $pool = $safeFoods->reject(fn (Food $food) => in_array($food->id, $dislikedIds, true));
         $safeFoods = $pool->count() >= self::MIN_FOODS_AFTER_DISLIKES ? $pool : $safeFoods;
+
+        // Regional cost: a food counts as economical in the DRAFTING nutritionist's country only (never by the PS value elsewhere).
+        $this->costCountry = RegionalCountry::of($creator);
+        $this->regionalTiers = FoodRegionalCost::query()->where('country', $this->costCountry)->pluck('cost_tier', 'food_id')->all();
 
         // Phase 4, B6: soft cost / preparation preferences, only when the nutritionist ticked them.
         $softTags = [
@@ -377,10 +389,16 @@ class AiDraftPlanService
         return $foods->values()->sortBy(fn (Food $food, int $i) => [$this->tagScore($food, $softTags), $i])->values();
     }
 
+    /** A food's cost tier in the drafting nutritionist's country (Food::resolveCostTier, the one rule). */
+    private function costOf(Food $food): ?string
+    {
+        return Food::resolveCostTier($this->costCountry, $this->regionalTiers[$food->id] ?? null, $food->getAttribute('cost_tier'));
+    }
+
     /** 0 = matches every ticked preference ... 2 = matches none; always 0 with nothing ticked. */
     private function tagScore(Food $food, array $softTags): int
     {
-        return (($softTags['economical'] ?? false) && $food->cost_tier !== 'economical' ? 1 : 0)
+        return (($softTags['economical'] ?? false) && $this->costOf($food) !== 'economical' ? 1 : 0)
             + (($softTags['easy_prep'] ?? false) && ! in_array($food->prep_level, ['no_cook', 'easy'], true) ? 1 : 0);
     }
 
@@ -425,7 +443,7 @@ class AiDraftPlanService
             round((float) $food->protein_g_per_100g, 1),
             round((float) $food->carbs_g_per_100g, 1),
             round((float) $food->fat_g_per_100g, 1),
-        ], $withCost ? [$food->cost_tier] : [], $withPrep ? [$food->prep_level] : []))->values()->all();
+        ], $withCost ? [$this->costOf($food)] : [], $withPrep ? [$food->prep_level] : []))->values()->all();
 
         $mealTargets = [];
         foreach (self::MEAL_CALORIE_SHARE as $mealName => $share) {

@@ -38,6 +38,8 @@ class UserResource extends JsonResource
             // profile), which decides how the app addresses them. null when
             // no health profile has been filled in yet. Absent for
             // nutritionists and admins.
+            // A nutritionist's country (read-only for them: only an admin sets it).
+            $this->mergeWhen($this->hasRole('nutritionist'), fn () => ['country' => $this->country ?: \App\Support\RegionalCountry::default()]),
             $this->mergeWhen($this->hasRole('client'), fn () => [
                 'gender' => $this->subscriberProfile?->healthProfile?->gender,
                 // The patient's own code (e.g. PT-104), shown on the app's account screen.
