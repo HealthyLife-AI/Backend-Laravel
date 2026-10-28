@@ -85,9 +85,10 @@ class OpenAiCompatibleClient
      *
      * @param  array<int, array{role: string, content: string}>  $messages
      * @param  array<string, mixed>  $options  extra request fields for this call (e.g. max_completion_tokens)
+     * @param  array{feature?: string, nutritionist_id?: int|null, subscriber_id?: int|null, attempt_base?: int}  $context  who and what the call is for, for the usage log: ids and a feature name, never text
      * @return array<string, mixed>
      */
-    public function chatJson(array $messages, array $options = []): array
+    public function chatJson(array $messages, array $options = [], array $context = []): array
     {
         if (! $this->isConfigured()) {
             throw new AiGenerationException('No AI provider is configured (OPENAI_BASE_URL/OPENAI_API_KEY, or the OPENAI_SUMMARY_* equivalents).');
@@ -96,7 +97,7 @@ class OpenAiCompatibleClient
         $this->lastCallRetried = false;
         $options = $this->sized($options);
 
-        $response = $this->send($messages, $options, jsonMode: true);
+        $response = $this->sendRecorded($messages, $options, true, $context, 1);
 
         if ($this->refusedJsonMode($response)) {
             // Codes and sizes only: neither the prompt nor the model's text is ever logged.
@@ -108,7 +109,7 @@ class OpenAiCompatibleClient
             ]);
 
             $this->lastCallRetried = true;
-            $response = $this->send($messages, $options, jsonMode: false);
+            $response = $this->sendRecorded($messages, $options, false, $context, 2);
         }
 
         if (! $response->successful()) {
@@ -142,6 +143,24 @@ class OpenAiCompatibleClient
         }
 
         return $decoded;
+    }
+
+    /**
+     * One request and one usage row for its response (a refused JSON-mode attempt and the retry are
+     * two). Recording is guarded inside the recorder: it can never fail or change the call.
+     *
+     * @param  array<int, array{role: string, content: string}>  $messages
+     * @param  array<string, mixed>  $options
+     * @param  array<string, mixed>  $context
+     */
+    private function sendRecorded(array $messages, array $options, bool $jsonMode, array $context, int $attempt): Response
+    {
+        $started = hrtime(true);
+        $response = $this->send($messages, $options, $jsonMode);
+
+        app(AiUsageRecorder::class)->record($response, $context, $this->model(), $attempt, (int) round((hrtime(true) - $started) / 1_000_000));
+
+        return $response;
     }
 
     /**

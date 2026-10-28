@@ -5,6 +5,7 @@ namespace Tests\Feature\Ai;
 use App\Exceptions\Ai\AiGenerationException;
 use App\Services\Ai\OpenAiCompatibleClient;
 use App\Services\Progress\WeightInsightService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,8 @@ use Tests\TestCase;
  */
 class AiJsonModeTest extends TestCase
 {
+    use RefreshDatabase;
+
     private const SECRET_PROMPT = 'PROMPT-SECRET-سلمى-0599123456';
 
     private const SECRET_OUTPUT = 'PARTIAL-OUTPUT-SECRET';

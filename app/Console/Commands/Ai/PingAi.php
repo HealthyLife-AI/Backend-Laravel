@@ -44,7 +44,7 @@ class PingAi extends Command
             $reply = $client->chatJson([
                 ['role' => 'system', 'content' => 'Reply with a JSON object exactly like {"ok": true}.'],
                 ['role' => 'user', 'content' => 'ping'],
-            ], ['max_completion_tokens' => 50]);
+            ], ['max_completion_tokens' => 50], ['feature' => 'ping']);
         } catch (AiGenerationException $e) {
             $this->line(sprintf('fail profile=%s model=%s latency=%dms reason="%s"', $profile, $client->model() ?? '-', $this->elapsed($started), $e->getMessage()));
 

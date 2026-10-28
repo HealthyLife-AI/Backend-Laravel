@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Account\AccountController;
+use App\Http\Controllers\Api\Admin\AdminAiUsageController;
 use App\Http\Controllers\Api\Admin\AdminFoodController;
 use App\Http\Controllers\Api\Admin\AdminNutritionistController;
 use App\Http\Controllers\Api\Admin\AdminOverviewController;
@@ -504,6 +505,9 @@ Route::prefix('v1')->name('api.')->group(function () {
             // A food's cost tier in any country (PUT with cost_tier null clears it).
             Route::put('foods/{food}/regional-costs/{country}', [AdminFoodController::class, 'setRegionalCost'])->whereNumber('food')->where('country', '[A-Z]{2}')->name('foods.regional-costs.set');
         });
+
+        // AI usage and cost: the admin role itself.
+        Route::get('ai-usage', AdminAiUsageController::class)->middleware(['jwt', 'role:admin'])->name('ai-usage');
 
         Route::middleware(['jwt', 'permission:users.manage'])->group(function () {
             Route::get('overview', AdminOverviewController::class)->name('overview');

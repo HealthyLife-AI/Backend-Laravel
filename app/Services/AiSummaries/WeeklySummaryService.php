@@ -80,7 +80,7 @@ class WeeklySummaryService
 
         $text = null;
         if ($this->llm->isConfigured()) {
-            $text = $this->tryGenerateWithLlm($metrics);
+            $text = $this->tryGenerateWithLlm($metrics, $subscriber);
         }
 
         $isFallback = $text === null;
@@ -147,7 +147,7 @@ class WeeklySummaryService
     }
 
     /** @param array<string, mixed> $metrics */
-    private function tryGenerateWithLlm(array $metrics): ?string
+    private function tryGenerateWithLlm(array $metrics, Subscriber $subscriber): ?string
     {
         $messages = [
             ['role' => 'system', 'content' => $this->systemPrompt()],
@@ -157,7 +157,7 @@ class WeeklySummaryService
         $attempt = 0;
         while (true) {
             try {
-                $response = $this->llm->chatJson($messages);
+                $response = $this->llm->chatJson($messages, [], ['feature' => 'weekly_summary', 'nutritionist_id' => $subscriber->nutritionist_id, 'subscriber_id' => $subscriber->id]);
                 break;
             } catch (AiGenerationException $e) {
                 if ($e->getCode() === 429 && $attempt < count(self::RATE_LIMIT_BACKOFF_SECONDS)) {
