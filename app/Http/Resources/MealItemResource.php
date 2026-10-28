@@ -24,7 +24,8 @@ class MealItemResource extends JsonResource
             'food' => new FoodResource($this->whenLoaded('food', fn () => $this->food)),
             'quantity_grams' => (float) $this->quantity_grams,
             // Phase 4, B5: the food's tags on the item itself (alternatives too), for the app's badges. Null = unknown.
-            'cost_tier' => $this->relationLoaded('food') ? $this->food?->cost_tier : null,
+            // The viewer's nutritionist's country: a patient's, or the plan's own nutritionist's, which is the same person.
+            'cost_tier' => $this->relationLoaded('food') ? $this->food?->costTier() : null,
             'prep_level' => $this->relationLoaded('food') ? $this->food?->prep_level : null,
             'macros' => $macros,
             // BR-4: every planned item ships its permitted alternatives

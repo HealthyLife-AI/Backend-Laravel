@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\AdminFoodRequest;
 use App\Http\Resources\FoodResource;
 use App\Models\Food;
+use App\Services\Foods\FoodRegionalCostService;
+use App\Support\RegionalCountry;
+use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -28,6 +31,8 @@ class AdminFoodController extends Controller
             'source' => ['nullable', 'in:usda,admin,nutritionist'],
             // What still needs a reviewer: glycemic_index | sodium | tags.
             'missing' => ['nullable', 'in:glycemic_index,sodium,tags'],
+            // With missing=tags: which country's cost tier to look for (default PS, i.e. foods.cost_tier).
+            'country' => ['nullable', Rule::in(RegionalCountry::codes())],
         ]);
 
         $term = trim($validated['q'] ?? '');
@@ -35,8 +40,8 @@ class AdminFoodController extends Controller
         $foods = Food::query()
             ->when($validated['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->when($validated['source'] ?? null, fn ($q, $source) => $q->where('source', $source))
-            ->when($validated['missing'] ?? null, fn ($q, $kind) => $q->missing($kind))
-            ->with('nutritionReviewer')
+            ->when($validated['missing'] ?? null, fn ($q, $kind) => $q->missing($kind, $validated['country'] ?? null))
+            ->with(['nutritionReviewer', 'allRegionalCosts.setter'])
             ->when($term !== '', fn ($q) => $q->search($term), fn ($q) => $q->latest('id'))
             ->paginate(25);
 
@@ -61,7 +66,7 @@ class AdminFoodController extends Controller
             $food->forceFill(['tags_reviewed_at' => now(), 'tags_reviewed_by' => $request->user()->id])->save();
         }
 
-        return (new FoodResource($food->load('nutritionReviewer')))->response()->setStatusCode(201);
+        return (new FoodResource($food->load(['nutritionReviewer', 'allRegionalCosts.setter'])))->response()->setStatusCode(201);
     }
 
     /**
@@ -97,7 +102,18 @@ class AdminFoodController extends Controller
 
         $food->save();
 
-        return new FoodResource($food->load('nutritionReviewer'));
+        return new FoodResource($food->load(['nutritionReviewer', 'allRegionalCosts.setter']));
+    }
+
+    /** Sets a food's cost tier in any country (a regional row); `cost_tier: null` clears it. */
+    public function setRegionalCost(Request $request, Food $food, string $country, FoodRegionalCostService $costs): FoodResource
+    {
+        abort_unless(in_array($country, RegionalCountry::codes(), true), 404);
+
+        $data = $request->validate(['cost_tier' => ['present', 'nullable', Rule::in(Food::COST_TIERS)]]);
+        $costs->set($food, $country, $data['cost_tier'], $request->user());
+
+        return new FoodResource($food->load(['nutritionReviewer', 'allRegionalCosts.setter']));
     }
 
     /**
