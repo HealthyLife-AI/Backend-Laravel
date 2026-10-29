@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.4",
         "firebase/php-jwt": "^7.1",
+        "ifsnop/mysqldump-php": "^2.13",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "sentry/sentry-laravel": "^4.28",

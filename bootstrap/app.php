@@ -52,6 +52,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Daily: AI usage rows older than 13 months.
         $schedule->command('ai-usage:prune')->dailyAt('04:00')->timezone(config('scheduling.timezone'));
 
+        // Encrypted off-site database backup to Telegram. Not one of SelfScheduler's request-driven
+        // catch-up tasks: a dump must not start inside an API request, so it needs the real cron.
+        $schedule->command('db:backup')->dailyAt('03:15')->timezone('Asia/Hebron')->withoutOverlapping()->onOneServer();
+
         // Phase 4, A5. Daily: removes the files of reports deleted more than 30 days ago.
         $schedule->command('reports:purge')->dailyAt('03:30')->timezone(config('scheduling.timezone'));
 
