@@ -39,6 +39,9 @@ class SchedulerStatusController extends Controller
 
         $jobs['alerts']['last_result'] = $scheduler->lastResult('alerts');
 
+        // Not a self-triggered task (see bootstrap/app.php), so no slot or overdue flag: just the last outcome.
+        $jobs['backup'] = ['last_ran_at' => $scheduler->lastRan('backup')?->toIso8601String(), 'last_result' => $scheduler->lastResult('backup')];
+
         return response()->json([
             'timezone' => config('scheduling.timezone'),
             'self_trigger' => (bool) config('scheduling.self_trigger'),
