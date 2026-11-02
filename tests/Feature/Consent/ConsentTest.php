@@ -27,6 +27,9 @@ class ConsentTest extends TestCase
 
     private const POLICY = 'https://dashboard.example/privacy';
 
+    /** What a patient with no language setting is sent to: the configured URL with the Arabic locale in front. */
+    private const POLICY_AR = 'https://dashboard.example/ar/privacy';
+
     private User $nutritionist;
 
     private User $client;
@@ -88,7 +91,7 @@ class ConsentTest extends TestCase
             'current_version' => self::VERSION,
             'accepted_version' => null,
             'accepted_at' => null,
-            'policy_url' => self::POLICY,
+            'policy_url' => self::POLICY_AR,
         ]);
     }
 
@@ -171,7 +174,7 @@ class ConsentTest extends TestCase
                 ->assertForbidden()
                 ->assertJsonPath('code', 'consent_required')
                 ->assertJsonPath('current_version', self::VERSION)
-                ->assertJsonPath('policy_url', self::POLICY);
+                ->assertJsonPath('policy_url', self::POLICY_AR);
         }
     }
 
@@ -322,10 +325,58 @@ class ConsentTest extends TestCase
     public function test_the_policy_url_defaults_to_the_privacy_page_on_the_frontend_url(): void
     {
         $this->bootConsentConfigWith(['FRONTEND_URL' => 'https://dashboard.example/']);
-        $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('policy_url', 'https://dashboard.example/privacy');
+        $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('policy_url', 'https://dashboard.example/ar/privacy');
 
         $this->bootConsentConfigWith(['FRONTEND_URL' => 'https://dashboard.example', 'CONSENT_POLICY_URL' => 'https://legal.example/p']);
         $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('policy_url', 'https://legal.example/p');
+    }
+
+    public function test_the_policy_url_carries_the_patients_language(): void
+    {
+        $url = fn () => $this->getJson('/api/v1/me/consent', $this->auth())->json('policy_url');
+
+        $this->assertSame(self::POLICY_AR, $url(), 'no language setting: Arabic');
+
+        \App\Models\NotificationPreference::query()->updateOrCreate(['user_id' => $this->client->id], ['locale' => 'en']);
+        $this->assertSame('https://dashboard.example/en/privacy', $url());
+
+        \App\Models\NotificationPreference::query()->where('user_id', $this->client->id)->update(['locale' => 'ar']);
+        $this->assertSame(self::POLICY_AR, $url());
+
+        // The same URL reaches the app inside the 403 too.
+        $this->getJson('/api/v1/me/meal-plan', $this->auth())->assertForbidden()->assertJsonPath('policy_url', self::POLICY_AR);
+    }
+
+    public function test_a_policy_url_that_is_not_the_privacy_page_is_given_as_set(): void
+    {
+        foreach (['https://legal.example/p', 'https://legal.example/ar/privacy', 'https://legal.example/privacy?x=1', 'https://legal.example/policy/privacy-notice'] as $set) {
+            config(['patient_app.consent.policy_url' => $set]);
+            $this->assertSame($set, $this->getJson('/api/v1/me/consent', $this->auth())->json('policy_url'));
+        }
+
+        config(['patient_app.consent.policy_url' => 'https://dashboard.example/base/privacy/']);
+        $this->assertSame('https://dashboard.example/base/ar/privacy', $this->getJson('/api/v1/me/consent', $this->auth())->json('policy_url'));
+    }
+
+    public function test_a_new_consent_version_asks_an_already_accepting_patient_again_and_keeps_everything(): void
+    {
+        $this->accept();
+        $this->getJson('/api/v1/me/meal-plan', $this->auth())->assertSuccessful();
+        $rows = fn () => PatientConsent::query()->where('user_id', $this->client->id)->pluck('version')->all();
+        $this->assertSame([self::VERSION], $rows());
+
+        config(['patient_app.consent.version' => '2026-11-01']);
+
+        $this->getJson('/api/v1/me/meal-plan', $this->auth())->assertForbidden()->assertJsonPath('code', 'consent_required')->assertJsonPath('current_version', '2026-11-01');
+        $this->getJson('/api/v1/me/consent', $this->auth())->assertJsonPath('required', true)->assertJsonPath('accepted_version', self::VERSION);
+        $this->postJson('/api/v1/me/consent', ['version' => self::VERSION], $this->auth())->assertStatus(409)->assertJsonPath('code', 'consent_version_mismatch')->assertJsonPath('current_version', '2026-11-01');
+        $this->assertSame([self::VERSION], $rows(), 'a refused acceptance records nothing');
+
+        $this->postJson('/api/v1/me/consent', ['version' => '2026-11-01'], $this->auth())->assertCreated();
+
+        $this->assertEqualsCanonicalizing([self::VERSION, '2026-11-01'], $rows(), 'the old acceptance stays as history');
+        $this->getJson('/api/v1/me/meal-plan', $this->auth())->assertSuccessful();
+        $this->assertNotNull(Subscriber::query()->find($this->subscriber->id), 'no patient data is touched');
     }
 
     public function test_explicit_env_values_are_used_as_given(): void
