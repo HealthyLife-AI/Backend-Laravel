@@ -3,6 +3,7 @@
 namespace App\Services\Consent;
 
 use App\Exceptions\ApiCodeException;
+use App\Models\NotificationPreference;
 use App\Models\PatientConsent;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -23,9 +24,26 @@ class ConsentService
         return (string) config('patient_app.consent.version');
     }
 
-    public function policyUrl(): ?string
+    /**
+     * Where the patient reads the policy. With a patient, a URL ending in `/privacy` gets the patient's
+     * language in front of it (`/ar/privacy`, `/en/privacy`), from their notification-language setting
+     * (Arabic when none): the dashboard serves the policy per locale, and without the segment its
+     * redirect would follow the phone's browser language instead. Any other configured URL is
+     * returned as set. Still a plain URL string, so older app versions open it unchanged.
+     */
+    public function policyUrl(?User $user = null): ?string
     {
-        return config('patient_app.consent.policy_url');
+        $url = config('patient_app.consent.policy_url');
+
+        $localised = '~/(?:'.implode('|', NotificationPreference::LOCALES).')/privacy/?$~i';
+
+        if ($user === null || ! is_string($url) || preg_match($localised, $url) || ! preg_match('~^(https?://[^?#]*?)/privacy/?$~i', $url, $m)) {
+            return $url;
+        }
+
+        $locale = NotificationPreference::query()->where('user_id', $user->id)->value('locale');
+
+        return $m[1].'/'.(in_array($locale, NotificationPreference::LOCALES, true) ? $locale : 'ar').'/privacy';
     }
 
     /**
@@ -75,7 +93,7 @@ class ConsentService
             'current_version' => $this->currentVersion(),
             'accepted_version' => $latest?->version,
             'accepted_at' => $latest?->accepted_at?->toIso8601String(),
-            'policy_url' => $this->policyUrl(),
+            'policy_url' => $this->policyUrl($user),
         ];
     }
 

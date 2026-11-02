@@ -37,7 +37,7 @@ class EnsureConsentAccepted
                 'You must accept the privacy policy to continue.',
                 'consent_required',
                 403,
-                ['current_version' => $this->consent->currentVersion(), 'policy_url' => $this->consent->policyUrl()],
+                ['current_version' => $this->consent->currentVersion(), 'policy_url' => $this->consent->policyUrl($user)],
             );
         }
 
