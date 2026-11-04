@@ -177,6 +177,12 @@ class Subscriber extends Model
         $query->where($query->qualifyColumn('status'), 'active')->whereNull($query->qualifyColumn('archived_at'));
     }
 
+    /** Patients whose login is not a `demo:seed` account (platform-wide counts and costs leave demo data out). */
+    public function scopeNotDemo(Builder $query): void
+    {
+        $query->whereNotIn($query->qualifyColumn('user_id'), User::query()->where('is_demo', true)->select('id'));
+    }
+
     /** Not archived, any activation status — the default roster. */
     public function scopeInFollowUp(Builder $query): void
     {

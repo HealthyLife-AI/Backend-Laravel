@@ -6,6 +6,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -91,6 +92,12 @@ class User extends Authenticatable
             ->where('user_id', $this->id)
             ->whereNotNull('archived_at')
             ->exists();
+    }
+
+    /** Everyone but the accounts `demo:seed` made: what platform-wide counts and costs are about. */
+    public function scopeNotDemo(Builder $query): void
+    {
+        $query->where($query->qualifyColumn('is_demo'), false);
     }
 
     /**

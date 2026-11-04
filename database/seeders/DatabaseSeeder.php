@@ -70,6 +70,11 @@ class DatabaseSeeder extends Seeder
         );
         $demo->assignRole('nutritionist');
 
+        // Flagged like the accounts of `demo:seed`: left out of the admin counts, and removable by its --reset.
+        if ($demo->wasRecentlyCreated) {
+            $demo->forceFill(['is_demo' => true])->save();
+        }
+
         if ($demo->wasRecentlyCreated && ! filled(env('DEMO_NUTRITIONIST_PASSWORD'))) {
             $this->command?->warn("Demo nutritionist created: nutritionist@example.com / {$password}");
         }

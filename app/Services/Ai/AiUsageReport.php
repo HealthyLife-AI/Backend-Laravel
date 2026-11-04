@@ -62,8 +62,10 @@ class AiUsageReport
         [$from, $to] = $this->monthRange($month);
         $between = [ClinicDay::startUtc($from), ClinicDay::endUtc($to)];
 
+        // Demo accounts (demo:seed) are left out, in cost and in patients alike.
         $sums = fn (string $group) => AiUsageLog::query()
             ->whereBetween('created_at', $between)
+            ->where(fn ($q) => $q->whereNull('nutritionist_id')->orWhereNotIn('nutritionist_id', User::query()->where('is_demo', true)->select('id')))
             ->selectRaw("{$group} as k, count(*) as calls, sum(case when success then 1 else 0 end) as ok_calls, sum(prompt_tokens) as prompt, sum(completion_tokens) as completion, sum(coalesce(cached_tokens, 0)) as cached, sum(total_tokens) as total")
             ->groupBy($group)
             ->get();
@@ -125,7 +127,7 @@ class AiUsageReport
     /** Active patients in the month, for one nutritionist or (null) the whole platform. */
     public function activePatients(?int $nutritionistId, string $from, string $to): int
     {
-        return Subscriber::withoutGlobalScopes()
+        return Subscriber::withoutGlobalScopes()->notDemo()
             ->where('status', 'active')
             ->when($nutritionistId !== null, fn ($q) => $q->where('nutritionist_id', $nutritionistId))
             // Activated on or before the month's end (a patient with no activation time counts: older rows).

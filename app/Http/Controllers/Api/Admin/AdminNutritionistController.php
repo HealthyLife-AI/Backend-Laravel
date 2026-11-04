@@ -45,6 +45,11 @@ class AdminNutritionistController extends Controller
             ->latest('id')
             ->paginate(20);
 
+        // The list shows demo accounts (badged); the totals count real nutritionists only.
+        $realTotal = User::role('nutritionist')->notDemo()
+            ->when($term !== '', fn ($q) => $q->where(fn ($w) => $w->where('name', 'like', "%{$term}%")->orWhere('email', 'like', "%{$term}%")))
+            ->count();
+
         return response()->json([
             'countries' => config('countries.list'),
             'data' => collect($page->items())->map(fn (User $user) => [
@@ -56,12 +61,14 @@ class AdminNutritionistController extends Controller
                 'country' => $user->country ?: RegionalCountry::default(),
                 'clients_count' => (int) $user->clients_count,
                 'active_clients_count' => (int) $user->active_clients_count,
+                'is_demo' => (bool) $user->is_demo,
                 'created_at' => $user->created_at?->toIso8601String(),
             ]),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
-                'total' => $page->total(),
+                'total' => $realTotal,
+                'demo_count' => $page->total() - $realTotal,
                 'per_page' => $page->perPage(),
             ],
         ]);
