@@ -23,9 +23,10 @@ class AdminOverviewController extends Controller
         $approved = $foods->where('status', 'approved');
 
         return response()->json([
-            'nutritionists' => User::role('nutritionist')->count(),
-            'clients' => Subscriber::withoutGlobalScopes()->count(),
-            'active_clients' => Subscriber::withoutGlobalScopes()->active()->count(),
+            // Demo accounts (demo:seed) are left out of every count here.
+            'nutritionists' => User::role('nutritionist')->notDemo()->count(),
+            'clients' => Subscriber::withoutGlobalScopes()->notDemo()->count(),
+            'active_clients' => Subscriber::withoutGlobalScopes()->notDemo()->active()->count(),
             'foods_total' => (int) $approved->sum('total'),
             'foods_pending' => (int) $foods->where('status', 'pending')->sum('total'),
             // Proof the 06:00 job (adherence refresh + alerts) ran: when, and what it did.
