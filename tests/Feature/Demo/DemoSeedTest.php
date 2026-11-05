@@ -27,12 +27,13 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\AuthenticatesForApi;
+use Tests\Concerns\FakesPush;
 use Tests\TestCase;
 
 /** `demo:seed`: fake, flagged, relative-to-today demo accounts that touch nothing else. */
 class DemoSeedTest extends TestCase
 {
-    use AuthenticatesForApi, RefreshDatabase;
+    use AuthenticatesForApi, FakesPush, RefreshDatabase;
 
     protected function setUp(): void
     {
@@ -289,18 +290,33 @@ class DemoSeedTest extends TestCase
         $this->assertSame(0, PatientNotification::whereNotNull('pushed_at')->count());
     }
 
-    public function test_a_demo_account_is_never_pushed_even_with_a_device_token(): void
+    public function test_a_demo_account_with_a_device_token_gets_a_real_push(): void
     {
         $this->seedDemo();
         $user = $this->patients()['a']->user;
-        $user->forceFill(['fcm_token' => 'tok'])->save();
-        config(['fcm.project_id' => 'p', 'fcm.credentials' => '{}']);
-        $fcm = $this->spy(FcmPushService::class);
+        $this->assertNull($user->fcm_token, 'seeding gives no device token');
+
+        // Someone signs in on a real phone: the account now has a token.
+        $user->forceFill(['fcm_token' => 'tok-demo-phone'])->save();
+        $this->fakePush();
 
         $row = app(\App\Services\Notifications\NotificationService::class)->notify($user, 'system', 'follow_up_resumed');
 
-        $this->assertSame('demo_account', $row->fresh()->push_skipped);
-        $fcm->shouldNotHaveReceived('send');
+        $this->assertNull($row->fresh()->push_skipped);
+        $this->assertNotNull($row->fresh()->pushed_at);
+        $this->assertCount(1, $this->pushes);
+        $this->assertSame('tok-demo-phone', $this->pushes[0]['token']);
+    }
+
+    public function test_a_demo_account_without_a_token_is_skipped_like_any_other(): void
+    {
+        $this->seedDemo();
+        $this->fakePush();
+
+        $row = app(\App\Services\Notifications\NotificationService::class)->notify($this->patients()['a']->user, 'system', 'follow_up_resumed');
+
+        $this->assertSame('no_token', $row->fresh()->push_skipped);
+        $this->assertSame([], $this->pushes);
     }
 
     // ---- the numbers an admin reads --------------------------------------------------------------------------------------------

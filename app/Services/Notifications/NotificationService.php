@@ -80,8 +80,6 @@ class NotificationService
     public function pushBlockedBy(User $user, NotificationPreference $prefs, string $category): ?string
     {
         return match (true) {
-            // Demo accounts (demo:seed) are fiction: the inbox row stays, nothing leaves the server.
-            $user->is_demo => 'demo_account',
             ! $this->fcm->isConfigured() => 'not_configured',
             blank($user->fcm_token) => 'no_token',
             in_array($category, NotificationPreference::TOGGLEABLE, true) && ! $prefs->{$category} => 'category_off',

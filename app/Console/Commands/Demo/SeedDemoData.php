@@ -51,8 +51,9 @@ use Spatie\Permission\Models\Role;
  * History is written through the same services the API uses, with the clock moved to each
  * entry's own time (like the older version of this command), so meal types, late marks and
  * adherence come out as if the patients had logged live. Nothing here calls the AI, sends a
- * push or queues a job: demo accounts never get a device token, and NotificationService
- * skips the push for any demo account (the inbox row is still written).
+ * push or queues a job: no demo account has a device token at seed time, so no push can go
+ * out. Once someone signs in on a real phone (a reviewer, a video, a live demo) the account
+ * has a token and gets real notifications like any other.
  */
 class SeedDemoData extends Command
 {
