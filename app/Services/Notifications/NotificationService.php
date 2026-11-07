@@ -28,7 +28,7 @@ class NotificationService
 {
     public const DEBOUNCE_MINUTES = 5;
 
-    public function __construct(private readonly FcmPushService $fcm) {}
+    public function __construct(private readonly FcmPushService $fcm, private readonly PushBatch $batch) {}
 
     /** @param  array<string, scalar>  $data  ids for the app's deep link; never health content */
     public function notify(User $user, string $category, string $type, array $data = [], ?string $dedupeKey = null): PatientNotification
@@ -68,12 +68,41 @@ class NotificationService
             return $notification;
         }
 
+        // Inside a fan-out (batchPushes) the send is queued with the rest of the batch.
+        if ($this->batch->collecting()) {
+            $this->batch->add($notification->id);
+
+            return $notification;
+        }
+
         $push = fn () => $this->push($user, $notification);
         // Over HTTP the push goes after the response, so the nutritionist's
         // request never waits on FCM; a scheduled job just sends it.
         app()->runningInConsole() ? $push() : defer($push);
 
         return $notification;
+    }
+
+    /**
+     * Runs a loop that notifies many patients: every in-app row is written (and its quiet hours,
+     * preferences and dedupe decided) as usual, but the FCM sends are queued in chunks when the
+     * loop ends (App\Jobs\SendPushNotifications) instead of being sent one by one inside it.
+     */
+    public function batchPushes(callable $work): mixed
+    {
+        return $this->batch->run($work);
+    }
+
+    /** Sends the push of a row written earlier (the queued job). A row with no device token any more is marked skipped. */
+    public function deliver(PatientNotification $notification, ?User $user): void
+    {
+        if ($user === null || blank($user->fcm_token)) {
+            $notification->forceFill(['push_skipped' => 'no_token'])->save();
+
+            return;
+        }
+
+        $this->push($user, $notification);
     }
 
     /** Why this push must not be sent, or null if it may. */

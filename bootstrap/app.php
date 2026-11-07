@@ -25,18 +25,32 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withSchedule(function (Schedule $schedule): void {
+        // The bulk jobs (those that notify or check every patient) never run twice at once. The lock
+        // expires after this many minutes on its own: without an expiry a run that was killed (a
+        // deploy, a container restart) would leave its lock behind for 24 hours and skip tomorrow's run.
+        $bulkLockMinutes = 30;
+
+        // Sends the queued push fan-outs (App\Jobs\SendPushNotifications) and any other queued job.
+        // Run from this cron instead of a separate worker process: Dokku runs only the web process.
+        // It stops by itself when the queue is empty or after 50 s, so each minute's run ends before
+        // the next one starts; the short lock expiry heals a run that was killed.
+        $schedule->command('queue:work database --stop-when-empty --max-time=50 --tries=3')
+            ->everyMinute()
+            ->withoutOverlapping(10)
+            ->runInBackground();
+
         // S5-01 / FR-20. First scheduled job in this project — Taqat
         // (production) needs its own cron entry running
         // `php artisan schedule:run` every minute for this to actually
         // fire; Laravel's scheduler does nothing on its own without one.
-        $schedule->command('alerts:evaluate')->dailyAt('06:00')->timezone(config('scheduling.timezone'));
+        $schedule->command('alerts:evaluate')->dailyAt('06:00')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // S5-06 / FR-22. 20:00 is a placeholder, not a documented time —
         // late enough that most of a client's day is behind them (so
         // "hasn't logged today" is a meaningful signal, not a nag at
         // breakfast), early enough to still leave time to log before
         // midnight resets the "today" the reminder is about.
-        $schedule->command('notifications:send-log-reminders')->dailyAt('20:00')->timezone(config('scheduling.timezone'));
+        $schedule->command('notifications:send-log-reminders')->dailyAt('20:00')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // S5-04 / FR-21. Monday morning, summarising the week that just
         // closed (Mon-Sun) so every log for it has already landed.
@@ -44,23 +58,23 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Phase 1, B4. 09:00 clinic time: measurement reminders on the due date
         // and the 3-days-overdue alert.
-        $schedule->command('measurements:remind')->dailyAt('09:00')->timezone(config('scheduling.timezone'));
+        $schedule->command('measurements:remind')->dailyAt('09:00')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // Phase 2, A4. 09:00 clinic time: opens due periodic check-ins and expires old ones.
-        $schedule->command('checkins:open')->dailyAt('09:00')->timezone(config('scheduling.timezone'));
+        $schedule->command('checkins:open')->dailyAt('09:00')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // Daily: AI usage rows older than 13 months.
         $schedule->command('ai-usage:prune')->dailyAt('04:00')->timezone(config('scheduling.timezone'));
 
         // Encrypted off-site database backup to Telegram. Not one of SelfScheduler's request-driven
         // catch-up tasks: a dump must not start inside an API request, so it needs the real cron.
-        $schedule->command('db:backup')->dailyAt('03:15')->timezone('Asia/Hebron')->withoutOverlapping()->onOneServer();
+        $schedule->command('db:backup')->dailyAt('03:15')->timezone('Asia/Hebron')->withoutOverlapping(60)->onOneServer();
 
         // Phase 4, A5. Daily: removes the files of reports deleted more than 30 days ago.
         $schedule->command('reports:purge')->dailyAt('03:30')->timezone(config('scheduling.timezone'));
 
         // Phase 3, B3. 07:30 clinic time: the morning push for patients with an active plan.
-        $schedule->command('morning:send')->dailyAt('07:30')->timezone(config('scheduling.timezone'));
+        $schedule->command('morning:send')->dailyAt('07:30')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // The jobs above also run without this cron at all — any API
         // request that finds one overdue runs it after its response (see

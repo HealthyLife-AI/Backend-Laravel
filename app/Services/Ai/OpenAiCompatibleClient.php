@@ -40,8 +40,14 @@ class OpenAiCompatibleClient
     /** The answer budget when the caller names none. */
     public const DEFAULT_ANSWER_TOKENS = 1024;
 
+    /** Smallest time left that is still worth sending a request for. */
+    public const MIN_REQUEST_SECONDS = 3.0;
+
     /** Whether the last chatJson() call had to fall back to plain text (after the provider refused its JSON mode). */
     public bool $lastCallRetried = false;
+
+    /** Unix time (with microseconds) by which every request of this copy must be finished; null for no limit. */
+    private ?float $deadline = null;
 
     /** @param  array{base_url?: string|null, api_key?: string|null, model?: string|null, timeout?: int}|null  $config */
     public function __construct(private readonly ?array $config = null) {}
@@ -49,6 +55,31 @@ class OpenAiCompatibleClient
     public function isConfigured(): bool
     {
         return filled($this->setting('base_url')) && filled($this->setting('api_key'));
+    }
+
+    /**
+     * A copy of this client that has `$seconds` in total for everything it sends from now on: each
+     * request's timeout is cut to what is left, and no request is started with less than
+     * MIN_REQUEST_SECONDS left. This is what keeps a synchronous caller (an AI draft the
+     * nutritionist is waiting for) from holding a web worker for several timeouts in a row.
+     */
+    public function withTotalBudget(float $seconds): static
+    {
+        $copy = clone $this;
+        $copy->deadline = $this->now() + $seconds;
+
+        return $copy;
+    }
+
+    /** Seconds left of the budget, or null when there is none. */
+    public function remainingSeconds(): ?float
+    {
+        return $this->deadline === null ? null : max(0.0, $this->deadline - $this->now());
+    }
+
+    private function now(): float
+    {
+        return (float) now()->format('U.u');
     }
 
     public function model(): ?string
@@ -175,10 +206,21 @@ class OpenAiCompatibleClient
             'temperature' => 0.4,
         ] + ($jsonMode ? ['response_format' => ['type' => 'json_object']] : []) + $options;
 
+        $timeout = (float) $this->setting('timeout');
+        $remaining = $this->remainingSeconds();
+
+        if ($remaining !== null) {
+            if ($remaining < self::MIN_REQUEST_SECONDS) {
+                throw new AiGenerationException('The time allowed for this AI request is used up.');
+            }
+
+            $timeout = min($timeout, $remaining);
+        }
+
         try {
             return Http::withToken((string) $this->setting('api_key'))
                 ->baseUrl((string) $this->setting('base_url'))
-                ->timeout((int) $this->setting('timeout'))
+                ->timeout($timeout)
                 ->post('/chat/completions', $body);
         } catch (Throwable $e) {
             throw new AiGenerationException('Could not reach the AI provider.', previous: $e);

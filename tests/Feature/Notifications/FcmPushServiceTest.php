@@ -28,7 +28,7 @@ class FcmPushServiceTest extends TestCase
      * anything in this test, only that the two HTTP calls happen with
      * the right shape.
      */
-    private const FIXTURE_PRIVATE_KEY = <<<'PEM'
+    public const FIXTURE_PRIVATE_KEY = <<<'PEM'
     -----BEGIN PRIVATE KEY-----
     MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCnnKNzlsyZgZQp
     J1k3dfN0i47pXUeEHPoz4f+6ncxEp83ovwF55VmXsb/UB+DO7zc2tlxXs0POFqfa

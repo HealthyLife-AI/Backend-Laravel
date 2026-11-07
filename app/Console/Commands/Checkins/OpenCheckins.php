@@ -4,6 +4,7 @@ namespace App\Console\Commands\Checkins;
 
 use App\Models\SubscriberCheckinSetting;
 use App\Services\Checkins\CheckinService;
+use App\Services\Notifications\NotificationService;
 use App\Services\Scheduling\SelfScheduler;
 use Illuminate\Console\Command;
 
@@ -21,7 +22,7 @@ class OpenCheckins extends Command
 
     protected $description = 'Open due periodic check-ins, push the patient once, and expire old pending ones (Phase 2, A)';
 
-    public function handle(CheckinService $checkins): int
+    public function handle(CheckinService $checkins, NotificationService $notifications): int
     {
         // Recorded up front, like the other daily jobs: never twice for one slot.
         app(SelfScheduler::class)->markRan('checkins');
@@ -30,23 +31,25 @@ class OpenCheckins extends Command
         $opened = 0;
         $failures = 0;
 
-        SubscriberCheckinSetting::query()
-            ->whereNotNull('interval_days')
-            ->whereHas('subscriber', fn ($q) => $q->active())
-            ->with(['subscriber.user'])
-            ->orderBy('id')
-            ->lazyById(200)
-            ->each(function (SubscriberCheckinSetting $setting) use ($checkins, &$opened, &$failures): void {
-                try {
-                    if ($checkins->openIfDue($setting->subscriber, $setting) !== null) {
-                        $opened++;
+        $notifications->batchPushes(function () use ($checkins, &$opened, &$failures): void {
+            SubscriberCheckinSetting::query()
+                ->whereNotNull('interval_days')
+                ->whereHas('subscriber', fn ($q) => $q->active())
+                ->with(['subscriber.user'])
+                ->orderBy('id')
+                ->lazyById(200)
+                ->each(function (SubscriberCheckinSetting $setting) use ($checkins, &$opened, &$failures): void {
+                    try {
+                        if ($checkins->openIfDue($setting->subscriber, $setting) !== null) {
+                            $opened++;
+                        }
+                    } catch (\Throwable $e) {
+                        $failures++;
+                        report($e);
+                        $this->error("Check-in failed for subscriber {$setting->subscriber_id}: {$e->getMessage()}");
                     }
-                } catch (\Throwable $e) {
-                    $failures++;
-                    report($e);
-                    $this->error("Check-in failed for subscriber {$setting->subscriber_id}: {$e->getMessage()}");
-                }
-            });
+                });
+        });
 
         app(SelfScheduler::class)->recordResult('checkins', ['opened' => $opened, 'expired' => $expired, 'failures' => $failures]);
         $this->info("{$opened} check-in(s) opened, {$expired} expired, {$failures} failure(s).");

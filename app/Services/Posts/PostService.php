@@ -102,7 +102,8 @@ class PostService
 
     private function pushToAudience(NutritionistPost $post): void
     {
-        $post->audienceSubscribers()->with('user')->orderBy('id')->lazyById(200)->each(function (Subscriber $subscriber) use ($post): void {
+        // The in-app rows are written here, in the request; the FCM sends are queued in chunks afterwards.
+        $this->notifications->batchPushes(fn () => $post->audienceSubscribers()->with('user')->orderBy('id')->lazyById(200)->each(function (Subscriber $subscriber) use ($post): void {
             if ($subscriber->user === null) {
                 return;
             }
@@ -113,7 +114,7 @@ class PostService
                 // One failing push must not stop the rest, nor undo the publish.
                 report($e);
             }
-        });
+        }));
     }
 
     /**

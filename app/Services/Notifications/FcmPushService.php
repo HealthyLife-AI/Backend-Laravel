@@ -4,6 +4,7 @@ namespace App\Services\Notifications;
 
 use App\Exceptions\Notifications\PushNotificationException;
 use Firebase\JWT\JWT;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -27,6 +28,11 @@ class FcmPushService
     private const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
     private const CACHE_KEY = 'fcm_access_token';
+
+    /** Seconds to open the connection to Google, and in total per request. Laravel's default is 30, which let one slow push hold a worker. */
+    public const CONNECT_TIMEOUT_SECONDS = 3;
+
+    public const TIMEOUT_SECONDS = 5;
 
     public function isConfigured(): bool
     {
@@ -53,7 +59,7 @@ class FcmPushService
         $credentials = $this->credentials();
 
         try {
-            $response = Http::withToken($this->accessToken($credentials))
+            $response = $this->http()->withToken($this->accessToken($credentials))
                 ->post("https://fcm.googleapis.com/v1/projects/{$credentials['project_id']}/messages:send", [
                     'message' => [
                         'token' => $deviceToken,
@@ -126,7 +132,7 @@ class FcmPushService
                 'exp' => $now + 3600,
             ], $credentials['private_key'], 'RS256');
 
-            $response = Http::asForm()->post($credentials['token_uri'], [
+            $response = $this->http()->asForm()->post($credentials['token_uri'], [
                 'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
                 'assertion' => $assertion,
             ]);
@@ -143,5 +149,10 @@ class FcmPushService
 
             return $token;
         });
+    }
+
+    private function http(): PendingRequest
+    {
+        return Http::connectTimeout(self::CONNECT_TIMEOUT_SECONDS)->timeout(self::TIMEOUT_SECONDS);
     }
 }

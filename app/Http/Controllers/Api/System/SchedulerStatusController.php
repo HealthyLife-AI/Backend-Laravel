@@ -8,6 +8,8 @@ use App\Support\TrustedProxies;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Same purpose as `AiStatusController` / `FcmStatusController`: answer
@@ -43,6 +45,8 @@ class SchedulerStatusController extends Controller
         $jobs['backup'] = ['last_ran_at' => $scheduler->lastRan('backup')?->toIso8601String(), 'last_result' => $scheduler->lastResult('backup')];
 
         return response()->json([
+            'queue' => $this->queue(),
+            'runtime' => $this->runtime(),
             'timezone' => config('scheduling.timezone'),
             'self_trigger' => (bool) config('scheduling.self_trigger'),
             'jobs' => $jobs,
@@ -60,5 +64,60 @@ class SchedulerStatusController extends Controller
                 'trusted_proxy_match' => TrustedProxies::covers($request->server('REMOTE_ADDR'), config('trustedproxy.proxies')),
             ],
         ]);
+    }
+
+    /**
+     * Queued work (the push fan-out) and what failed. The queue is worked by the every-minute cron, so
+     * a growing `pending` or a large `oldest_pending_seconds` means the cron is not running.
+     *
+     * @return array<string, mixed>
+     */
+    private function queue(): array
+    {
+        $connection = (string) config('queue.default');
+
+        if ($connection !== 'database') {
+            return ['connection' => $connection];
+        }
+
+        try {
+            $oldest = DB::table('jobs')->min('created_at');
+
+            return [
+                'connection' => $connection,
+                'pending' => DB::table('jobs')->count(),
+                'oldest_pending_seconds' => $oldest === null ? null : max(0, time() - (int) $oldest),
+                'failed' => DB::table('failed_jobs')->count(),
+            ];
+        } catch (Throwable) {
+            return ['connection' => $connection, 'error' => 'jobs tables unreadable'];
+        }
+    }
+
+    /**
+     * What THIS serving process runs with, so a deploy can be verified from outside (a shell in the
+     * container is a different process and does not show it): OPcache on, caches written, worker count.
+     *
+     * @return array<string, mixed>
+     */
+    private function runtime(): array
+    {
+        $opcache = function_exists('opcache_get_status') ? @opcache_get_status(false) : false;
+
+        return [
+            'php' => PHP_VERSION,
+            'sapi' => PHP_SAPI,
+            'server_workers' => max(1, (int) getenv('PHP_CLI_SERVER_WORKERS')),
+            'opcache' => is_array($opcache) ? [
+                'enabled' => (bool) ($opcache['opcache_enabled'] ?? false),
+                'cached_scripts' => (int) ($opcache['opcache_statistics']['num_cached_scripts'] ?? 0),
+                'hit_rate_percent' => round((float) ($opcache['opcache_statistics']['opcache_hit_rate'] ?? 0), 1),
+                'memory_used_mb' => round(((float) ($opcache['memory_usage']['used_memory'] ?? 0)) / 1048576, 1),
+                'validate_timestamps' => (bool) ini_get('opcache.validate_timestamps'),
+            ] : ['enabled' => false],
+            'config_cached' => app()->configurationIsCached(),
+            'routes_cached' => app()->routesAreCached(),
+            'events_cached' => app()->eventsAreCached(),
+        ];
     }
 }
