@@ -132,6 +132,30 @@ opcache extension. Nixpacks builds PHP with `withExtensions (pe: pe.enabled ++ [
 not, add `"ext-opcache": "*"` to `composer.json` `require` (this is the only change that would need a
 re-deploy; it was not added blind because adding an extension the build already has can break it).
 
+## The AI provider, and moving to a paid tier
+
+Changing provider, model, key or timeouts is **environment only**: no code change, no deploy of new code (set the
+variables, restart the app).
+
+| Variable | Meaning |
+|---|---|
+| `OPENAI_BASE_URL` | The OpenAI-compatible base URL, up to and including the version (for example `https://api.groq.com/openai/v1` or `https://api.openai.com/v1`). `/chat/completions` is added to it. |
+| `OPENAI_API_KEY` | The key of the plan in use. |
+| `OPENAI_MODEL` | The model id (for example `openai/gpt-oss-120b`). |
+| `OPENAI_TIMEOUT` | Seconds one request may take (default 12). A draft's requests are also cut to what is left of its 45 s budget, so a larger value here only helps up to 45. |
+| `OPENAI_SUMMARY_BASE_URL`, `OPENAI_SUMMARY_API_KEY`, `OPENAI_SUMMARY_MODEL`, `OPENAI_SUMMARY_TIMEOUT` | Optional separate profile for the weekly summaries (their own quota). Each one falls back to the matching `OPENAI_*` value when unset. |
+| `AI_PRICE_PER_MILLION_INPUT`, `AI_PRICE_PER_MILLION_OUTPUT`, `AI_PRICE_PER_MILLION_CACHED_INPUT` | USD per million tokens, used only by the admin AI-usage cost report (defaults 0.15, 0.60, 0.075). Set them to the new plan's prices. |
+| `AI_MAX_DRAFTS_PER_NUTRITIONIST_PER_MONTH` | Monthly cap of AI drafts per nutritionist (default 300, `0` = no cap). |
+
+What the client sends, so a model can be judged before switching: a chat-completions request with
+`response_format: json_object`, `max_completion_tokens`, and a fixed `temperature` of 0.4; `reasoning_effort: low`
+is added only when the model id contains `gpt-oss`. That works on any Groq plan and on OpenAI chat models
+(for example `gpt-4.1`, `gpt-4o-mini`). **OpenAI's reasoning models** (the `o` series, `gpt-5`) reject a custom
+`temperature`: moving to one of those would need a code change, not an environment change.
+
+On Groq a higher tier raises the tokens-per-minute limit that makes drafts answer 429 today; the 45 s budget then
+rarely gets used.
+
 ## Worst cases (what a burst can cost a worker)
 
 | Work | Before | Now |
@@ -139,7 +163,7 @@ re-deploy; it was not added blind because adding an extension the build already 
 | One FCM push | up to 30 s (Laravel's default timeout), twice when the token had to be fetched | 3 s to connect, 5 s in total, per request |
 | Publishing a post to N patients | N pushes sent after the response, one by one, in the same worker | N in-app rows written; the sends are queued, 100 per job, and sent by the cron's worker |
 | 07:30 morning push, other bulk jobs | one by one inside one cron process | rows written, sends queued as above; each job also never runs twice at once |
-| One AI draft (synchronous) | up to four provider requests of 12 s each (JSON mode refused then retried as plain text, and the whole thing tried a second time) = **48 s**; with a 10 s `Retry-After` wait in the middle, 12 + 10 + 24 = 46 s | **20 s** in total, retries and waits included, then the rule-based draft. Each request's timeout is cut to what is left of the 20 s, and a retry is only started if at least 6 s remain after any wait |
+| One AI draft (synchronous) | up to four provider requests of 12 s each = **48 s** (46 s with a 10 s `Retry-After` wait); a `Retry-After` over 10 s was never waited for | **45 s** in total, retries and waits included, then the rule-based draft. A 429 is waited out when its `Retry-After` + 6 s still fits in what is left (at most 3 requests); otherwise the draft falls back at once. Each request's timeout is cut to what is left of the 45 s |
 
 The other two interactive AI calls (plan summary, weight insight) still have the old worst case of two
 12 s requests (24 s); they are rare and not part of a burst.

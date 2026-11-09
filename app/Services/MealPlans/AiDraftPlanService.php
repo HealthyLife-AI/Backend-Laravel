@@ -103,18 +103,27 @@ class AiDraftPlanService
     /** Disliked foods are dropped from the pool only while at least this many foods remain. */
     private const MIN_FOODS_AFTER_DISLIKES = 3;
 
-    /** Longest a nutritionist is kept waiting for a rate-limit retry before the draft falls back. */
-    private const MAX_INTERACTIVE_WAIT_SECONDS = 10;
-
     /**
      * Everything the model may take for one draft, all requests, retries and the wait for a
      * Retry-After together. The request is synchronous (the nutritionist waits) and holds one web
-     * worker, so past this the draft falls back to the rule-based one.
+     * worker, so past this the draft falls back to the rule-based one. Long enough to wait out the
+     * provider's per-minute token limit (a 429 with a Retry-After of up to ~40 s); under the 60 s a
+     * reverse proxy waits by default.
      */
-    public const TOTAL_BUDGET_SECONDS = 20;
+    public const TOTAL_BUDGET_SECONDS = 45;
 
-    /** A retry is only started when at least this much of the budget is left after any wait. */
+    /**
+     * The least time worth starting a request with: a 429 is retried only when its Retry-After plus
+     * this still fits in what is left of the budget, otherwise the draft falls back at once instead
+     * of making the nutritionist wait for nothing.
+     */
     private const MIN_RETRY_SECONDS = 6;
+
+    /** Requests for one draft when the provider keeps answering 429. */
+    private const MAX_RATE_LIMIT_ATTEMPTS = 3;
+
+    /** @var array{rule: string, where: string, excerpt: string}|null Why the last validateLlmMeals() refused an answer. */
+    private ?array $validationFailure = null;
 
     public function __construct(
         private readonly MealPlanService $plans,
@@ -218,24 +227,34 @@ class AiDraftPlanService
         // The whole exchange, retries included, has TOTAL_BUDGET_SECONDS; the client cuts each request's timeout to what is left.
         $llm = $this->llm->withTotalBudget(self::TOTAL_BUDGET_SECONDS);
 
-        // One retry for a passing hiccup, so a single click doesn't fall back:
-        // a 429 whose Retry-After is short (the nutritionist is waiting), a 400
-        // where the model's own JSON failed the provider's check, or an answer
-        // that failed our validation (e.g. an alternative not on the menu).
-        // A failed answer is never partially kept: any unknown food_id still
-        // discards the whole response.
+        // A passing problem gets another go instead of a fallback after one click:
+        // - a 429 (the provider's per-minute token limit) is waited out when its Retry-After plus a
+        //   minimal request still fits in the budget, up to MAX_RATE_LIMIT_ATTEMPTS requests;
+        // - a 400 where the model's own JSON failed the provider's check, or an answer that failed
+        //   our validation (e.g. an alternative not on the menu), get one more try.
+        // A failed answer is never partially kept: any unknown food_id still discards the whole response.
         for ($attempt = 1; ; $attempt++) {
             try {
                 $response = $llm->chatJson($messages, $this->requestOptions(), $this->usageContext + ['attempt_base' => $attempt - 1]);
             } catch (AiGenerationException $e) {
+                $left = $llm->remainingSeconds();
                 $wait = $e->getCode() === 429 ? max(1, (int) $e->retryAfter) : 0;
-                $retryable = $attempt === 1 && (
-                    ($e->getCode() === 429 && $e->retryAfter !== null && $e->retryAfter <= self::MAX_INTERACTIVE_WAIT_SECONDS)
-                    || $e->getCode() === 400
-                ) && ($llm->remainingSeconds() ?? PHP_INT_MAX) - $wait >= self::MIN_RETRY_SECONDS;
+
+                $retryable = match (true) {
+                    $e->getCode() === 429 => $e->retryAfter !== null && $attempt < self::MAX_RATE_LIMIT_ATTEMPTS && $wait + self::MIN_RETRY_SECONDS <= ($left ?? PHP_INT_MAX),
+                    $e->getCode() === 400 => $attempt === 1 && ($left ?? PHP_INT_MAX) >= self::MIN_RETRY_SECONDS,
+                    default => false,
+                };
 
                 if (! $retryable) {
-                    Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['reason' => 'request_failed', 'error' => $e->getMessage()]);
+                    Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', [
+                        'reason' => 'request_failed',
+                        'status' => $e->getCode(),
+                        'attempt' => $attempt,
+                        'retry_after' => $e->retryAfter,
+                        'budget_left_seconds' => $left === null ? null : round($left, 1),
+                        'error' => $e->getMessage(),
+                    ]);
 
                     return null;
                 }
@@ -253,11 +272,19 @@ class AiDraftPlanService
                 break;
             }
 
+            $failure = $this->validationFailure ?? ['rule' => 'unknown', 'where' => '', 'excerpt' => ''];
+
             if ($attempt >= 2 || ($llm->remainingSeconds() ?? PHP_INT_MAX) < self::MIN_RETRY_SECONDS) {
-                Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'keys' => array_keys($response)]);
+                Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', [
+                    'reason' => 'invalid_response',
+                    'attempt' => $attempt,
+                    'keys' => array_keys($response),
+                ] + $failure);
 
                 return null;
             }
+
+            Log::info('AI draft: the first answer failed validation; asking once more.', ['attempt' => $attempt] + $failure);
         }
         Log::info('AI draft: generated via LLM.', ['meal_count' => count($validated)]);
 
@@ -530,62 +557,64 @@ class AiDraftPlanService
         return json_encode($payload, JSON_UNESCAPED_UNICODE);
     }
 
-    /**
-     * Re-derives the exact same shape `generateRuleBasedMeals` produces
-     * from whatever the LLM returned — rejecting the whole response the
-     * moment anything doesn't check out, rather than keeping the parts
-     * that happen to look valid. A model that got 3 of 4 meals right and
-     * hallucinated the 4th is still a model that can't be trusted for
-     * the 3 without re-verifying them individually anyway; discarding
-     * everything and falling back is simpler and no less safe.
-     *
-     * @return array<int, array<string, mixed>>|null
-     */
     private function validateLlmMeals(array $response, Collection $candidateFoods): ?array
     {
+        $this->validationFailure = null;
         $validFoodIds = $candidateFoods->pluck('id')->all();
         $allowedMealNames = array_keys(self::MEAL_CALORIE_SHARE);
 
         $rawMeals = $response['meals'] ?? null;
         if (! is_array($rawMeals) || $rawMeals === []) {
-            return null;
+            return $this->reject('meals_missing_or_empty', 'meals', $rawMeals);
         }
 
         $seenMealNames = [];
         $plannedFoodIds = [];
         $meals = [];
 
-        foreach ($rawMeals as $rawMeal) {
+        foreach ($rawMeals as $m => $rawMeal) {
+            $at = "meals[{$m}]";
+
             if (! is_array($rawMeal)) {
-                return null;
+                return $this->reject('meal_not_an_object', $at, $rawMeal);
             }
 
             $name = $rawMeal['name'] ?? null;
-            if (! is_string($name) || ! in_array($name, $allowedMealNames, true) || in_array($name, $seenMealNames, true)) {
-                return null;
+            if (! is_string($name) || ! in_array($name, $allowedMealNames, true)) {
+                return $this->reject('meal_name_not_allowed', "{$at}.name", $name);
+            }
+            if (in_array($name, $seenMealNames, true)) {
+                return $this->reject('meal_name_repeated', "{$at}.name", $name);
             }
 
             $rawItems = $rawMeal['items'] ?? null;
-            if (! is_array($rawItems) || $rawItems === [] || count($rawItems) > self::MAX_ITEMS_PER_MEAL) {
-                return null;
+            if (! is_array($rawItems) || $rawItems === []) {
+                return $this->reject('meal_has_no_items', "{$at}.items", $rawItems);
+            }
+            if (count($rawItems) > self::MAX_ITEMS_PER_MEAL) {
+                return $this->reject('too_many_items_in_a_meal', "{$at}.items", $rawItems);
             }
 
             $items = [];
-            $inThisMeal = [];
-            foreach ($rawItems as $rawItem) {
-                $item = $this->validateLlmItem($rawItem, $validFoodIds);
-                if ($item === null || in_array($item['food_id'], $plannedFoodIds, true) || in_array($item['food_id'], $inThisMeal, true)) {
-                    return null;
+            foreach ($rawItems as $i => $rawItem) {
+                $problem = null;
+                $item = $this->validateLlmItem($rawItem, $validFoodIds, $problem);
+                if ($item === null) {
+                    return $this->reject("planned_item_{$problem}", "{$at}.items[{$i}]", $rawItem);
+                }
+                if (in_array($item['food_id'], $plannedFoodIds, true)) {
+                    return $this->reject('food_planned_twice_in_the_day', "{$at}.items[{$i}]", $rawItem);
                 }
 
                 $alternatives = [];
-                foreach (($rawItem['alternatives'] ?? []) as $rawAlt) {
+                $rawAlternatives = is_array($rawItem['alternatives'] ?? null) ? $rawItem['alternatives'] : [];
+                foreach ($rawAlternatives as $a => $rawAlt) {
                     if (count($alternatives) >= 2) {
                         break;
                     }
-                    $alt = $this->validateLlmItem($rawAlt, $validFoodIds);
+                    $alt = $this->validateLlmItem($rawAlt, $validFoodIds, $problem);
                     if ($alt === null) {
-                        return null;
+                        return $this->reject("alternative_{$problem}", "{$at}.items[{$i}].alternatives[{$a}]", $rawAlt);
                     }
                     // A duplicate or self-alternative is dropped, not a reason to discard the plan.
                     if ($alt['food_id'] === $item['food_id'] || in_array($alt['food_id'], array_column($alternatives, 'food_id'), true)) {
@@ -595,7 +624,6 @@ class AiDraftPlanService
                 }
 
                 $plannedFoodIds[] = $item['food_id'];
-                $inThisMeal[] = $item['food_id'];
                 $items[] = ['food_id' => $item['food_id'], 'quantity_grams' => $item['quantity_grams'], 'alternatives' => $alternatives];
             }
             $seenMealNames[] = $name;
@@ -605,10 +633,67 @@ class AiDraftPlanService
         return $meals;
     }
 
-    /** @return array{food_id: int, quantity_grams: float}|null */
-    private function validateLlmItem(mixed $raw, array $validFoodIds): ?array
+    /**
+     * Records which rule refused an answer and where, with a short excerpt that cannot carry personal
+     * data (see shapeOf), so the log says why a draft fell back. Always returns null.
+     */
+    private function reject(string $rule, string $where, mixed $node): null
+    {
+        $shape = json_encode($this->shapeOf($node), JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+
+        $this->validationFailure = ['rule' => $rule, 'where' => $where, 'excerpt' => mb_substr((string) $shape, 0, 300)];
+
+        return null;
+    }
+
+    /**
+     * The structure of a value without its text: numbers, booleans and nulls as they are, the four
+     * meal names as they are, any other string as its length, keys limited to plain lowercase words,
+     * at most four entries and three levels. What the model wrote in a free-text field never reaches
+     * a log line.
+     */
+    private function shapeOf(mixed $node, int $depth = 0): mixed
+    {
+        if ($node === null || is_int($node) || is_float($node) || is_bool($node)) {
+            return $node;
+        }
+
+        if (is_string($node)) {
+            return in_array($node, array_keys(self::MEAL_CALORIE_SHARE), true) ? $node : 'string('.mb_strlen($node).')';
+        }
+
+        if (! is_array($node)) {
+            return get_debug_type($node);
+        }
+
+        if ($depth >= 3) {
+            return 'array('.count($node).')';
+        }
+
+        $shape = [];
+        $shown = 0;
+        foreach ($node as $key => $value) {
+            if (++$shown > 4) {
+                $shape['...'] = '+'.(count($node) - 4).' more';
+                break;
+            }
+
+            $safeKey = is_int($key) ? $key : (preg_match('/^[a-z_]{1,24}$/', $key) === 1 ? $key : 'key('.mb_strlen($key).')');
+            $shape[$safeKey] = $this->shapeOf($value, $depth + 1);
+        }
+
+        return $shape;
+    }
+
+    /**
+     * @param  string|null  $problem  Set to why the item was refused: not_an_object, food_id_not_an_integer, food_id_not_on_the_menu, quantity_out_of_range.
+     * @return array{food_id: int, quantity_grams: float}|null
+     */
+    private function validateLlmItem(mixed $raw, array $validFoodIds, ?string &$problem = null): ?array
     {
         if (! is_array($raw)) {
+            $problem = 'not_an_object';
+
             return null;
         }
 
@@ -619,15 +704,21 @@ class AiDraftPlanService
         // is still unambiguously id 12, not a reason to discard an
         // otherwise-valid response.
         if (! is_numeric($foodId) || (int) $foodId != $foodId) {
+            $problem = 'food_id_not_an_integer';
+
             return null;
         }
         $foodId = (int) $foodId;
 
         if (! in_array($foodId, $validFoodIds, true)) {
+            $problem = 'food_id_not_on_the_menu';
+
             return null;
         }
 
         if (! is_numeric($quantity) || $quantity < 10 || $quantity > 500) {
+            $problem = 'quantity_out_of_range';
+
             return null;
         }
 
