@@ -49,40 +49,43 @@ class SendLogReminders extends Command
         // ('user') still eager-loads per page (default 1000 rows), so this
         // stays free of the N+1 that dropping the eager load would cause.
         $total = 0;
-        $sent = 0;
+        $queued = 0;
         $failed = 0;
 
-        Subscriber::active()
-            ->where(fn ($query) => $query->whereNull('last_logged_at')->orWhere('last_logged_at', '<', $today))
-            ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
-            ->with('user')
-            ->lazy()
-            ->each(function (Subscriber $subscriber) use ($notifications, $clock, &$total, &$sent, &$failed): void {
-                // B13: nothing to remind about without an active plan in force today.
-                if ($clock->start($subscriber) === null) {
-                    return;
-                }
-
-                $total++;
-
-                try {
-                    // Through the notification center: it lands in the inbox in the
-                    // patient's language, and quiet hours / the meals toggle decide
-                    // whether it is pushed.
-                    $row = $notifications->notify($subscriber->user, 'meals', 'log_reminder');
-                    if ($row->pushed_at !== null) {
-                        $sent++;
-                    } elseif ($row->push_skipped === 'failed') {
-                        $failed++;
+        // The in-app rows are written in this loop; the FCM sends are queued in chunks when it ends.
+        $notifications->batchPushes(function () use ($notifications, $clock, $today, &$total, &$queued, &$failed): void {
+            Subscriber::active()
+                ->where(fn ($query) => $query->whereNull('last_logged_at')->orWhere('last_logged_at', '<', $today))
+                ->whereHas('user', fn ($query) => $query->whereNotNull('fcm_token'))
+                ->with('user')
+                ->lazy()
+                ->each(function (Subscriber $subscriber) use ($notifications, $clock, &$total, &$queued, &$failed): void {
+                    // B13: nothing to remind about without an active plan in force today.
+                    if ($clock->start($subscriber) === null) {
+                        return;
                     }
-                } catch (\Throwable $e) {
-                    $failed++;
-                    report($e);
-                    $this->error("Reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
-                }
-            });
 
-        $this->info(sprintf('Sent %d reminder(s), %d failure(s), out of %d client(s) with a registered device.', $sent, $failed, $total));
+                    $total++;
+
+                    try {
+                        // Through the notification center: it lands in the inbox in the
+                        // patient's language, and quiet hours / the meals toggle decide
+                        // whether it is pushed.
+                        $row = $notifications->notify($subscriber->user, 'meals', 'log_reminder');
+
+                        // Inside the batch the send is queued: a row with no skip reason is one that will be pushed.
+                        if ($row->push_skipped === null) {
+                            $queued++;
+                        }
+                    } catch (\Throwable $e) {
+                        $failed++;
+                        report($e);
+                        $this->error("Reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
+                    }
+                });
+        });
+
+        $this->info(sprintf('Queued %d reminder push(es), %d failure(s), out of %d client(s) with a registered device.', $queued, $failed, $total));
 
         return self::SUCCESS;
     }

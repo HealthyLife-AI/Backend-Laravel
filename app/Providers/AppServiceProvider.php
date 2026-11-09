@@ -25,6 +25,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // One batch per process: every NotificationService feeds the same push fan-out.
+        $this->app->singleton(\App\Services\Notifications\PushBatch::class);
+
         // S5-03 follow-up: WeeklySummaryService gets its own optional
         // credential profile (config('ai.summary')) so the weekly job
         // doesn't have to share Sprint 3's Groq quota with
@@ -102,8 +105,16 @@ class AppServiceProvider extends ServiceProvider
         // `throttleApi()` call is what actually wires this into the
         // `api` middleware group; registering the limiter alone does
         // nothing.
+        //
+        // The demo accounts (demo:seed) may be given another ceiling for a load test (see
+        // config/load_test.php): a test that signs in as three accounts would otherwise hit this
+        // per-account limit at about 6 requests a second in total and measure the limiter, not the
+        // server. It is 120 like everyone else's unless that variable is set; real users never see it.
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
+            $user = $request->user();
+            $perMinute = $user?->is_demo ? (int) config('load_test.demo_api_requests_per_minute') : 120;
+
+            return Limit::perMinute($perMinute)->by($user?->id ?: $request->ip());
         });
 
         // meal-plans/ai-draft (routes/api.php): a named limiter rather

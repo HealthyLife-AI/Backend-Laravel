@@ -39,38 +39,40 @@ class RemindMeasurements extends Command
         $alerts = 0;
         $failures = 0;
 
-        SubscriberMeasurementSchedule::query()
-            ->whereHas('subscriber', fn ($q) => $q->active())
-            ->with(['subscriber.user'])
-            ->orderBy('id')
-            ->lazyById(200)
-            ->each(function (SubscriberMeasurementSchedule $schedule) use ($notifications, $schedules, $today, &$reminded, &$alerts, &$failures): void {
-                $subscriber = $schedule->subscriber;
+        $notifications->batchPushes(function () use ($notifications, $schedules, $today, &$reminded, &$alerts, &$failures): void {
+            SubscriberMeasurementSchedule::query()
+                ->whereHas('subscriber', fn ($q) => $q->active())
+                ->with(['subscriber.user'])
+                ->orderBy('id')
+                ->lazyById(200)
+                ->each(function (SubscriberMeasurementSchedule $schedule) use ($notifications, $schedules, $today, &$reminded, &$alerts, &$failures): void {
+                    $subscriber = $schedule->subscriber;
 
-                try {
-                    if ($schedule->next_due_on->toDateString() <= $today
-                        && ($schedule->last_reminded_on === null || $schedule->last_reminded_on->toDateString() < $schedule->next_due_on->toDateString())
-                        && $subscriber->user !== null) {
-                        $notifications->notify(
-                            $subscriber->user,
-                            'measurements',
-                            'measurement_due',
-                            [],
-                            "measurement:{$subscriber->id}:{$schedule->next_due_on->toDateString()}",
-                        );
-                        $schedule->forceFill(['last_reminded_on' => $today])->save();
-                        $reminded++;
+                    try {
+                        if ($schedule->next_due_on->toDateString() <= $today
+                            && ($schedule->last_reminded_on === null || $schedule->last_reminded_on->toDateString() < $schedule->next_due_on->toDateString())
+                            && $subscriber->user !== null) {
+                            $notifications->notify(
+                                $subscriber->user,
+                                'measurements',
+                                'measurement_due',
+                                [],
+                                "measurement:{$subscriber->id}:{$schedule->next_due_on->toDateString()}",
+                            );
+                            $schedule->forceFill(['last_reminded_on' => $today])->save();
+                            $reminded++;
+                        }
+
+                        $before = $subscriber->alerts()->open()->count();
+                        $schedules->sync($subscriber, $schedule);
+                        $alerts += max(0, $subscriber->alerts()->open()->count() - $before);
+                    } catch (\Throwable $e) {
+                        $failures++;
+                        report($e);
+                        $this->error("Measurement reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
                     }
-
-                    $before = $subscriber->alerts()->open()->count();
-                    $schedules->sync($subscriber, $schedule);
-                    $alerts += max(0, $subscriber->alerts()->open()->count() - $before);
-                } catch (\Throwable $e) {
-                    $failures++;
-                    report($e);
-                    $this->error("Measurement reminder failed for subscriber {$subscriber->id}: {$e->getMessage()}");
-                }
-            });
+                });
+        });
 
         app(SelfScheduler::class)->recordResult('measurements', ['reminded' => $reminded, 'alerts_opened' => $alerts, 'failures' => $failures]);
         $this->info(sprintf('%d reminder(s), %d new overdue alert(s), %d failure(s).', $reminded, $alerts, $failures));

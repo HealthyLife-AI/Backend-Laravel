@@ -106,6 +106,16 @@ class AiDraftPlanService
     /** Longest a nutritionist is kept waiting for a rate-limit retry before the draft falls back. */
     private const MAX_INTERACTIVE_WAIT_SECONDS = 10;
 
+    /**
+     * Everything the model may take for one draft, all requests, retries and the wait for a
+     * Retry-After together. The request is synchronous (the nutritionist waits) and holds one web
+     * worker, so past this the draft falls back to the rule-based one.
+     */
+    public const TOTAL_BUDGET_SECONDS = 20;
+
+    /** A retry is only started when at least this much of the budget is left after any wait. */
+    private const MIN_RETRY_SECONDS = 6;
+
     public function __construct(
         private readonly MealPlanService $plans,
         private readonly OpenAiCompatibleClient $llm,
@@ -205,6 +215,9 @@ class AiDraftPlanService
             ['role' => 'user', 'content' => $this->userPrompt($candidates, $dailyCalories, $profile, $goal, $groups, $foodNames, $softTags)],
         ];
 
+        // The whole exchange, retries included, has TOTAL_BUDGET_SECONDS; the client cuts each request's timeout to what is left.
+        $llm = $this->llm->withTotalBudget(self::TOTAL_BUDGET_SECONDS);
+
         // One retry for a passing hiccup, so a single click doesn't fall back:
         // a 429 whose Retry-After is short (the nutritionist is waiting), a 400
         // where the model's own JSON failed the provider's check, or an answer
@@ -213,12 +226,13 @@ class AiDraftPlanService
         // discards the whole response.
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = $this->llm->chatJson($messages, $this->requestOptions(), $this->usageContext + ['attempt_base' => $attempt - 1]);
+                $response = $llm->chatJson($messages, $this->requestOptions(), $this->usageContext + ['attempt_base' => $attempt - 1]);
             } catch (AiGenerationException $e) {
+                $wait = $e->getCode() === 429 ? max(1, (int) $e->retryAfter) : 0;
                 $retryable = $attempt === 1 && (
                     ($e->getCode() === 429 && $e->retryAfter !== null && $e->retryAfter <= self::MAX_INTERACTIVE_WAIT_SECONDS)
                     || $e->getCode() === 400
-                );
+                ) && ($llm->remainingSeconds() ?? PHP_INT_MAX) - $wait >= self::MIN_RETRY_SECONDS;
 
                 if (! $retryable) {
                     Log::warning('AI draft: LLM call failed, falling back to rule-based generation.', ['reason' => 'request_failed', 'error' => $e->getMessage()]);
@@ -226,8 +240,8 @@ class AiDraftPlanService
                     return null;
                 }
 
-                if ($e->getCode() === 429) {
-                    Sleep::for(max(1, $e->retryAfter))->seconds();
+                if ($wait > 0) {
+                    Sleep::for($wait)->seconds();
                 }
 
                 continue;
@@ -239,7 +253,7 @@ class AiDraftPlanService
                 break;
             }
 
-            if ($attempt >= 2) {
+            if ($attempt >= 2 || ($llm->remainingSeconds() ?? PHP_INT_MAX) < self::MIN_RETRY_SECONDS) {
                 Log::warning('AI draft: LLM response failed validation, falling back to rule-based generation.', ['reason' => 'invalid_response', 'keys' => array_keys($response)]);
 
                 return null;

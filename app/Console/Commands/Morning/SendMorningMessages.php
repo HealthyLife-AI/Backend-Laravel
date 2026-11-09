@@ -35,30 +35,32 @@ class SendMorningMessages extends Command
         $skipped = 0;
         $failures = 0;
 
-        Subscriber::withoutGlobalScopes()->active()
-            ->whereHas('user')
-            ->whereHas('mealPlans', fn ($q) => $q->where('status', 'active'))
-            ->with('user')
-            ->lazyById(200)
-            ->each(function (Subscriber $subscriber) use ($notifications, $today, $date, &$sent, &$skipped, &$failures): void {
-                try {
-                    $key = "morning:{$subscriber->id}:{$date->toDateString()}";
+        $notifications->batchPushes(function () use ($notifications, $today, $date, &$sent, &$skipped, &$failures): void {
+            Subscriber::withoutGlobalScopes()->active()
+                ->whereHas('user')
+                ->whereHas('mealPlans', fn ($q) => $q->where('status', 'active'))
+                ->with('user')
+                ->lazyById(200)
+                ->each(function (Subscriber $subscriber) use ($notifications, $today, $date, &$sent, &$skipped, &$failures): void {
+                    try {
+                        $key = "morning:{$subscriber->id}:{$date->toDateString()}";
 
-                    if ($today->activePlan($subscriber, $date) === null
-                        || PatientNotification::query()->where('user_id', $subscriber->user_id)->where('dedupe_key', $key)->exists()) {
-                        $skipped++;
+                        if ($today->activePlan($subscriber, $date) === null
+                            || PatientNotification::query()->where('user_id', $subscriber->user_id)->where('dedupe_key', $key)->exists()) {
+                            $skipped++;
 
-                        return;
+                            return;
+                        }
+
+                        $notifications->notify($subscriber->user, 'morning', 'morning_message', [], $key);
+                        $sent++;
+                    } catch (\Throwable $e) {
+                        $failures++;
+                        report($e);
+                        $this->error("Morning message failed for subscriber {$subscriber->id}: {$e->getMessage()}");
                     }
-
-                    $notifications->notify($subscriber->user, 'morning', 'morning_message', [], $key);
-                    $sent++;
-                } catch (\Throwable $e) {
-                    $failures++;
-                    report($e);
-                    $this->error("Morning message failed for subscriber {$subscriber->id}: {$e->getMessage()}");
-                }
-            });
+                });
+        });
 
         app(SelfScheduler::class)->recordResult('morning', ['sent' => $sent, 'skipped' => $skipped, 'failures' => $failures]);
         $this->info("{$sent} morning message(s) sent, {$skipped} skipped, {$failures} failure(s).");

@@ -108,9 +108,12 @@ subsequent `artisan` command, including `php artisan test`, ahead of
 `bootstrap/cache/.gitignore` — so this can't reach the repo by accident,
 but it can still corrupt your own local dev/test session until cleared.)
 
-OPcache is a PHP-level setting, not something this repo controls — worth
-confirming it's enabled on whatever container Taqat builds, since it's a
-larger win for a PHP API's per-request cost than either command above.
+OPcache is a PHP-level setting. For the production web process (PHP's
+built-in server, CLI SAPI) it is switched on by `.php/opcache.ini`, loaded
+through `bin/web.sh`, and `php artisan optimize` runs there too — see
+`docs/production.md` for the process model, the worker count and the commands
+that verify both after a deploy. (The Procfile mentioned further down this
+file as missing exists now: `web` and `release` are in it.)
 
 ## Scheduler (alerts, log reminders, weekly AI summaries)
 

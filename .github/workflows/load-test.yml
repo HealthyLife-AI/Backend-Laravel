@@ -1,0 +1,128 @@
+name: Load test
+
+# Manual only. Runs k6 (load-tests/) against the platform with the demo accounts, so read
+# docs/load-test.md and its safety checklist first: run at night, warn Taqat, start small.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Which scenario to run
+        type: choice
+        options:
+          - patients
+          - nutritionists
+          - burst
+        default: patients
+      vus_stage_1:
+        description: Virtual users, first stage
+        type: string
+        default: '10'
+      vus_stage_2:
+        description: Virtual users, second stage
+        type: string
+        default: '25'
+      vus_stage_3:
+        description: Virtual users, third stage
+        type: string
+        default: '50'
+      stage_duration:
+        description: How long each stage is held (for example 2m)
+        type: string
+        default: 2m
+      burst_patients:
+        description: Patients opening the app (burst scenario only)
+        type: string
+        default: '50'
+      confirm:
+        description: 'Type YES: it is night time, Taqat has been warned, and LOAD_TEST_DEMO_API_RATE_PER_MINUTE is set on the app for this run'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# One load test at a time, and never two against the same platform.
+concurrency:
+  group: load-test
+  cancel-in-progress: false
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check the confirmation and the inputs
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          VUS_1: ${{ inputs.vus_stage_1 }}
+          VUS_2: ${{ inputs.vus_stage_2 }}
+          VUS_3: ${{ inputs.vus_stage_3 }}
+          BURST_PATIENTS: ${{ inputs.burst_patients }}
+          STAGE_DURATION: ${{ inputs.stage_duration }}
+          BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
+          PATIENT_PASSWORD: ${{ secrets.LOAD_TEST_PATIENT_PASSWORD }}
+          NUTRITIONIST_PASSWORD: ${{ secrets.LOAD_TEST_NUTRITIONIST_PASSWORD }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+
+          [ "$CONFIRM" = "YES" ] || fail "Type YES in the confirm input after reading the safety checklist in docs/load-test.md."
+
+          for value in "$VUS_1" "$VUS_2" "$VUS_3" "$BURST_PATIENTS"; do
+            case "$value" in ''|*[!0-9]*) fail "Virtual-user inputs must be whole numbers; got '$value'." ;; esac
+            [ "$value" -ge 1 ] && [ "$value" -le 100 ] || fail "Virtual-user inputs must be between 1 and 100; got '$value'."
+          done
+
+          case "$STAGE_DURATION" in
+            [0-9]*[smh]) ;;
+            *) fail "stage_duration must look like 90s, 2m or 1h; got '$STAGE_DURATION'." ;;
+          esac
+
+          case "$BASE_URL" in
+            https://*) ;;
+            *) fail "The LOAD_TEST_BASE_URL secret must be set to the API origin, https://..." ;;
+          esac
+
+          [ -n "$PATIENT_PASSWORD" ] || fail "The LOAD_TEST_PATIENT_PASSWORD secret is not set."
+          [ -n "$NUTRITIONIST_PASSWORD" ] || fail "The LOAD_TEST_NUTRITIONIST_PASSWORD secret is not set."
+
+      - uses: actions/checkout@v4
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Run k6
+        shell: bash
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+          BASE_URL: ${{ secrets.LOAD_TEST_BASE_URL }}
+          DEMO_PATIENT_PASSWORD: ${{ secrets.LOAD_TEST_PATIENT_PASSWORD }}
+          DEMO_NUTRITIONIST_PASSWORD: ${{ secrets.LOAD_TEST_NUTRITIONIST_PASSWORD }}
+          VUS_1: ${{ inputs.vus_stage_1 }}
+          VUS_2: ${{ inputs.vus_stage_2 }}
+          VUS_3: ${{ inputs.vus_stage_3 }}
+          STAGE_DURATION: ${{ inputs.stage_duration }}
+          BURST_PATIENTS: ${{ inputs.burst_patients }}
+        run: |
+          mkdir -p results
+          set +e
+          k6 run --summary-export=results/summary.json "load-tests/${SCENARIO}.js" 2>&1 | tee results/k6-output.txt
+          status=${PIPESTATUS[0]}
+
+          {
+            echo "### k6 ${SCENARIO}: exit code ${status}"
+            echo '```'
+            tail -n 45 results/k6-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Non-zero when a threshold failed (errors over 1%, p95 over 1000 ms) or the run was aborted (errors over 5%).
+          exit "$status"
+
+      - name: Upload the summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-${{ inputs.scenario }}-${{ github.run_id }}
+          path: results/
+          if-no-files-found: ignore
+          retention-days: 30
