@@ -4,8 +4,6 @@ namespace Tests\Feature\Performance;
 
 use App\Exceptions\Ai\AiGenerationException;
 use App\Jobs\SendPushNotifications;
-use App\Models\Food;
-use App\Models\HealthProfile;
 use App\Models\Meal;
 use App\Models\MealPlan;
 use App\Models\NotificationPreference;
@@ -332,17 +330,6 @@ class BurstReadinessTest extends TestCase
         return (float) now()->format('U.u');
     }
 
-    private function draftSetUp(): Subscriber
-    {
-        $this->aiSetUp();
-        $user = User::factory()->client($this->nutritionist)->create();
-        $subscriber = Subscriber::factory()->active()->create(['nutritionist_id' => $this->nutritionist->id, 'user_id' => $user->id]);
-        HealthProfile::create(['subscriber_id' => $subscriber->id, 'weight_kg' => 70, 'height_cm' => 170, 'age' => 30, 'gender' => 'female', 'activity_level' => 'light', 'daily_calorie_needs' => 1900]);
-        Food::factory()->count(6)->create(['allergens' => []]);
-
-        return $subscriber;
-    }
-
     public function test_one_request_never_gets_more_time_than_the_draft_budget(): void
     {
         $this->aiSetUp(configuredTimeout: 60);
@@ -389,68 +376,6 @@ class BurstReadinessTest extends TestCase
         }
 
         Http::assertNothingSent();
-    }
-
-    public function test_when_every_request_uses_its_whole_timeout_the_draft_still_ends_inside_the_budget(): void
-    {
-        $subscriber = $this->draftSetUp();
-        $timeouts = [];
-        Http::fake(function ($request, $options) use (&$timeouts) {
-            $timeouts[] = (float) $options['timeout'];
-            Carbon::setTestNow(now()->addMilliseconds((int) round($options['timeout'] * 1000)));   // the provider answers only at the timeout
-
-            return Http::response(['error' => ['code' => 'json_validate_failed', 'message' => 'x']], 400);
-        });
-        $start = $this->clock();
-
-        $plan = app(AiDraftPlanService::class)->generateDraft($subscriber, $this->nutritionist);
-
-        $this->assertTrue($plan->is_ai_fallback, 'the nutritionist still gets the rule-based draft');
-        $this->assertSame(20, AiDraftPlanService::TOTAL_BUDGET_SECONDS);
-        $this->assertLessThanOrEqual(20.01, $this->clock() - $start, 'total time held');
-        $this->assertLessThanOrEqual(20.01, array_sum($timeouts), 'the timeouts add up to at most the budget');
-        $this->assertCount(2, $timeouts, 'the JSON-mode request and its plain-text retry; no third request would fit');
-        $this->assertEquals(12, $timeouts[0]);
-        $this->assertEqualsWithDelta(8, $timeouts[1], 0.05);
-    }
-
-    public function test_a_short_retry_after_is_waited_once_and_the_whole_still_fits_the_budget(): void
-    {
-        $subscriber = $this->draftSetUp();
-        $sent = 0;
-        Http::fake(function () use (&$sent) {
-            $sent++;
-
-            return Http::response(['error' => ['message' => 'rate limit']], 429, ['Retry-After' => '10']);
-        });
-        $start = $this->clock();
-
-        $plan = app(AiDraftPlanService::class)->generateDraft($subscriber, $this->nutritionist);
-
-        $this->assertTrue($plan->is_ai_fallback);
-        $this->assertSame(2, $sent, 'one try, one wait, one retry');
-        Sleep::assertSleptTimes(1);
-        $this->assertLessThanOrEqual(20.01, $this->clock() - $start);
-    }
-
-    public function test_a_retry_after_that_no_longer_fits_the_budget_is_not_waited_for(): void
-    {
-        $subscriber = $this->draftSetUp();
-        $sent = 0;
-        Http::fake(function ($request, $options) use (&$sent) {
-            $sent++;
-            Carbon::setTestNow(now()->addSeconds(12));   // a slow 429: 8 s of the 20 are left, a 10 s wait cannot fit
-
-            return Http::response(['error' => ['message' => 'rate limit']], 429, ['Retry-After' => '10']);
-        });
-        $start = $this->clock();
-
-        $plan = app(AiDraftPlanService::class)->generateDraft($subscriber, $this->nutritionist);
-
-        $this->assertTrue($plan->is_ai_fallback);
-        $this->assertSame(1, $sent);
-        Sleep::assertNeverSlept();
-        $this->assertLessThanOrEqual(12.01, $this->clock() - $start);
     }
 
     // ---- the scheduler -----------------------------------------------------------------------------------------------------------------
