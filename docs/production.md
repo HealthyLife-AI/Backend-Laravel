@@ -22,10 +22,17 @@ release: php artisan migrate --force
 
 1. `php artisan optimize`: caches config, routes, events and views **in the web container**. If it fails, the app
    still starts, uncached, and logs a warning.
-2. Adds `.php/` to `PHP_INI_SCAN_DIR` (the empty first entry keeps PHP's own scan directory, so no extension is
-   lost). `.php/opcache.ini` switches **OPcache on for the CLI SAPI**: the web server is PHP's built-in server
-   (`php artisan serve`), which runs under the CLI SAPI, where OPcache is off by default.
-3. Logs whether OPcache is really on, and the worker count.
+2. Switches **OPcache on for the CLI SAPI**: the web server is PHP's built-in server (`php artisan serve`), which
+   runs under the CLI SAPI, where OPcache is off by default. `.php/opcache.ini` does it, loaded through
+   `PHP_INI_SCAN_DIR`. On Nixpacks `php` is the nixpkgs wrapper, which sets that variable itself (only when it is
+   unset) to the directory holding the ini files that load `pdo_mysql`, `mbstring`, `openssl`, `opcache`...;
+   nixpkgs PHP has no compiled-in scan directory. So the script **asks PHP for the value it already has**
+   (`php -r 'echo getenv("PHP_INI_SCAN_DIR")'`), exports `"$BASE:/app/.php"` (PHP's directory first, ours after),
+   and **checks before using it** that `pdo_mysql`, `mbstring`, `openssl`, `tokenizer`, `ctype` and any `ext-*` in
+   `composer.json` still load with that value. If one would not, nothing is exported: it logs a `WARNING`, and the
+   server starts exactly as it would without this file (no OPcache).
+3. Logs the scan directory it found, the one it will use, the result of the extension check, whether OPcache is
+   on, and the worker count.
 4. `exec php artisan serve --host=0.0.0.0 --port=$PORT --no-reload`. `--no-reload` is what makes `artisan serve`
    honour `PHP_CLI_SERVER_WORKERS`, and it hands the whole environment to the workers.
 
@@ -54,7 +61,10 @@ Nothing else changes. No new migration.
 ## The queue
 
 The platform has no separate worker process, so the every-minute cron works the queue:
-`queue:work database --stop-when-empty --max-time=50 --tries=3` (no overlap, in the background). It handles the
+`queue:work database --stop-when-empty --max-time=50 --tries=3` (no overlap; **in the foreground, and the last
+entry in the schedule**, so the pushes queued by that minute's commands are sent in the same run). It must not be a
+background process: Dokku runs each cron entry in a one-off container that is removed when `schedule:run` exits,
+which would kill a background worker and leave its lock behind. It handles the
 only queued job today, `SendPushNotifications`: the FCM sends of a post, the morning push and the other bulk
 notifications, 100 per job. In-app notifications are written immediately; the phone push follows within about a
 minute.
@@ -67,13 +77,14 @@ If something looks stuck: `GET /api/v1/system/scheduler-status` (admin) shows `q
 From a shell in the web container (`dokku enter <app> web`, or `dokku run`):
 
 ```sh
-# 1. The OPcache setting is read from the scan directory, and is on for the CLI.
-PHP_INI_SCAN_DIR=":/app/.php" php -i | grep -E "opcache.enable_cli|opcache.validate_timestamps|Additional .ini"
-# Expected: opcache.enable_cli => On => On, opcache.validate_timestamps => Off => Off, and /app/.php/opcache.ini parsed.
+# 1. What PHP scans on its own (the nixpkgs wrapper's value), and what the web process gets.
+BASE="$(php -r 'echo getenv("PHP_INI_SCAN_DIR") ?: "";')"; echo "$BASE"
+PHP_INI_SCAN_DIR="$BASE:/app/.php" php -i | grep -E "opcache.enable_cli|opcache.validate_timestamps|Additional .ini"
+# Expected: opcache.enable_cli => On => On, opcache.validate_timestamps => Off => Off, and opcache.ini parsed.
 
-# 2. The opcache extension is installed at all.
-php -m | grep -i "opcache"
-# Expected: Zend OPcache. Nothing printed means the Nixpacks PHP has no opcache; see the note below.
+# 2. The extensions are still all there with that value, and opcache among them.
+PHP_INI_SCAN_DIR="$BASE:/app/.php" php -m | grep -iE "^(pdo_mysql|mbstring|openssl|tokenizer|ctype|Zend OPcache)$"
+# Expected: six lines. Never use ":/app/.php" on its own here: an empty first entry scans nothing on nixpkgs.
 
 # 3. The caches exist (written by bin/web.sh at start).
 ls bootstrap/cache
@@ -82,6 +93,19 @@ ls bootstrap/cache
 # 4. What the migrations did.
 php artisan migrate:status | tail -5
 ```
+
+The deploy log (`dokku logs <app>`) shows what `bin/web.sh` decided:
+
+```
+PHP_INI_SCAN_DIR as PHP has it: '/nix/store/...-php-env/lib'
+PHP_INI_SCAN_DIR with OPcache:  '/nix/store/...-php-env/lib:/app/.php'
+Extension check with that scan directory: all required extensions load.
+OPcache is on for the web process.
+PHP_CLI_SERVER_WORKERS=8
+```
+
+A `WARNING: with that scan directory these PHP extensions would not load: ...` line instead means the server started
+**without** OPcache (it is safe, just slower): send that line to whoever maintains this file.
 
 A shell in the container is another process than the one serving requests, so also ask the serving process
 itself. This is the authoritative check:
@@ -102,8 +126,8 @@ Look at `runtime`:
 
 and the deploy log shows `OPcache is on for the web process.` (or a `WARNING` line if it is not).
 
-If `opcache.enabled` is `false`: the Nixpacks PHP build either has no opcache extension or ignores
-`PHP_INI_SCAN_DIR`. Nixpacks builds PHP with `withExtensions (pe: pe.enabled ++ [...])` plus every `ext-*` in
+If `opcache.enabled` is `false`: the deploy log says why (the warning above), or the Nixpacks PHP build has no
+opcache extension. Nixpacks builds PHP with `withExtensions (pe: pe.enabled ++ [...])` plus every `ext-*` in
 `composer.json`, and ignores `ext-zend-opcache` for PHP 8; `opcache` is normally in the default set. If it is
 not, add `"ext-opcache": "*"` to `composer.json` `require` (this is the only change that would need a
 re-deploy; it was not added blind because adding an extension the build already has can break it).

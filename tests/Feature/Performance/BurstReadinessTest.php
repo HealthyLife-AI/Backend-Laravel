@@ -463,17 +463,22 @@ class BurstReadinessTest extends TestCase
         return collect(app(Schedule::class)->events())->filter(fn (Event $e) => str_contains($e->command, $needle));
     }
 
-    public function test_the_queue_is_worked_every_minute_from_the_cron_without_overlap_in_the_background(): void
+    public function test_the_queue_is_worked_every_minute_from_the_cron_in_the_foreground_and_last(): void
     {
-        $events = $this->events('queue:work');
+        Artisan::call('list');   // boots the console kernel, which registers the schedule (once: a second call registers it again)
+        $all = array_values(app(Schedule::class)->events());
+        $matching = array_values(array_filter($all, fn (Event $e) => str_contains($e->command, 'queue:work')));
 
-        $this->assertCount(1, $events);
-        $event = $events->first();
+        $this->assertCount(1, $matching);
+        $event = $matching[0];
         $this->assertStringContainsString('queue:work database --stop-when-empty --max-time=50 --tries=3', $event->command);
         $this->assertSame('* * * * *', $event->expression);
         $this->assertTrue($event->withoutOverlapping);
-        $this->assertTrue($event->runInBackground);
         $this->assertSame(10, $event->expiresAt, 'a killed run heals its lock in 10 minutes, not 24 hours');
+        $this->assertFalse($event->runInBackground, 'Dokku removes the cron container when schedule:run exits: a background worker would be killed with it');
+
+        // Last, so the pushes queued by the commands that run before it in the same minute are sent in that run.
+        $this->assertSame($event, end($all));
     }
 
     public function test_every_bulk_command_is_scheduled_without_overlap_and_with_a_lock_that_expires(): void
@@ -508,6 +513,113 @@ class BurstReadinessTest extends TestCase
         $this->assertStringContainsString('--no-reload', $script);
         $this->assertStringContainsString('exec php artisan serve', $script);
         $this->assertStringNotContainsString("\r", $script, 'LF line endings: a CR would break the script on Linux');
+        $this->assertLessThan(strpos($script, 'export PHP_INI_SCAN_DIR'), strpos($script, 'php artisan optimize'), 'optimize before anything is exported');
+    }
+
+    // ---- bin/web.sh, run for real against a stand-in for the nixpkgs `php` wrapper ------------------------------------------------
+
+    private const WRAPPER_DEFAULT = '/nix/store/abc-php-env/lib';
+
+    /**
+     * Runs bin/web.sh with a fake `php` first on the PATH. The fake behaves like the nixpkgs wrapper: it
+     * sets PHP_INI_SCAN_DIR to its own directory only when the variable is unset (--set-default), reports
+     * the extensions it is told are missing, and records every call and the scan directory `artisan serve` gets.
+     *
+     * @return array{output: string, log: list<string>}
+     */
+    private function runWebScript(string $missingExtensions = '', int $optimizeExit = 0): array
+    {
+        if (trim((string) @shell_exec('sh -c "echo ok" 2>&1')) !== 'ok') {
+            $this->markTestSkipped('No POSIX sh available to run bin/web.sh.');
+        }
+
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'webscript-'.bin2hex(random_bytes(4));
+        mkdir($dir);
+        $log = $dir.DIRECTORY_SEPARATOR.'calls.log';
+
+        file_put_contents($dir.DIRECTORY_SEPARATOR.'php', <<<'SH'
+        #!/bin/sh
+        # Stand-in for `php` on Nixpacks: the wrapper's --set-default PHP_INI_SCAN_DIR.
+        : "${PHP_INI_SCAN_DIR=$FAKE_WRAPPER_DEFAULT}"
+        echo "call: $*" >> "$FAKE_LOG"
+        case "$1" in
+          artisan)
+            case "$2" in
+              optimize) echo "fake optimize"; exit "${FAKE_OPTIMIZE_EXIT:-0}" ;;
+              serve) echo "serve scan_dir=$PHP_INI_SCAN_DIR" >> "$FAKE_LOG"; exit 0 ;;
+            esac ;;
+          -r)
+            case "$2" in
+              *getenv*) printf '%s' "$PHP_INI_SCAN_DIR" ;;
+              *extension_loaded*) echo "extension check scan_dir=$PHP_INI_SCAN_DIR" >> "$FAKE_LOG"; printf '%s' "$FAKE_MISSING" ;;
+              *opcache.enable_cli*) printf '1' ;;
+            esac ;;
+        esac
+        SH);
+        chmod($dir.DIRECTORY_SEPARATOR.'php', 0755);
+
+        $process = proc_open(
+            ['sh', base_path('bin/web.sh')],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            base_path(),
+            ['PATH' => $dir.PATH_SEPARATOR.getenv('PATH'), 'FAKE_LOG' => $log, 'FAKE_WRAPPER_DEFAULT' => self::WRAPPER_DEFAULT, 'FAKE_MISSING' => $missingExtensions, 'FAKE_OPTIMIZE_EXIT' => (string) $optimizeExit, 'PHP_CLI_SERVER_WORKERS' => '8', 'SystemRoot' => (string) getenv('SystemRoot')],
+        );
+        $output = stream_get_contents($pipes[1]).stream_get_contents($pipes[2]);
+        proc_close($process);
+
+        $calls = is_file($log) ? array_values(array_filter(explode("\n", (string) file_get_contents($log)))) : [];
+        @unlink($log);
+        @unlink($dir.DIRECTORY_SEPARATOR.'php');
+        @rmdir($dir);
+
+        return ['output' => $output, 'log' => $calls];
+    }
+
+    public function test_the_web_script_adds_our_directory_after_the_one_php_already_uses(): void
+    {
+        $run = $this->runWebScript();
+
+        $served = collect($run['log'])->first(fn ($line) => str_starts_with($line, 'serve scan_dir='));
+        $this->assertNotNull($served, 'artisan serve was started');
+        $this->assertStringStartsWith('serve scan_dir='.self::WRAPPER_DEFAULT.':', $served, "PHP's own directory stays first, so its extensions still load");
+        $this->assertStringEndsWith('/.php', $served, 'our OPcache directory comes after it');
+        $this->assertStringNotContainsString('scan_dir=:', $served, 'never an empty first entry: nixpkgs PHP has no compiled-in directory to fill it');
+
+        $this->assertStringContainsString("PHP_INI_SCAN_DIR as PHP has it: '".self::WRAPPER_DEFAULT."'", $run['output']);
+        $this->assertStringContainsString('Extension check with that scan directory: all required extensions load.', $run['output']);
+        $this->assertStringContainsString('OPcache is on for the web process.', $run['output']);
+        $this->assertStringContainsString('PHP_CLI_SERVER_WORKERS=8', $run['output']);
+    }
+
+    public function test_the_web_script_checks_the_extensions_with_the_new_scan_directory_before_using_it(): void
+    {
+        $run = $this->runWebScript();
+
+        $checked = collect($run['log'])->first(fn ($line) => str_starts_with($line, 'extension check scan_dir='));
+        $this->assertStringStartsWith('extension check scan_dir='.self::WRAPPER_DEFAULT.':', (string) $checked);
+        $this->assertStringEndsWith('/.php', (string) $checked);
+    }
+
+    public function test_the_web_script_starts_without_opcache_when_an_extension_would_go_missing(): void
+    {
+        $run = $this->runWebScript(missingExtensions: 'pdo_mysql mbstring');
+
+        $served = collect($run['log'])->first(fn ($line) => str_starts_with($line, 'serve scan_dir='));
+        $this->assertNotNull($served, 'the server still starts');
+        $this->assertSame('serve scan_dir='.self::WRAPPER_DEFAULT, $served, 'exactly the environment it has today: no .php directory');
+        $this->assertStringContainsString('WARNING: with that scan directory these PHP extensions would not load: pdo_mysql mbstring', $run['output']);
+        $this->assertStringContainsString('Starting WITHOUT OPcache', $run['output']);
+        $this->assertStringNotContainsString('OPcache is on for the web process.', $run['output']);
+    }
+
+    public function test_the_web_script_optimizes_first_and_still_starts_if_that_fails(): void
+    {
+        $run = $this->runWebScript(optimizeExit: 1);
+
+        $this->assertSame('call: artisan optimize', $run['log'][0], 'optimize is the first thing it does');
+        $this->assertStringContainsString('WARNING: php artisan optimize failed', $run['output']);
+        $this->assertNotNull(collect($run['log'])->first(fn ($line) => str_starts_with($line, 'serve scan_dir=')), 'the app starts anyway');
     }
 
     public function test_the_opcache_ini_turns_it_on_for_the_cli_server(): void

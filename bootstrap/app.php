@@ -30,15 +30,6 @@ return Application::configure(basePath: dirname(__DIR__))
         // deploy, a container restart) would leave its lock behind for 24 hours and skip tomorrow's run.
         $bulkLockMinutes = 30;
 
-        // Sends the queued push fan-outs (App\Jobs\SendPushNotifications) and any other queued job.
-        // Run from this cron instead of a separate worker process: Dokku runs only the web process.
-        // It stops by itself when the queue is empty or after 50 s, so each minute's run ends before
-        // the next one starts; the short lock expiry heals a run that was killed.
-        $schedule->command('queue:work database --stop-when-empty --max-time=50 --tries=3')
-            ->everyMinute()
-            ->withoutOverlapping(10)
-            ->runInBackground();
-
         // S5-01 / FR-20. First scheduled job in this project — Taqat
         // (production) needs its own cron entry running
         // `php artisan schedule:run` every minute for this to actually
@@ -76,7 +67,20 @@ return Application::configure(basePath: dirname(__DIR__))
         // Phase 3, B3. 07:30 clinic time: the morning push for patients with an active plan.
         $schedule->command('morning:send')->dailyAt('07:30')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
-        // The jobs above also run without this cron at all — any API
+        // LAST on purpose: `schedule:run` runs the due jobs in the order they are defined, so the pushes that
+        // this minute's jobs above just queued are sent in the same run.
+        //
+        // Sends the queued push fan-outs (App\Jobs\SendPushNotifications) and any other queued job. Run from
+        // this cron instead of a separate worker process: Dokku runs only the web process. In the
+        // foreground, not runInBackground(): Dokku runs each cron entry in a one-off container that is
+        // removed when `schedule:run` exits, which would kill a background worker and leave its lock
+        // behind. It stops by itself when the queue is empty or after 50 s; the lock expiry heals a run
+        // that was killed anyway.
+        $schedule->command('queue:work database --stop-when-empty --max-time=50 --tries=3')
+            ->everyMinute()
+            ->withoutOverlapping(10);
+
+        // The dated jobs above (not the queue worker) also run without this cron at all — any API
         // request that finds one overdue runs it after its response (see
         // RunOverdueScheduledTasks / SelfScheduler). The cron just makes
         // them fire exactly on time instead of on the next request.
