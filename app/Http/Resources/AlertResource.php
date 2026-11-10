@@ -40,6 +40,9 @@ class AlertResource extends JsonResource
             // not this field, or a milestone reads as a still-open
             // problem instead of the one-shot positive event it is.
             'is_resolved' => $this->resolved_at !== null,
+            // The request a `quick_request` alert is about, so the dashboard can
+            // open that exact request; null for every other type.
+            'quick_request_id' => $this->quick_request_id,
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

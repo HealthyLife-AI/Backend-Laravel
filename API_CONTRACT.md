@@ -2282,9 +2282,13 @@ own scope through the relation.
   "message": "Daily calorie target exceeded for 3 consecutive days.",
   "is_read": false,
   "is_resolved": false,
+  "quick_request_id": null,
   "created_at": "2026-09-15T06:00:00+00:00"
 }
 ```
+
+`quick_request_id` is the request a `quick_request` alert is about (so the
+dashboard can open it directly); `null` for every other type.
 
 Both filters are optional and independent; omitting `is_read` returns both
 read and unread — it is never defaulted to unread-only.
@@ -2295,6 +2299,23 @@ is without a second lookup per row. `is_resolved` is `false`, never `null`,
 for a `milestone` alert too — it has no ongoing condition to resolve, so a
 caller distinguishing "open problem" from "one-shot positive event" must key
 that off `type`, not this field.
+
+### `POST /alerts/read-all`
+
+Nutritionist-only (`alerts.view`). Marks the caller's **unread** alerts read
+and returns how many changed:
+
+```json
+{ "updated": 7 }
+```
+
+Optional body (or query) filters, the same as the list's: `severity`
+(`normal` | `important`) and `subscriber_id`. With none, every unread alert
+on the caller's roster is marked. One `UPDATE` scoped exactly like
+`GET /alerts` (`whereHas('subscriber')`), so another nutritionist's alerts
+are never touched; a `subscriber_id` from another roster updates `0`.
+Already-read alerts are left as they are. `422` for an unknown `severity`
+or a `subscriber_id` that does not exist.
 
 ### `PATCH /alerts/{id}/read`
 

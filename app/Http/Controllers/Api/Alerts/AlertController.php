@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api\Alerts;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Alerts\IndexAlertRequest;
+use App\Http\Requests\Alerts\ReadAllAlertsRequest;
 use App\Http\Resources\AlertResource;
 use App\Models\Alert;
 use App\Models\Subscriber;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 /**
@@ -42,6 +44,28 @@ class AlertController extends Controller
             ->paginate();
 
         return AlertResource::collection($alerts);
+    }
+
+    /**
+     * Marks the caller's unread alerts read, narrowed by the same optional
+     * filters as index() so "mark all" means "all of what I'm looking at".
+     *
+     * One UPDATE … WHERE EXISTS (subscriber …): the query is built exactly
+     * like index(), and whereHas('subscriber') is what keeps it to the
+     * caller's own roster (Subscriber's NutritionistScope applies inside
+     * the subquery). A subscriber_id from another roster passes validation
+     * (it exists) but matches nothing here, so it updates 0 rows.
+     */
+    public function readAll(ReadAllAlertsRequest $request): JsonResponse
+    {
+        $updated = Alert::query()
+            ->whereHas('subscriber')
+            ->where('is_read', false)
+            ->when($request->filled('subscriber_id'), fn ($query) => $query->where('subscriber_id', $request->integer('subscriber_id')))
+            ->when($request->filled('severity'), fn ($query) => $query->where('severity', $request->string('severity')->toString()))
+            ->update(['is_read' => true]);
+
+        return response()->json(['updated' => $updated]);
     }
 
     public function markRead(Alert $alert): AlertResource

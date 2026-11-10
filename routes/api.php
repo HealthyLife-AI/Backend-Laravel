@@ -455,6 +455,8 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::delete('notices/{id}', [DeletionNoticeController::class, 'destroy'])->whereNumber('id')->name('notices.destroy');
 
         Route::get('alerts', [AlertController::class, 'index'])->name('alerts.index');
+        // Mark every unread alert read, with index's severity / subscriber_id filters.
+        Route::post('alerts/read-all', [AlertController::class, 'readAll'])->name('alerts.read-all');
         // Pilot feedback 2, B: this patient's own alert thresholds. The PUT
         // is a write, so it carries the follow-up gate like every other one.
         Route::get('clients/{subscriber}/alert-settings', [AlertSettingsController::class, 'show'])->name('clients.alert-settings.show');
