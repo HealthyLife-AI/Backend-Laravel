@@ -98,24 +98,24 @@ class SeedDemoData extends Command
             'conditions' => ['diabetes_type2'], 'allergies' => [['group' => 'tree_nuts', 'class' => 'confirmed_allergy', 'note' => 'حساسية من المكسرات']],
             'medications' => [['name' => 'ميتفورمين', 'dose' => '500 ملغ', 'schedule' => 'مرتين يوميًا مع الطعام']],
             'lab_notes' => 'HbA1c 7.0%.', 'nutritionist_notes' => 'توزيع الكربوهيدرات على الوجبات ومتابعة السكر.',
-            'consent' => true, 'rich' => true, 'reason' => 'special_occasion', 'sleep' => [7.0, 'good', 'low', 'good']],
+            'consent' => true, 'rich' => true, 'reason' => 'special_occasion', 'note' => 'عندي عرس أختي يوم الأربعاء، كيف بتصرف بالأكل هداك اليوم؟', 'sleep' => [7.0, 'good', 'low', 'good']],
         'b' => ['name' => 'سامر النجار', 'phone' => '+15555550112', 'username' => 'demo.samer', 'gender' => 'male', 'age' => 44, 'height_cm' => 175, 'weight_kg' => 99.0,
             'goal_type' => 'weight_loss', 'target_weight_kg' => 88.0, 'step' => -0.5, 'activity_level' => 'light',
             'conditions' => ['hypertension'], 'allergies' => [],
             'medications' => [['name' => 'أملوديبين', 'dose' => '5 ملغ', 'schedule' => 'مرة يوميًا صباحًا']],
             'lab_notes' => 'الكوليسترول الكلي 218 mg/dL.', 'nutritionist_notes' => 'تقليل الملح والخبز الأبيض.',
-            'consent' => true, 'rich' => true, 'reason' => 'craving', 'sleep' => [6.0, 'ok', 'medium', 'ok']],
+            'consent' => true, 'rich' => true, 'reason' => 'craving', 'note' => 'بصير عندي رغبة قوية بالحلو بالليل بعد العشا، شو بقدر آكل بداله؟', 'sleep' => [6.0, 'ok', 'medium', 'ok']],
         'c' => ['name' => 'لين العمري', 'phone' => '+15555550113', 'username' => 'demo.lin', 'gender' => 'female', 'age' => 22, 'height_cm' => 168, 'weight_kg' => 49.0,
             'goal_type' => 'weight_gain', 'target_weight_kg' => 56.0, 'step' => 0.25, 'activity_level' => 'moderate',
             'conditions' => [], 'allergies' => [], 'medications' => [],
             'lab_notes' => null, 'nutritionist_notes' => 'تحتاج خطة لزيادة الوزن بشكل صحي.',
-            'consent' => true, 'rich' => true, 'reason' => 'food_unavailable', 'sleep' => [8.0, 'good', 'low', 'good']],
+            'consent' => true, 'rich' => true, 'reason' => 'food_unavailable', 'note' => 'السمك اللي بالغدا مش متوفر عنا هالأسبوع، شو البديل؟', 'sleep' => [8.0, 'good', 'low', 'good']],
         // The store-review account: nothing accepted yet, so the reviewer meets the consent screen first.
         'd' => ['name' => 'ريما الحداد', 'phone' => '+15555550114', 'username' => 'demo.review', 'gender' => 'female', 'age' => 30, 'height_cm' => 165, 'weight_kg' => 66.0,
             'goal_type' => 'health_energy', 'target_weight_kg' => null, 'step' => -0.1, 'activity_level' => 'moderate',
             'conditions' => [], 'allergies' => [], 'medications' => [],
             'lab_notes' => null, 'nutritionist_notes' => null,
-            'consent' => false, 'rich' => false, 'reason' => null, 'sleep' => null],
+            'consent' => false, 'rich' => false, 'reason' => null, 'note' => null, 'sleep' => null],
     ];
 
     /** @var array<string, Food> */
@@ -529,8 +529,8 @@ class SeedDemoData extends Command
 
             app(QuickRequestService::class)->create($subscriber, [
                 'reason' => $spec['reason'],
-                'note' => 'طلب تجريبي للعرض.',
-                'occasion_date' => $spec['reason'] === 'special_occasion' ? $this->today->addDays(5)->toDateString() : null,
+                'note' => $spec['note'],
+                'occasion_date' => $spec['reason'] === 'special_occasion' ? $this->today->addDays(2)->toDateString() : null,
             ]);
 
             if (isset($slots[$slot * 3 + 1])) {
