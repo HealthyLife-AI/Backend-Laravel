@@ -5,6 +5,7 @@ namespace Tests\Feature\Demo;
 use App\Console\Commands\Demo\SeedDemoData;
 use App\Models\AiUsageLog;
 use App\Models\Appointment;
+use App\Models\BodyCompositionReading;
 use App\Models\Food;
 use App\Models\MealLog;
 use App\Models\MealPlan;
@@ -18,8 +19,12 @@ use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Consent\ConsentService;
 use App\Services\Notifications\FcmPushService;
+use App\Services\Notifications\NotificationService;
+use App\Services\Posts\PostService;
+use App\Support\Bmi;
 use App\Support\ClinicDay;
 use Database\Seeders\ArabicFoodSeeder;
+use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -110,7 +115,7 @@ class DemoSeedTest extends TestCase
     {
         $this->seedDemo();
         $p = $this->patients();
-        $bmi = fn (Subscriber $s) => \App\Support\Bmi::classify(\App\Support\Bmi::compute((float) $s->healthProfile->weight_kg, (float) $s->healthProfile->height_cm), (int) $s->healthProfile->age);
+        $bmi = fn (Subscriber $s) => Bmi::classify(Bmi::compute((float) $s->healthProfile->weight_kg, (float) $s->healthProfile->height_cm), (int) $s->healthProfile->age);
 
         $this->assertSame('overweight', $bmi($p['a']));
         $this->assertSame('obesity_1', $bmi($p['b']));
@@ -178,7 +183,7 @@ class DemoSeedTest extends TestCase
         $today = ClinicDay::today()->toDateString();
 
         $this->assertSame(0, MealLog::where('logged_at', '>', now())->count());
-        $this->assertSame(0, \App\Models\BodyCompositionReading::where('recorded_at', '>', $today)->count());
+        $this->assertSame(0, BodyCompositionReading::where('recorded_at', '>', $today)->count());
         $this->assertSame(0, PatientWellbeingLog::where('log_date', '>', $today)->count());
         $this->assertGreaterThan(0, Appointment::where('starts_at', '>', now())->count());
         $this->assertSame(3, Appointment::where('starts_at', '>', now())->count(), 'one upcoming appointment for each of a, b and c');
@@ -205,8 +210,42 @@ class DemoSeedTest extends TestCase
 
         foreach ($p as $key => $s) {
             $this->assertSame(1, PatientNotification::where('user_id', $s->user_id)->where('type', 'education_post')->count(), "{$key} got the post in the inbox");
-            $this->assertSame(1, app(\App\Services\Posts\PostService::class)->unreadCount($s), "{$key} sees it as unread");
+            $this->assertSame(1, app(PostService::class)->unreadCount($s), "{$key} sees it as unread");
         }
+    }
+
+    public function test_demo_consent_is_dated_before_the_plan_starts(): void
+    {
+        $this->seedDemo();
+        $p = $this->patients();
+
+        foreach (['a', 'b', 'c'] as $key) {
+            $consent = PatientConsent::where('user_id', $p[$key]->user_id)->where('type', 'privacy')->firstOrFail();
+            $planStart = MealPlan::where('subscriber_id', $p[$key]->id)->orderBy('start_date')->firstOrFail()->start_date;
+
+            $this->assertTrue($consent->accepted_at->lt($planStart->startOfDay()), "{$key}: consent accepted before the plan start");
+        }
+    }
+
+    public function test_quick_requests_carry_a_realistic_note_per_reason(): void
+    {
+        $this->seedDemo();
+        $p = $this->patients();
+
+        $notes = [
+            'a' => ['special_occasion', 'عندي عرس أختي يوم الأربعاء، كيف بتصرف بالأكل هداك اليوم؟'],
+            'b' => ['craving', 'بصير عندي رغبة قوية بالحلو بالليل بعد العشا، شو بقدر آكل بداله؟'],
+            'c' => ['food_unavailable', 'السمك اللي بالغدا مش متوفر عنا هالأسبوع، شو البديل؟'],
+        ];
+
+        foreach ($notes as $key => [$reason, $note]) {
+            $request = PatientQuickRequest::where('subscriber_id', $p[$key]->id)->firstOrFail();
+            $this->assertSame($reason, $request->reason);
+            $this->assertSame($note, $request->note);
+        }
+
+        $occasion = PatientQuickRequest::where('subscriber_id', $p['a']->id)->firstOrFail();
+        $this->assertSame(ClinicDay::today()->addDays(2)->toDateString(), $occasion->occasion_date->toDateString());
     }
 
     // ---- safety ---------------------------------------------------------------------------------------------------------------
@@ -300,7 +339,7 @@ class DemoSeedTest extends TestCase
         $user->forceFill(['fcm_token' => 'tok-demo-phone'])->save();
         $this->fakePush();
 
-        $row = app(\App\Services\Notifications\NotificationService::class)->notify($user, 'system', 'follow_up_resumed');
+        $row = app(NotificationService::class)->notify($user, 'system', 'follow_up_resumed');
 
         $this->assertNull($row->fresh()->push_skipped);
         $this->assertNotNull($row->fresh()->pushed_at);
@@ -313,7 +352,7 @@ class DemoSeedTest extends TestCase
         $this->seedDemo();
         $this->fakePush();
 
-        $row = app(\App\Services\Notifications\NotificationService::class)->notify($this->patients()['a']->user, 'system', 'follow_up_resumed');
+        $row = app(NotificationService::class)->notify($this->patients()['a']->user, 'system', 'follow_up_resumed');
 
         $this->assertSame('no_token', $row->fresh()->push_skipped);
         $this->assertSame([], $this->pushes);
@@ -380,7 +419,7 @@ class DemoSeedTest extends TestCase
     public function test_the_db_seeder_demo_account_is_flagged_too(): void
     {
         $this->app->detectEnvironment(fn () => 'local');
-        $this->seed(\Database\Seeders\DatabaseSeeder::class);
+        $this->seed(DatabaseSeeder::class);
 
         $this->assertTrue((bool) User::where('email', 'nutritionist@example.com')->value('is_demo'));
     }
