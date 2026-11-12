@@ -48,6 +48,11 @@
         <env name="SCHEDULE_SELF_TRIGGER" value="false"/>
         <env name="CONSENT_VERSION" value=""/>
         <env name="CONSENT_POLICY_URL" value=""/>
+        <!-- Error tracking pinned for the same reason as OPENAI_*: a .env copied
+             from .env.example sets SENTRY_ENVIRONMENT=production and would
+             make SentryHardeningTest fail; an empty DSN keeps Sentry off. -->
+        <env name="SENTRY_ENVIRONMENT" value="testing"/>
+        <env name="SENTRY_LARAVEL_DSN" value=""/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
