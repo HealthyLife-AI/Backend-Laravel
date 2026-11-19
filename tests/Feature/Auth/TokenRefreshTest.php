@@ -59,6 +59,11 @@ class TokenRefreshTest extends TestCase
             'refresh_token' => $first['refresh_token'],
         ])->json();
 
+        // Past the grace window (see RefreshGraceTest for the window
+        // itself): this is no longer a retry for a lost response, it's
+        // someone presenting a captured, already-rotated token.
+        $this->travel(config('jwt.refresh_grace_seconds') + 1)->seconds();
+
         // Replay the already-consumed first token: treated as theft.
         $this->postJson('/api/v1/auth/refresh', [
             'refresh_token' => $first['refresh_token'],

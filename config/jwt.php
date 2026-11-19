@@ -34,6 +34,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Refresh Grace Window (seconds)
+    |--------------------------------------------------------------------------
+    |
+    | A rotation's response can be lost on a weak connection: the server
+    | rotated the token and the client never saw the new pair, so its retry
+    | presents the now-revoked OLD token. Treated naively, that is
+    | indistinguishable from theft and revokes every session (FR-05's
+    | reuse-detection). For this many seconds after a token is rotated,
+    | presenting it again is assumed to be exactly that retry, not reuse:
+    | RefreshTokenService issues a fresh pair instead of revoking. Past the
+    | window — or for any token further back in the chain — the original
+    | revoke-everything response still applies. 0 disables the grace window
+    | entirely (every revoked-token presentation revokes, as before).
+    |
+    */
+
+    'refresh_grace_seconds' => (int) env('JWT_REFRESH_GRACE_SECONDS', 30),
+
+    /*
+    |--------------------------------------------------------------------------
     | Account Lockout (FR-04)
     |--------------------------------------------------------------------------
     |
