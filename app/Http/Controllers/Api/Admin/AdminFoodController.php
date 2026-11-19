@@ -8,12 +8,12 @@ use App\Http\Resources\FoodResource;
 use App\Models\Food;
 use App\Services\Foods\FoodRegionalCostService;
 use App\Support\RegionalCountry;
-use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * The admin side of the food catalog: browse everything (any status or
@@ -80,8 +80,8 @@ class AdminFoodController extends Controller
         $usage = $this->usage($food);
 
         // Only nutrition values affect plans and logs; re-tagging (allergens,
-        // shopping section) needs no in-use confirmation.
-        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section', 'cost_tier', 'prep_level', 'glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source'])->all())->isDirty();
+        // shopping section, meal slots) needs no in-use confirmation.
+        $changesValues = (clone $food)->fill(collect($request->validated())->except(['allergens', 'shopping_section', 'meal_slots', 'cost_tier', 'prep_level', 'glycemic_index', 'sodium_mg_per_100g', 'nutrition_review_source'])->all())->isDirty();
 
         if ($changesValues && ($usage['meal_plans'] > 0 || $usage['meal_logs'] > 0) && ! $request->boolean('confirm_in_use')) {
             return response()->json([
@@ -96,7 +96,7 @@ class AdminFoodController extends Controller
         $this->applyNutritionValues($food, $validated, $request->user()->id);
 
         // Phase 4, B3: a tag changed by hand is a reviewed tag: who and when.
-        if ($food->isDirty(['cost_tier', 'prep_level'])) {
+        if ($food->isDirty(['cost_tier', 'prep_level', 'meal_slots'])) {
             $food->forceFill(['tags_reviewed_at' => now(), 'tags_reviewed_by' => $request->user()->id]);
         }
 

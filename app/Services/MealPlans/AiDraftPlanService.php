@@ -7,12 +7,13 @@ use App\Models\Food;
 use App\Models\FoodRegionalCost;
 use App\Models\HealthProfile;
 use App\Models\MealPlan;
+use App\Models\PatientFoodPreference;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\Ai\AiUsageReport;
 use App\Services\Ai\OpenAiCompatibleClient;
-use App\Services\HealthRecords\HealthRecordService;
 use App\Services\FoodPreferences\FoodPreferenceService;
+use App\Services\HealthRecords\HealthRecordService;
 use App\Services\Nutrition\CalorieTarget;
 use App\Support\RegionalCountry;
 use Illuminate\Support\Collection;
@@ -150,7 +151,14 @@ class AiDraftPlanService
         $allergyTerms = array_values(array_unique(array_map('mb_strtolower', array_merge($profile->allergies ?? [], $records->otherAllergyTexts($subscriber)))));
 
         $approvedFoods = Food::approved()->get();
-        $safeFoods = $approvedFoods->reject(fn (Food $food) => array_intersect($food->allergens ?? [], $groups) !== [] || $this->containsAllergen($food, $allergyTerms));
+        $safeFoods = $approvedFoods
+            ->reject(fn (Food $food) => array_intersect($food->allergens ?? [], $groups) !== [] || $this->containsAllergen($food, $allergyTerms))
+            // fix/ai-draft-meal-slots: meal_slots === [] means never
+            // drafted automatically (currently just كبة نية — raw meat,
+            // a risk in pregnancy), for either generation path. Excluded
+            // here, before either path ever sees it; a nutritionist can
+            // still add it to a plan by hand.
+            ->reject(fn (Food $food) => $food->meal_slots === []);
 
         abort_if($safeFoods->isEmpty(), 422, 'No approved foods are free of this client\'s allergies — add more foods to the database before drafting.');
 
@@ -160,7 +168,7 @@ class AiDraftPlanService
         // also go to the model as likes / dislikes.
         $preferences = app(FoodPreferenceService::class);
         $likedNames = $preferences->namesFor($subscriber);
-        $dislikedIds = \App\Models\PatientFoodPreference::query()->where('subscriber_id', $subscriber->id)->where('kind', 'dislike')->pluck('food_id')->all();
+        $dislikedIds = PatientFoodPreference::query()->where('subscriber_id', $subscriber->id)->where('kind', 'dislike')->pluck('food_id')->all();
         $pool = $safeFoods->reject(fn (Food $food) => in_array($food->id, $dislikedIds, true));
         $safeFoods = $pool->count() >= self::MIN_FOODS_AFTER_DISLIKES ? $pool : $safeFoods;
 
@@ -299,7 +307,9 @@ class AiDraftPlanService
         never a final plan. Choose foods ONLY from "available_foods" in
         the user message — each food is a row whose columns are named in
         "food_columns" (the first is its id); never invent a food or an
-        id that isn't in that list.
+        id that isn't in that list. One of those columns is
+        "meal_slots" — see rule 9 below; it is a hard rule, not a
+        suggestion.
 
         Use every piece of the "client_profile" in the user message to
         make intelligent, clinically sound food choices:
@@ -366,6 +376,17 @@ class AiDraftPlanService
         8. NUTRITIONIST NOTES / LAB NOTES — if the nutritionist left
            specific instructions, follow them; they override generic rules.
 
+        9. MEAL_SLOTS — a hard rule, enforced by validation (an answer
+           that breaks it is rejected outright, exactly like an unknown
+           food_id): a food's "meal_slots" column is single-letter codes
+           for the ONLY meals it may be used in — B=breakfast, L=lunch,
+           D=dinner, S=snack (e.g. "LD" means lunch and dinner only, never
+           breakfast or snack). An EMPTY value means any meal is fine.
+           This applies to planned items AND alternatives alike. Treat it
+           as the authoritative version of the meal-time guidance below —
+           if the two ever seem to disagree for a specific food, follow
+           meal_slots.
+
         Context: this is for Arab / Middle-Eastern clients. Pick foods that
         are culturally appropriate for each meal TIME:
 
@@ -399,6 +420,7 @@ class AiDraftPlanService
         - Never use the same food_id twice as a planned item anywhere in the day, and never repeat a food inside one meal (an alternative may reappear in another meal).
         - The calories of a meal's planned items together should land close to that meal's target calories given in the user message.
         - Respect the meal-time guidance above — a food that fits calorically but is wrong for the time of day is a bad pick.
+        - Never place a food — planned item or alternative — in a meal name its own meal_slots column excludes (rule 9). A non-empty meal_slots is a hard constraint, not a preference.
         - Never choose a food that contains or derives from anything in must_avoid_allergies (rule 6).
         - Consider the client's health conditions and goal when choosing between foods of similar caloric value — pick the one that better serves the client's health situation.
         - client_profile.liked_foods / disliked_foods are SOFT preferences, by name: prefer a liked food when it fits, and do not choose a disliked one when another food fits as well. They never override an allergy, the calorie targets or the rules above.
@@ -450,6 +472,18 @@ class AiDraftPlanService
         return Food::resolveCostTier($this->costCountry, $this->regionalTiers[$food->id] ?? null, $food->getAttribute('cost_tier'));
     }
 
+    /** Single-letter codes per systemPrompt rule 9: "" (null, or the defensive [] case — see userPrompt()) means any meal. */
+    private function mealSlotCode(?array $slots): string
+    {
+        if ($slots === null) {
+            return '';
+        }
+
+        $letters = ['breakfast' => 'B', 'lunch' => 'L', 'dinner' => 'D', 'snack' => 'S'];
+
+        return implode('', array_filter(array_map(fn (string $slot) => $letters[$slot] ?? null, $slots)));
+    }
+
     /** 0 = matches every ticked preference ... 2 = matches none; always 0 with nothing ticked. */
     private function tagScore(Food $food, array $softTags): int
     {
@@ -491,6 +525,13 @@ class AiDraftPlanService
         $withPrep = (bool) ($softTags['easy_prep'] ?? false);
 
         // Compact rows, one array per food, in the order of food_columns.
+        // meal_slots rides along as single-letter codes (see systemPrompt
+        // rule 9) rather than the words "breakfast"/"lunch"/.../"snack" —
+        // a tagged dish's slots cost ~1-2 tokens ("LD") instead of ~6-10
+        // ("lunch, dinner"). "" covers both an untagged food (null) and a
+        // tagged one found unrestricted; a [] food never reaches here at
+        // all (generateDraft() excludes it from $safeFoods up front), so
+        // "" is never ambiguous with "excluded" in what the model sees.
         $foods = $candidateFoods->map(fn (Food $food) => array_merge([
             $food->id,
             $food->name_en ?? $food->name_ar,
@@ -498,6 +539,7 @@ class AiDraftPlanService
             round((float) $food->protein_g_per_100g, 1),
             round((float) $food->carbs_g_per_100g, 1),
             round((float) $food->fat_g_per_100g, 1),
+            $this->mealSlotCode($food->meal_slots),
         ], $withCost ? [$this->costOf($food)] : [], $withPrep ? [$food->prep_level] : []))->values()->all();
 
         $mealTargets = [];
@@ -532,7 +574,7 @@ class AiDraftPlanService
         $payload = [
             'daily_calorie_target' => $dailyCalories,
             'meal_calorie_targets' => $mealTargets,
-            'food_columns' => array_merge(['id', 'name', 'kcal_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g'], $withCost ? ['cost_tier'] : [], $withPrep ? ['prep_level'] : []),
+            'food_columns' => array_merge(['id', 'name', 'kcal_per_100g', 'protein_g_per_100g', 'carbs_g_per_100g', 'fat_g_per_100g', 'meal_slots'], $withCost ? ['cost_tier'] : [], $withPrep ? ['prep_level'] : []),
             'available_foods' => $foods,
         ];
 
@@ -561,6 +603,10 @@ class AiDraftPlanService
     {
         $this->validationFailure = null;
         $validFoodIds = $candidateFoods->pluck('id')->all();
+        // fix/ai-draft-meal-slots: food_id => meal_slots, so each item/
+        // alternative below can be checked against the meal it was
+        // placed in, not just against being on the menu at all.
+        $slotsByFoodId = $candidateFoods->pluck('meal_slots', 'id')->all();
         $allowedMealNames = array_keys(self::MEAL_CALORIE_SHARE);
 
         $rawMeals = $response['meals'] ?? null;
@@ -598,7 +644,7 @@ class AiDraftPlanService
             $items = [];
             foreach ($rawItems as $i => $rawItem) {
                 $problem = null;
-                $item = $this->validateLlmItem($rawItem, $validFoodIds, $problem);
+                $item = $this->validateLlmItem($rawItem, $validFoodIds, $slotsByFoodId, $name, $problem);
                 if ($item === null) {
                     return $this->reject("planned_item_{$problem}", "{$at}.items[{$i}]", $rawItem);
                 }
@@ -612,7 +658,7 @@ class AiDraftPlanService
                     if (count($alternatives) >= 2) {
                         break;
                     }
-                    $alt = $this->validateLlmItem($rawAlt, $validFoodIds, $problem);
+                    $alt = $this->validateLlmItem($rawAlt, $validFoodIds, $slotsByFoodId, $name, $problem);
                     if ($alt === null) {
                         return $this->reject("alternative_{$problem}", "{$at}.items[{$i}].alternatives[{$a}]", $rawAlt);
                     }
@@ -686,10 +732,11 @@ class AiDraftPlanService
     }
 
     /**
-     * @param  string|null  $problem  Set to why the item was refused: not_an_object, food_id_not_an_integer, food_id_not_on_the_menu, quantity_out_of_range.
+     * @param  array<int, list<string>|null>  $slotsByFoodId  food_id => meal_slots (null = any meal)
+     * @param  string|null  $problem  Set to why the item was refused: not_an_object, food_id_not_an_integer, food_id_not_on_the_menu, food_not_allowed_in_this_meal_slot, quantity_out_of_range.
      * @return array{food_id: int, quantity_grams: float}|null
      */
-    private function validateLlmItem(mixed $raw, array $validFoodIds, ?string &$problem = null): ?array
+    private function validateLlmItem(mixed $raw, array $validFoodIds, array $slotsByFoodId, string $mealName, ?string &$problem = null): ?array
     {
         if (! is_array($raw)) {
             $problem = 'not_an_object';
@@ -712,6 +759,18 @@ class AiDraftPlanService
 
         if (! in_array($foodId, $validFoodIds, true)) {
             $problem = 'food_id_not_on_the_menu';
+
+            return null;
+        }
+
+        // fix/ai-draft-meal-slots: the deterministic rule the prompt's
+        // wording alone couldn't guarantee (production: شاورما دجاج
+        // offered as the breakfast alternative to eggs). null = any
+        // meal; $slotsByFoodId[$foodId] can't be [] here — that's
+        // excluded from the candidate list entirely upstream.
+        $slots = $slotsByFoodId[$foodId] ?? null;
+        if ($slots !== null && ! in_array($mealName, $slots, true)) {
+            $problem = 'food_not_allowed_in_this_meal_slot';
 
             return null;
         }
@@ -742,13 +801,16 @@ class AiDraftPlanService
         $plannedFoodIds = [];
         foreach (self::MEAL_CALORIE_SHARE as $mealName => $share) {
             $mealTarget = $dailyCalories * $share;
-            $candidates = $this->rankByCalorieFit($safeFoods, $mealTarget, $plannedFoodIds)->values();
+            $candidates = $this->rankByCalorieFit($safeFoods, $mealTarget, $mealName, $plannedFoodIds)->values();
 
             if ($candidates->isEmpty()) {
                 // Every safe food is already this draft's planned choice
                 // somewhere else — fall back to ranking without the
                 // diversity exclusion rather than leaving the meal empty.
-                $candidates = $this->rankByCalorieFit($safeFoods, $mealTarget)->values();
+                // The meal_slots filter still applies: dropping it too
+                // would reintroduce the exact bug this fixes, for the
+                // fallback path specifically.
+                $candidates = $this->rankByCalorieFit($safeFoods, $mealTarget, $mealName)->values();
             }
 
             if ($candidates->isEmpty()) {
@@ -796,15 +858,20 @@ class AiDraftPlanService
      * For each candidate food, the gram quantity that would hit the
      * meal's calorie target exactly from that food alone, clamped to a
      * plausible single-food portion (50g-500g) — then sorted so the
-     * closest actual fit (least clamping needed) comes first.
+     * closest actual fit (least clamping needed) comes first. A food
+     * whose `meal_slots` doesn't include $mealName never reaches the
+     * ranking at all — the same rule validateLlmItem() enforces for the
+     * LLM path, kept here so the rule-based fallback can't reintroduce
+     * the bug it's the fallback FOR.
      *
      * @param  array<int>  $excludeFoodIds
      * @return Collection<int, array{food: Food, quantity_grams: float, fit: float}>
      */
-    private function rankByCalorieFit(Collection $foods, float $mealTarget, array $excludeFoodIds = []): Collection
+    private function rankByCalorieFit(Collection $foods, float $mealTarget, string $mealName, array $excludeFoodIds = []): Collection
     {
         return $foods
             ->reject(fn (Food $food) => in_array($food->id, $excludeFoodIds, true))
+            ->reject(fn (Food $food) => $food->meal_slots !== null && ! in_array($mealName, $food->meal_slots, true))
             ->map(function (Food $food) use ($mealTarget) {
                 $caloriesPer100g = (float) $food->calories_per_100g;
                 if ($caloriesPer100g <= 0) {

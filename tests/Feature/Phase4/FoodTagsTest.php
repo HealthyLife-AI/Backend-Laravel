@@ -4,6 +4,7 @@ namespace Tests\Feature\Phase4;
 
 use App\Models\Food;
 use App\Models\HealthProfile;
+use App\Models\Meal;
 use App\Models\MealItem;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
@@ -160,7 +161,7 @@ class FoodTagsTest extends TestCase
         $token = $this->bearerFor($this->admin);
         $food = Food::factory()->create(['name_en' => 'Rice', 'name_ar' => 'رز', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3]);
         $plan = MealPlan::create(['subscriber_id' => $this->subscriber->id, 'created_by' => $this->nutritionist->id, 'status' => 'draft']);
-        $meal = \App\Models\Meal::create(['meal_plan_id' => $plan->id, 'name' => 'lunch', 'sort_order' => 0]);
+        $meal = Meal::create(['meal_plan_id' => $plan->id, 'name' => 'lunch', 'sort_order' => 0]);
         MealItem::create(['meal_id' => $meal->id, 'food_id' => $food->id, 'quantity_grams' => 100, 'sort_order' => 0]);
 
         $this->putJson("/api/v1/admin/foods/{$food->id}", $this->foodBody(['name_en' => 'Rice', 'name_ar' => 'رز', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3, 'prep_level' => 'normal']), $token)
@@ -193,7 +194,7 @@ class FoodTagsTest extends TestCase
         $plain = Food::factory()->create();
         $alt = Food::factory()->create(['cost_tier' => 'premium']);
         $plan = MealPlan::create(['subscriber_id' => $this->subscriber->id, 'created_by' => $this->nutritionist->id, 'status' => 'active', 'activated_at' => now()]);
-        $meal = \App\Models\Meal::create(['meal_plan_id' => $plan->id, 'name' => 'lunch', 'sort_order' => 0]);
+        $meal = Meal::create(['meal_plan_id' => $plan->id, 'name' => 'lunch', 'sort_order' => 0]);
         $main = MealItem::create(['meal_id' => $meal->id, 'food_id' => $tagged->id, 'quantity_grams' => 100, 'sort_order' => 0]);
         MealItem::create(['meal_id' => $meal->id, 'food_id' => $alt->id, 'quantity_grams' => 100, 'sort_order' => 1, 'parent_item_id' => $main->id]);
         MealItem::create(['meal_id' => $meal->id, 'food_id' => $plain->id, 'quantity_grams' => 100, 'sort_order' => 2]);
@@ -286,5 +287,45 @@ class FoodTagsTest extends TestCase
         $this->assertArrayNotHasKey('soft_constraints', $this->sentPayload());
 
         $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/ai-draft", ['prefer_economical' => 'maybe'], $token)->assertStatus(422);
+    }
+
+    // ---- meal slots (fix/ai-draft-meal-slots) ---------------------------------------------------------------
+
+    public function test_the_admin_sets_and_clears_meal_slots(): void
+    {
+        $token = $this->bearerFor($this->admin);
+
+        $id = $this->postJson('/api/v1/admin/foods', $this->foodBody(['meal_slots' => ['lunch', 'dinner']]), $token)
+            ->assertCreated()->assertJsonPath('meal_slots', ['lunch', 'dinner'])->json('id');
+
+        $this->putJson("/api/v1/admin/foods/{$id}", $this->foodBody(['meal_slots' => null]), $token)
+            ->assertOk()->assertJsonPath('meal_slots', null);
+
+        $this->putJson("/api/v1/admin/foods/{$id}", $this->foodBody(['meal_slots' => ['brunch']]), $token)
+            ->assertStatus(422)->assertJsonValidationErrors('meal_slots.0');
+    }
+
+    /** The "never drafted automatically" state (كبة نية) — `[]` is a real value, not rejected by the `array` rule. */
+    public function test_setting_meal_slots_to_an_empty_array_is_accepted(): void
+    {
+        $token = $this->bearerFor($this->admin);
+
+        $this->postJson('/api/v1/admin/foods', $this->foodBody(['meal_slots' => []]), $token)
+            ->assertCreated()->assertJsonPath('meal_slots', []);
+    }
+
+    public function test_a_meal_slots_change_needs_no_in_use_confirmation(): void
+    {
+        $token = $this->bearerFor($this->admin);
+        $food = Food::factory()->create(['name_en' => 'Rice', 'name_ar' => 'رز', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3]);
+        $plan = MealPlan::create(['subscriber_id' => $this->subscriber->id, 'created_by' => $this->nutritionist->id, 'status' => 'draft']);
+        $meal = Meal::create(['meal_plan_id' => $plan->id, 'name' => 'lunch', 'sort_order' => 0]);
+        MealItem::create(['meal_id' => $meal->id, 'food_id' => $food->id, 'quantity_grams' => 100, 'sort_order' => 0]);
+
+        $this->putJson(
+            "/api/v1/admin/foods/{$food->id}",
+            $this->foodBody(['name_en' => 'Rice', 'name_ar' => 'رز', 'calories_per_100g' => 130, 'protein_g_per_100g' => 2.7, 'carbs_g_per_100g' => 28, 'fat_g_per_100g' => 0.3, 'meal_slots' => ['lunch', 'dinner']]),
+            $token
+        )->assertOk()->assertJsonPath('meal_slots', ['lunch', 'dinner']);
     }
 }

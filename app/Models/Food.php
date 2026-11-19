@@ -3,8 +3,8 @@
 namespace App\Models;
 
 use App\Support\ArabicText;
-use App\Support\RegionalCountry;
 use App\Support\FoodTagger;
+use App\Support\RegionalCountry;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'fiber_g_per_100g',
     'cost_tier',
     'prep_level',
+    'meal_slots',
 ])]
 class Food extends Model
 {
@@ -52,6 +53,16 @@ class Food extends Model
 
     /** Phase 4, B: how much preparation it needs. Null = not reviewed. */
     public const PREP_LEVELS = ['no_cook', 'easy', 'normal'];
+
+    /**
+     * fix/ai-draft-meal-slots: the plan slot names a food's `meal_slots`
+     * may list. `null` = any slot (not reviewed, or reviewed and found
+     * unrestricted — the two look the same on purpose: an unreviewed food
+     * is never penalised for it). `[]` = no slot — excluded from every
+     * AI-drafted plan outright; see the migration that introduced the
+     * column for why that's currently only one dish.
+     */
+    public const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 
     /** Carbohydrate from which a missing glycemic index is worth chasing (g per 100 g, fibre taken off). */
     public const GI_RELEVANT_AVAILABLE_CARBS = 5;
@@ -79,6 +90,7 @@ class Food extends Model
     {
         return [
             'allergens' => 'array',
+            'meal_slots' => 'array',
             'sodium_mg_per_100g' => 'decimal:1',
             'nutrition_reviewed_at' => 'datetime',
             'tags_reviewed_at' => 'datetime',
