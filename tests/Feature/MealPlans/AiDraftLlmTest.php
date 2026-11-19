@@ -312,4 +312,94 @@ class AiDraftLlmTest extends TestCase
         $this->postJson("/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft", [], $this->bearerFor($nutritionist))
             ->assertCreated()->assertJsonPath('is_ai_fallback', true);
     }
+
+    // ---- fix/ai-draft-meal-slots -----------------------------------------------------------------------------------------------
+
+    /**
+     * The exact shape seen in production: شاورما دجاج (lunch/dinner only)
+     * offered as the breakfast alternative to eggs. `validateLlmItem` runs
+     * the same meal_slots check on an alternative as on the planned item,
+     * so this discards the whole response and falls back, the same as an
+     * allergen offered as an alternative does.
+     */
+    public function test_shawarma_offered_as_a_breakfast_alternative_to_eggs_is_rejected(): void
+    {
+        [$subscriber, $nutritionist] = $this->makeSubscriberWithProfile();
+        $eggs = Food::factory()->create(['name_en' => 'Boiled Eggs', 'calories_per_100g' => 150, 'meal_slots' => null]);
+        $shawarma = Food::factory()->create(['name_en' => 'Chicken Shawarma', 'calories_per_100g' => 220, 'meal_slots' => ['lunch', 'dinner']]);
+
+        Http::fake(['*' => Http::response($this->chatCompletion([
+            'meals' => [
+                ['name' => 'breakfast', 'items' => [[
+                    'food_id' => $eggs->id,
+                    'quantity_grams' => 150,
+                    'alternatives' => [['food_id' => $shawarma->id, 'quantity_grams' => 180]],
+                ]]],
+            ],
+        ]))]);
+
+        $response = $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        );
+
+        // Falls back to rule-based — never persists shawarma into this
+        // client's breakfast, planned or as an alternative.
+        $response->assertCreated()->assertJsonPath('is_ai_fallback', true);
+
+        $breakfast = collect($response->json('meals'))->firstWhere('name', 'breakfast');
+        $breakfastFoodIds = collect($breakfast['items'] ?? [])
+            ->flatMap(fn ($item) => [$item['food']['id'], ...collect($item['alternatives'])->pluck('food.id')]);
+
+        $this->assertNotContains($shawarma->id, $breakfastFoodIds);
+    }
+
+    /** The same rule, caught on the PLANNED item rather than an alternative. */
+    public function test_shawarma_planned_for_breakfast_is_rejected(): void
+    {
+        [$subscriber, $nutritionist] = $this->makeSubscriberWithProfile();
+        $shawarma = Food::factory()->create(['name_en' => 'Chicken Shawarma', 'calories_per_100g' => 220, 'meal_slots' => ['lunch', 'dinner']]);
+
+        Http::fake(['*' => Http::response($this->chatCompletion([
+            'meals' => [
+                ['name' => 'breakfast', 'items' => [['food_id' => $shawarma->id, 'quantity_grams' => 200, 'alternatives' => []]]],
+            ],
+        ]))]);
+
+        $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        )->assertCreated()->assertJsonPath('is_ai_fallback', true);
+    }
+
+    /**
+     * An untagged food (`meal_slots` null — every USDA ingredient, most
+     * curated dishes) is unrestricted: the same response, reusing the
+     * same foods across all four meal names, is accepted whichever meal
+     * each one lands in.
+     */
+    public function test_untagged_foods_are_accepted_in_every_meal_slot(): void
+    {
+        [$subscriber, $nutritionist] = $this->makeSubscriberWithProfile();
+        $foods = Food::factory()->count(4)->create(['calories_per_100g' => 150, 'meal_slots' => null]);
+        [$a, $b, $c, $d] = $foods->pluck('id')->all();
+
+        // Each untagged food placed in a DIFFERENT meal name than the
+        // others — if meal_slots were somehow still being enforced
+        // against an unrelated default, at least one of these would fail.
+        Http::fake(['*' => Http::response($this->chatCompletion(['meals' => [
+            ['name' => 'breakfast', 'items' => [['food_id' => $a, 'quantity_grams' => 150, 'alternatives' => []]]],
+            ['name' => 'snack', 'items' => [['food_id' => $b, 'quantity_grams' => 80, 'alternatives' => []]]],
+            ['name' => 'lunch', 'items' => [['food_id' => $c, 'quantity_grams' => 250, 'alternatives' => []]]],
+            ['name' => 'dinner', 'items' => [['food_id' => $d, 'quantity_grams' => 200, 'alternatives' => []]]],
+        ]]))]);
+
+        $this->postJson(
+            "/api/v1/clients/{$subscriber->id}/meal-plans/ai-draft",
+            [],
+            $this->bearerFor($nutritionist)
+        )->assertCreated()->assertJsonPath('is_ai_fallback', false);
+    }
 }

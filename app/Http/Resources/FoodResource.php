@@ -44,6 +44,8 @@ class FoodResource extends JsonResource
             // with the regional rows listed beside it, so editing it never copies an override into it.
             'cost_tier' => $isAdmin ? $this->getAttribute('cost_tier') : $this->costTier(),
             'prep_level' => $this->prep_level,
+            // fix/ai-draft-meal-slots: null = any slot, [] = never drafted, [...] = only those slots.
+            'meal_slots' => $this->meal_slots,
             $this->mergeWhen($isAdmin && $this->relationLoaded('allRegionalCosts'), fn () => [
                 'regional_costs' => $this->allRegionalCosts->map(fn ($row) => [
                     'country' => $row->country,
