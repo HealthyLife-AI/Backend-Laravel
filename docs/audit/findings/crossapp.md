@@ -49,3 +49,29 @@ Key fact found: the app ALREADY syncs the device's IANA zone to `notification_pr
 3. **Jobs**: run the bulk commands every 15-30 min instead of once a day and select patients whose LOCAL time has just passed 06:00/07:30/09:00/20:00 and who have no row for that local date (the commands already dedupe per day: morning `dedupe_key`, measurements `last_reminded_on`; reminders need a `dedupe_key` per local date). SelfScheduler slots become per-zone or are retired in favour of the cron.
 4. **Availability/slots**: read availability in the nutritionist's zone; return `timezone` (already returned) = that zone; dashboard formats every appointment with that zone; app keeps device-local (correct instant).
 5. **Rule-4 / installed app**: no response field removed or retyped; `date` keys in responses stay `Y-m-d` but are computed in the patient's zone; old app builds that never synced a zone fall back to the clinic zone (today's behaviour).
+
+---
+
+## I2: Meal-log integrity (server side, MySQL, live :8002)
+
+Checked and holding: `meal_logs` has `unique(subscriber_id, idempotency_key)` (database/migrations/2026_09_13_090000_add_idempotency_key_to_meal_logs_table.php:36), so concurrency cannot double-count. Six rounds of 16 truly parallel POSTs with one key (`docs/audit/evidence/crossapp/i2-concurrent-idempotency.sh`, 9 php-server workers): every round exactly one 201; the other requests 200 or (2 of 6 rounds) one 500. `SELECT … GROUP BY idempotency_key HAVING count>1` → no rows. `lockForUpdate` is not used on this path and is not needed thanks to the index (SQLite would ignore it anyway; the index is enforced on both). Out-of-order sends: a log for 5 h ago sent after one for 1 h ago → both 201, `subscribers.last_logged_at` = max(logged_at) (recomputed, PatientEntryService.php:92-97). Access token expiry mid-replay: idempotency is independent of the token; the app halts on 401, refreshes, resumes (Mobile-Flutter lib/core/sync/sync_policy.dart:92). Replay after a lost response → 200 with the stored log (MealLogController.php:76-82). Two devices: keys are per device/entry, scoped per subscriber — no collision.
+
+### X-04 Concurrent duplicate replay returns 500 (raw SQL error) instead of the stored log
+- Severity: P3 · Repo: Backend-Laravel · Location: app/Http/Controllers/Api/Logs/MealLogController.php:76-96
+- Reproduction & evidence: `i2-concurrent-idempotency.sh <token> 16`, 2 of 6 rounds: `14 200, 1 201, 1 500 "SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '1-…' for key 'meal_logs.meal_logs_su…"`. No duplicate row.
+- Impact: the app treats 5xx as retryable (sync_policy.dart:81-90), so the meal is not lost; the cost is a Sentry error per race and a back-off delay. With APP_DEBUG on, the SQL text is returned.
+- Proposed fix: catch `UniqueConstraintViolationException` around the insert and return the existing row with 200 · Fix size: S
+
+### X-05 A replayed log comes back after the patient deleted it
+- Severity: P3 · Repo: Backend-Laravel · Location: app/Http/Controllers/Api/Logs/MealLogController.php:76-82,135-148 (hard delete, so the key is forgotten)
+- Reproduction & evidence: `docs/audit/evidence/crossapp/i2-delete-replay.out`: POST key K → id 320; DELETE → 204; POST same K again → **201**, new id 321.
+- Impact: two devices, or a response lost before a delete: a late replay re-creates a meal the patient removed, so it counts again in kcal/adherence.
+- Proposed fix: keep a tombstone (soft delete or a `deleted_idempotency_keys` row) and answer a replay of a deleted key with 410/200-deleted · Fix size: S
+
+### X-06 Two concurrent refreshes both succeed; the device that keeps the older pair is logged out everywhere after 30 s
+- Severity: P2 · Repo: Backend-Laravel + Frontend-Nextjs · Location: app/Services/Auth/RefreshTokenService.php:62-129,149-176; Frontend-Nextjs src/components/auth/AuthProvider.tsx:121-125 (known: "two browser tabs … would still race")
+- Reproduction & evidence: `docs/audit/evidence/crossapp/i2-refresh-race.sh` → `i2-refresh-race.out`: two parallel `POST /auth/refresh` with one token → `200`, `200`, two different refresh tokens (chain R0→X→Y, the lock serialises correctly). 35 s later, using X → `401 "Refresh token was already used. All sessions have been revoked as a precaution."`, and Y is then dead too.
+- Impact: dashboard with two tabs restored at once (shared HttpOnly cookie; whichever Set-Cookie lands last wins): ~50% chance the cookie holds X, and the next refresh (≥15 min later) logs the nutritionist out on every device. The Flutter app single-flights refresh (lib/core/network/token_refresh_coordinator.dart), so the patient side is only exposed if two app processes/isolates refresh at once (NOT CHECKED on device).
+- Proposed fix: inside the grace window, a second presentation of the same parent returns the SAME child pair (store the child's encrypted plain token or re-issue the child id) instead of rotating the child; or a cross-tab lock in AuthProvider (BroadcastChannel / Web Locks) · Fix size: S-M
+
+Not reproduced here (mobile agent's area, server side confirmed): a replay of an already-saved log whose food was since rejected or whose `logged_at` is now refused gets 422 from validation BEFORE the idempotency check (StoreMealLogRequest rules run first), so the app drops the entry as "rejected" although the server holds it — cosmetic, no loss.

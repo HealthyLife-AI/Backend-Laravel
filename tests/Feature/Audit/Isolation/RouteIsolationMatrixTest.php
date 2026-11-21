@@ -212,7 +212,7 @@ class RouteIsolationMatrixTest extends TestCase
             'rating' => 'on_track', 'decision' => 'approve', 'reviewed' => true, 'food_id' => $food, 'quantity_grams' => 100,
             'meal_type' => 'breakfast', 'logged_at' => now()->toIso8601String(), 'mood' => 3, 'interval_days' => 14,
             'visible' => true, 'audience' => 'all', 'goal_type' => 'weight_loss', 'enabled' => true, 'response' => 'x',
-            'cost_tier' => 'low', 'country' => 'PS', 'confirm' => true, 'password' => 'x', 'current_password' => 'password',
+            'cost_tier' => 'low', 'country' => 'PS', 'confirm' => true, 'password' => 'x', 'current_password' => 'password', 'starts_at' => now()->addDays(5)->setTime(11, 0)->toIso8601String(),
         ];
     }
 }
