@@ -1,0 +1,176 @@
+name: CI
+
+# Every PR and main: the full suite on MySQL 8 (production's engine) and on
+# SQLite (phpunit.xml's default), plus a replay of the Dokku deploy path.
+# SQLite ignores lockForUpdate, strict mode, enum/JSON behaviour, column
+# order (->after()) and collation, so the MySQL job is the one that counts.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PHP_VERSION: "8.4"
+  # intl is listed on purpose: Number::fileSize() in db:backup needs it.
+  PHP_EXTENSIONS: mbstring, pdo_mysql, pdo_sqlite, intl, bcmath, pcntl, exif, zip, gd
+
+jobs:
+  tests-mysql:
+    name: Tests (MySQL 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: testing
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -proot" --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      # phpunit.xml sets DB_* without force="true", so the job's env wins.
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: testing
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      # A real MySQL for the dumper test in tests/Feature/Backup (otherwise skipped).
+      BACKUP_TEST_MYSQL: 127.0.0.1:3306:root:root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
+      - name: Run the suite on MySQL
+        run: vendor/bin/phpunit --no-progress
+
+  tests-sqlite:
+    name: Tests (SQLite, as configured)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+      - uses: actions/cache@v4
+        with:
+          path: vendor
+          key: vendor-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          php artisan key:generate --ansi
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
+      - run: vendor/bin/phpunit --no-progress
+
+  deploy-replay:
+    # Dokku runs `php artisan migrate --force` on release against a database that
+    # already has main's schema and live data. Replay that: build main's schema with
+    # main's code, add data, then apply this PR's migrations on top, roll them back
+    # and apply them again. New migrations must be additive (audit rule 3).
+    name: Deploy replay (main schema + this PR's migrations)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: replay
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -proot" --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: replay
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      APP_ENV: testing
+      SCHEDULE_SELF_TRIGGER: "false"
+      QUEUE_CONNECTION: sync
+      CACHE_STORE: array
+      MAIL_MAILER: array
+      OPENAI_BASE_URL: http://127.0.0.1:9/v1
+      OPENAI_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+
+      - name: Which migrations does this PR add or change?
+        id: diff
+        run: |
+          base=$(git merge-base origin/${{ github.base_ref }} HEAD)
+          added=$(git diff --name-only --diff-filter=A "$base" HEAD -- database/migrations | tr '\n' ' ')
+          changed=$(git diff --name-only --diff-filter=MRD "$base" HEAD -- database/migrations | tr '\n' ' ')
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "added=$added" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo $added | wc -w)" >> "$GITHUB_OUTPUT"
+          echo "Added: ${added:-none}"
+          if [ -n "$changed" ]; then
+            echo "::warning::This PR edits, renames or deletes migrations that may already have run in production: $changed"
+          fi
+
+      - name: New migrations are additive
+        if: steps.diff.outputs.count != '0'
+        run: php .github/scripts/check-additive-migrations.php ${{ steps.diff.outputs.added }}
+
+      - name: Build main's schema with main's code, plus data
+        run: |
+          git worktree add ../main-checkout "${{ steps.diff.outputs.base }}"
+          cd ../main-checkout
+          composer install --no-interaction --no-progress --prefer-dist
+          cp .env.example .env
+          php artisan key:generate --ansi
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" .env
+          php artisan migrate --force
+          php artisan db:seed --force
+          php artisan demo:seed
+          php artisan migrate:status | tail -3
+
+      - name: Apply this PR's migrations on top, as a release would
+        run: |
+          composer install --no-interaction --no-progress --prefer-dist
+          cp ../main-checkout/.env .env
+          php artisan migrate --force
+          php artisan migrate:status | tail -5
+
+      - name: Roll the new migrations back, then apply them again
+        if: steps.diff.outputs.count != '0'
+        run: |
+          php artisan migrate:rollback --force --step=${{ steps.diff.outputs.count }}
+          php artisan migrate --force
+          php artisan migrate:status | tail -5
