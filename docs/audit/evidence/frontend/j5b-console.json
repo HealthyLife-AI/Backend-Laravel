@@ -1,0 +1,22 @@
+[
+ {
+  "url": "http://127.0.0.1:3000/en/login",
+  "kind": "http401",
+  "text": "POST http://127.0.0.1:3000/api/auth/refresh"
+ },
+ {
+  "url": "http://127.0.0.1:3000/en/login",
+  "kind": "console.error",
+  "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+ },
+ {
+  "url": "http://127.0.0.1:3000/en/dashboard/patients/3",
+  "kind": "http404",
+  "text": "GET http://127.0.0.1:8000/api/v1/clients/3/reports"
+ },
+ {
+  "url": "http://127.0.0.1:3000/en/dashboard/patients/3",
+  "kind": "console.error",
+  "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+ }
+]
