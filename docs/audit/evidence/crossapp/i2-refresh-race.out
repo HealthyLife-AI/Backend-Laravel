@@ -1,0 +1,8 @@
+refresh#1 200
+refresh#2 200
+two different refresh tokens issued (chain R0->X->Y)
+waiting 35s (> 30 s grace) then the device uses the token from the response that arrived last...
+{"message":"Refresh token was already used. All sessions have been revoked as a precaution."} -> 401
+
+{"message":"Refresh token was already used. All sessions have been revoked as a precaution."} -> 401
+

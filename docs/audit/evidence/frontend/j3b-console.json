@@ -1,0 +1,12 @@
+[
+ {
+  "url": "http://127.0.0.1:3000/ar/login",
+  "kind": "http401",
+  "text": "POST http://127.0.0.1:3000/api/auth/refresh"
+ },
+ {
+  "url": "http://127.0.0.1:3000/ar/login",
+  "kind": "console.error",
+  "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+ }
+]
