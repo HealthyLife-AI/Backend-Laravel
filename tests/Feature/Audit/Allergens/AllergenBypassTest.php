@@ -10,6 +10,7 @@ use App\Models\Subscriber;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\TestCase;
 
@@ -50,7 +51,7 @@ class AllergenBypassTest extends TestCase
         ], $this->bearerFor($this->nutritionist))->assertCreated()->json('id');
     }
 
-    private function activate(int $id): \Illuminate\Testing\TestResponse
+    private function activate(int $id): TestResponse
     {
         return $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/{$id}/activate", [], $this->bearerFor($this->nutritionist));
     }

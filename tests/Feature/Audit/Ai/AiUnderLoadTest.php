@@ -15,6 +15,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
+use Illuminate\Testing\TestResponse;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\TestCase;
 
@@ -44,7 +45,7 @@ class AiUnderLoadTest extends TestCase
         }
     }
 
-    private function draft(): \Illuminate\Testing\TestResponse
+    private function draft(): TestResponse
     {
         return $this->postJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/ai-draft", [], $this->bearerFor($this->nutritionist));
     }

@@ -159,3 +159,62 @@ Tests: `tests/Feature/Audit/Ai/AiUnderLoadTest.php` (Groq faked with Http::fake;
 - Impact: (1) timeouts/connection failures never appear on the admin AI-usage page, so an outage looks like "no usage". (2) One free account may draft 5/min ≈ 27k TPM against a platform budget of 8k TPM, and 300/month; there is no per-platform or per-clinic token budget, so a single (or scripted) sign-up starves every clinic and the Monday summary batch (which also double-runs, BE-01). (3) During a 429 storm each draft sleeps inside a web worker for up to 45 s: 8 concurrent drafts block all 8 workers, i.e. the whole API (patients' logging included).
 - Proposed fix: record a usage row (success=0, status/timeout) in the client's catch; a global token-bucket (cache) in front of the client sized to the provider TPM, with drafts queued or refused fast ("AI busy, try in a minute") instead of sleeping in-request; per-clinic daily token quota for free accounts; lower per-user draft rate; fix the docs figure. · Fix size: M
 
+## Backend sweep (timeboxed)
+
+Probes run against the app booted on the restored copy (:8011, `hl_audit_be_restore`), unless noted.
+
+### BE-17 No e-mail verification: a throwaway sign-up gets full nutritionist powers (patients, AI)
+- Severity: P1 · Repo: Backend-Laravel · Location: app/Http/Controllers/Api/Auth/AuthController.php:51-59 (`register` issues tokens at once); no `verified` middleware anywhere (`grep -rn "email_verified_at\|verified'" app routes` → only Google sign-in sets it)
+- Reproduction & evidence: `POST /auth/register` with `nobody-…@mailinator.test` → 201 with access/refresh tokens, role nutritionist; same token: `POST /clients` ×7 → 7×201 (PT-101…PT-107, temp passwords returned), `PUT health-profile` 201, `POST …/ai-draft` 201. Register limiter is 10/min per IP only.
+- Impact: public sign-up = unlimited anonymous accounts, each with 300 AI drafts/month against the shared Groq budget (BE-16), able to create patient accounts and message/notify real phone numbers' WhatsApp flows; impersonation of a clinic name is trivial.
+- Proposed fix: require verified e-mail (signed link) before `clients.store`, AI routes and posts; keep the dashboard read-only until verified; add a captcha/Turnstile to register. · Fix size: M
+
+### BE-18 Account enumeration via register message and login timing
+- Severity: P2 · Repo: Backend-Laravel · Location: app/Http/Requests/Auth/RegisterNutritionistRequest.php (unique:users,email → "The email has already been taken."); AuthController login (bcrypt only for existing users)
+- Reproduction & evidence: register with an existing e-mail → 422 `The email has already been taken.`; login with a wrong password: existing account 0.24–0.27 s ×3, unknown e-mail 0.014–0.016 s ×3 (same 401 message). forgot-password is generic (OK).
+- Impact: clinic/nutritionist e-mails are confirmable; combined with the per-account lockout (failed_login_attempts/locked_until) a known e-mail can be locked out repeatedly.
+- Proposed fix: hash against a dummy bcrypt when the user is missing; make register answer generically ("check your e-mail") once verification (BE-17) exists. · Fix size: S
+
+### BE-19 Free tier not enforced (report only)
+- Severity: P3 (post-launch billing) · Location: app/Http/Controllers/Api/Clients/ClientController.php (store), ClientInviteController/AuthController activation — no count check
+- Evidence: 7 patients created and activatable for one fresh nutritionist (above). Today a 6th, 7th… active patient is accepted silently; nothing records which patients would be billable.
+
+### BE-20 Dependency advisories (composer audit --locked)
+- Severity: P2 · Location: composer.lock
+- Evidence: 11 advisories: symfony/http-foundation **high** CVE-2026-108082 (ReDoS in HeaderUtils::split via Cache-Control request header — request-reachable, unauthenticated) plus 4 others (trusted-proxy private_ranges IPv4-mapped bypass, HEAD access_control bypass, host-from-client URLs, path-rule bypass); symfony/http-kernel CVE-2026-123339 (forwarded headers in inline fragments); symfony/routing CVE-2026-118516; symfony/mime medium CVE-2026-45070; league/commonmark high (GFM table quadratic DoS; not used by app code) + medium; laravel/framework low CVE-2026-128083.
+- Fix: `composer update symfony/* league/commonmark laravel/framework` within constraints; re-run the suite. · Fix size: S
+
+### BE-21 Numeric API inputs reject Arabic-Indic digits (٠–٩), with English messages
+- Severity: P2 · Location: app/Http/Requests/HealthProfiles/*, Logs/StoreMeasurementRequest.php etc. (`numeric` rules); only app/Support/Phone.php and Username.php use `Digits::`
+- Evidence: `PUT /clients/{id}/health-profile {"weight_kg":"٧٠٫٥",…}` → 422 "The weight kg field must be a number. (and 3 more errors)"; `POST body-composition-readings {"weight_kg":"٧٠"}` → 422. Phone "+٩٧٠٥٩٩٨٨٧٧٦٦" is accepted and normalised (OK).
+- Impact: depends on whether the Flutter/Next inputs convert digits before sending (cross-check MO/FE); if not, patients typing on an Arabic keyboard cannot log weight, and the error is English.
+- Fix: normalise digits (and ٫ decimal separator) in a global request middleware or `prepareForValidation`. · Fix size: S
+
+### BE-22 Food catalog: 77 alcoholic drinks and ~454 pork items are approved foods; 472 USDA rows' kcal disagree with macros by >15 %
+- Severity: P2 · Location: database/seeders/UsdaFoodSeeder.php (imports everything as `approved`)
+- Evidence (seeded DB, MySQL): `kcal >15% off 4/4/9 from macros: 472` (all USDA; curated 58: 0) — biggest are spirits (e.g. id 6211 "Alcoholic beverage, distilled … 100 proof" 295 kcal, macros 0/0/0 — alcohol kcal) and extracts (id 6018 Vanilla extract 288 vs 52); duplicates: 0 by name_en/name_ar; 7,649 of 7,851 foods have no Arabic name (202 do); 77 approved alcoholic beverages (all `meal_slots` NULL = draftable), 454 pork/bacon/ham rows. Rule-based fallback drafts on the real catalog picked curated dishes (rice 299 g at breakfast, rice 129 g as snack — quality P3), so these appear mainly in search/manual and in the fallback once allergies exclude the curated pool.
+- Fix: mark alcohol/pork `meal_slots = []` (never drafted) or unapproved by default for this market; hide non-Arabic-named USDA foods from patient-facing search. · Fix size: S
+
+Checked, no finding: Arabic food search on MySQL normalises well (أرز/ارز/أَرُزّ → 4 hits each, كبسة/كبسه, مجدرة/مجدره equal; رز also matches كرز — expected substring); patient search `q=تجريبيه` finds "تجريبية". Sentry: `send_default_pii=false`, `before_send`/breadcrumb scrubber strips e-mails, phones, Arabic text, SQL bindings, request bodies (config/sentry.php:60-66, app/Support/SentryScrubber.php; existing SentryHardeningTest). Report uploads: content-sniffed MIME must match the extension, 10 MB cap, EXIF stripped (ReportService.php:38-70); no avatar/post-image upload endpoints exist (avatar_url comes from Google). Admin surface: every `admin/*` and `system/*` route returns 403 to nutritionists/patients and 401 to guests (matrix). scheduler-status: admin-only, pull-only — nothing pushes an alert when the scheduler, queue worker or backup stops (only the admin page and Sentry for exceptions; a backup failure is `report()`ed to Sentry as a BackupException, which helps if Sentry is configured).
+
+## Coverage
+
+Verified (tests/commands run):
+- I1: generated HTTP matrix 187 routes × 9 actors (1,519 cases) on SQLite and MySQL — pass; request-triggered scheduled jobs scoped to the caller (BE-01, failing test); medical-report downloads (API-streamed, no signed/public URL; matrix); food search across clinics (pending custom foods invisible to other clinics; matrix with q=marker); patient search (matrix); lead's ReportsTest MySQL failures diagnosed (test-infra race on Storage::fake).
+- I3: 5 bypass tests (BE-02/03/04); template apply / duplicate / AI draft → draft status (gated).
+- I6: full dump→encrypt→decrypt(real command)→restore→boot→smoke chain; sizes and growth; intl failure (BE-05).
+- I7: concurrent refresh on MySQL with 8 workers (BE-09); revocation incl. FCM (BE-10); rate-limit keying (BE-14); policy vs code (BE-11, BE-12, BE-13).
+- I8: 429, timeout, malformed/partial JSON, prompt capture, injection (BE-15, BE-16).
+- Sweep: verification, enumeration, free tier, composer audit, Arabic search, Arabic digits, food data quality, scheduler-status, Sentry config.
+
+Read-only (by inspection, not exercised): push payload content of each notification type; NotificationService dedupe; WeeklySummaryService metrics content (code read: numbers only); PlanSummarySuggestion and WeightInsight prompts; Sentry runtime behaviour beyond config; TRUSTED_PROXIES/intl/storage-mount/MEDICAL_REPORTS_ENABLED values in production (not reachable by design).
+
+NOT CHECKED (budget): concurrent drafts from several clinics + the Monday batch as a live load run (reasoned from code: BE-01, BE-16); exports (no export endpoint exists in routes besides admin food CSV commands — `foods:export-*` are console-only); server log contents in a real deployment (MAIL_MAILER=log would write reset links to logs — not verified for prod); patient-logged off-plan foods vs allergies (no warning path inspected); nutritionist post body/HTML sanitisation; queue `failed_jobs` handling and retry storms; per-endpoint cost of `dashboard/overview` and search under load.
+
+## Unverified
+1. Production foods table may already be allergen-tagged (if imported before migration 2026_10_06) — BE-02 severity in prod depends on `SELECT COUNT(*) FROM foods WHERE allergens IS NULL`.
+2. Production image may include ext-intl (Nixpacks default set) — then BE-05 does not occur in prod.
+3. TRUSTED_PROXIES may be set correctly in prod (BE-14 then P3).
+4. The reports directory may be mounted per DEPLOYMENT.md (BE-06 then "not backed up" only).
+5. Whether the Next/Flutter clients single-flight token refresh (affects how often BE-09 triggers).
+6. Whether clients convert Arabic-Indic digits before sending (BE-21 impact).
