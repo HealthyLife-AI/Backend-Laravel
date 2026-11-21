@@ -125,6 +125,13 @@ call('PUT', 'me/availability', NT, {'windows': [{'weekday': d, 'start': '08:00',
 call('POST', f'clients/{p1}/reviews', NT, {'rating': 'on_track', 'note': 'أحسنت', 'key_points': ['الماء'],
                                            'tasks': [{'title': 'امشِ ٣٠ دقيقة'}]})
 
+today_s = time.strftime('%Y-%m-%d', time.gmtime())
+call('PUT', f'clients/{p1}/measurement-schedule', NT, {'interval_days': 7, 'next_due_on': today_s})
+call('PUT', f'clients/{p1}/checkin-settings', NT, {'interval_days': 7, 'next_due_on': today_s})
+st, post = call('POST', 'posts', NT, {'title': 'نصيحة', 'body': 'اشرب الماء قبل الوجبة', 'audience': 'all', 'pinned': True})
+if isinstance(post, dict):
+    pid_ = post.get('id') or (post.get('data') or {}).get('id')
+    call('POST', f'posts/{pid_}/publish', NT)
 # ── Patient 1 ──
 cap('auth_login', 'POST', 'auth/login', body={'username': cred1['username'], 'password': cred1['password']})
 st, lg = call('POST', 'auth/login', body={'username': cred1['username'], 'password': cred1['password']})
@@ -185,6 +192,11 @@ cap('me_weight_insight', 'GET', 'me/weight-insight', T)
 cap('me_today', 'GET', 'me/today', T)
 cap('me_posts', 'GET', 'me/posts', T, query={'page': 1})
 cap('me_posts_unread_count', 'GET', 'me/posts/unread-count', T)
+st, pp = call('GET', 'me/posts', T, query={'page': 1})
+try:
+    cap('me_post_show', 'GET', f"me/posts/{pp['data'][0]['id']}", T)
+except (KeyError, IndexError, TypeError):
+    pass
 cap('me_reports_consent_get', 'GET', 'me/consent', T, query={'type': 'medical_reports'})
 cap('me_reports', 'GET', 'me/reports', T)
 cap('me_wellbeing_put', 'PUT', f'me/wellbeing/{today}', T,
@@ -246,6 +258,12 @@ for name, path, q in [('me_meal_plan', 'me/meal-plan', None), ('me_meal_logs_ind
                       ('me_food_preferences_get', 'me/food-preferences', None), ('me_wellbeing_get', 'me/wellbeing', {'from': yday, 'to': today}),
                       ('me_quick_requests_get', 'me/quick-requests', None), ('me_posts', 'me/posts', {'page': 1})]:
     cap('empty_' + name, 'GET', path, T2, query=q)
+
+# follow-up ended (archive the empty patient, then read as it)
+call('POST', f'clients/{p2}/archive', NT)
+cap('error_follow_up_ended', 'GET', 'me/meal-plan', T2)
+cap('error_follow_up_ended_meal_log_post', 'POST', 'me/meal-logs', T2,
+    {'food_id': 36, 'quantity_grams': 80, 'idempotency_key': f'00000000-0000-4000-8000-{stamp[-6:]}000009'})
 
 with open(os.path.join(OUT, '_index.json'), 'w') as f:
     json.dump({'base': BASE, 'captured_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),

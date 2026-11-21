@@ -67,6 +67,9 @@ class RouteIsolationMatrixTest extends TestCase
         }
         $app = require __DIR__.'/../../../../bootstrap/app.php';
         $app->make(Kernel::class)->bootstrap();
+        // Bootstrapping installs Laravel's error/exception handlers; drop them again so PHPUnit doesn't flag every case as risky.
+        restore_error_handler();
+        restore_exception_handler();
         $cache = [];
         /** @var Route $route */
         foreach ($app['router']->getRoutes() as $route) {
@@ -88,7 +91,7 @@ class RouteIsolationMatrixTest extends TestCase
         $mw = implode(',', $route->gatherMiddleware());
         $isPublic = in_array($name, self::PUBLIC_ROUTES, true);
         $isAdminRoute = (bool) preg_match('/role:admin|permission:(users\.manage|foods\.manage|foods\.approve)/', $mw);
-        $isMeRoute = str_starts_with($uri, 'api/v1/me/') || in_array($name, self::PATIENT_SHARED, true);
+        $isMeRoute = self::isPatientRoute($mw, $name);
         $hasVictimParam = (bool) preg_match('/\{(?!country)/', $uri);
 
         if ($actor === 'owner') {
@@ -106,10 +109,19 @@ class RouteIsolationMatrixTest extends TestCase
             default => $this->w->tokens[$actor],
         };
         $headers = $token ? ['Authorization' => "Bearer {$token}"] : [];
-        $res = $this->json($method, $url, $this->body($name), $headers);
+        $res = $method === 'GET' ? $this->getJson($url.self::QUERY, $headers) : $this->json($method, $url, $this->body($name), $headers);
         $status = $res->getStatusCode();
         $ctx = "{$actor} {$method} {$url} -> {$status}: ".substr((string) $res->getContent(), 0, 300);
+        if ($log = getenv('AUDIT_MATRIX_LOG')) {
+            file_put_contents($log, "{$status}\t{$actor}\t{$method}\t{$name}\t".substr(str_replace(["\n", "\t"], ' ', (string) $res->getContent()), 0, 160)."\n", FILE_APPEND);
+        }
 
+        if ($actor === 'admin' && $isAdminRoute) {
+            // Moderating every clinic's submitted foods / nutritionists is the admin's job.
+            $this->assertNotSame(500, $status, "500 {$ctx}");
+
+            return;
+        }
         $this->assertStringNotContainsString(IsolationWorld::MARK, (string) $res->getContent(), "LEAK (victim data in body) {$ctx}");
         $this->assertNotSame(500, $status, "500 {$ctx}");
 
@@ -138,6 +150,14 @@ class RouteIsolationMatrixTest extends TestCase
         }
     }
 
+    private static function isPatientRoute(string $mw, string $name): bool
+    {
+        return (bool) preg_match('/role:client|permission:(plans\.view\.own|logs\.manage\.own)/', $mw) || in_array($name, self::PATIENT_SHARED, true);
+    }
+
+    /** Query string for GET routes: a search for the victim mark, plus required filters. */
+    private const QUERY = '?q='.IsolationWorld::MARK.'&type=follow_up';
+
     private function ownerControl(string $method, string $uri, string $name, bool $isPublic, bool $isAdminRoute, bool $isMeRoute): void
     {
         if ($method !== 'GET' || $isPublic || $isAdminRoute || in_array($name, ['api.system.ai-status', 'api.system.scheduler-status', 'api.system.fcm-status'], true)) {
@@ -146,7 +166,7 @@ class RouteIsolationMatrixTest extends TestCase
             return;
         }
         $token = $isMeRoute ? $this->w->tokens['A1'] : $this->w->tokens['nutA'];
-        $res = $this->getJson($this->fill($uri, $name, null), ['Authorization' => "Bearer {$token}"]);
+        $res = $this->getJson($this->fill($uri, $name, null).self::QUERY, ['Authorization' => "Bearer {$token}"]);
         $this->assertTrue($res->isSuccessful(), "fixture control: owner GET {$uri} -> {$res->getStatusCode()} ".substr((string) $res->getContent(), 0, 300));
     }
 

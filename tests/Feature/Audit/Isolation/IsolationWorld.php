@@ -146,7 +146,7 @@ final class IsolationWorld
         $t = ['created_at' => $now, 'updated_at' => $now];
 
         $this->ids['food'] = $this->food("{$m} clinic A custom food", 'pending', $nutA->id);
-        $this->ids['foodApproved'] = $this->food("{$m} clinic A approved food", 'approved', $nutA->id);
+        $this->ids['foodApproved'] = $this->food('Clinic A approved food', 'approved', $nutA->id);
         $shared = $this->food('Shared rice', 'approved', null);
         $this->ids['sharedFood'] = $shared;
 

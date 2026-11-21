@@ -48,12 +48,16 @@ Proof:
 | Backend PHPUnit, SQLite in-memory (as configured), run 1 | 1,507 tests · **4 failures** · 1 skipped · 2 risky | 136 s |
 | Backend PHPUnit, SQLite, run 2 | identical | 139 s |
 | Backend PHPUnit, **MySQL 8, unmodified main** | **every test errors at migration** (25 of 25 in `tests/Feature/Consent`; the full run was stopped). See F-DB-01. | n/a |
-| Backend PHPUnit, MySQL 8, with F-DB-01's `->after()` removed locally (uncommitted) | MYSQL_PENDING | |
+| Backend PHPUnit, MySQL 8, with F-DB-01's `->after()` removed locally (uncommitted) | 1,507 tests · **7 failures** · 1 skipped · 2 risky: the same 4 backup/intl failures plus **3 MySQL-only failures** in `tests/Feature/Phase4/ReportsTest.php`: `test_each_stream_writes_an_access_log_row_with_no_contents` ("The response is not a streamed response"), `test_file_streaming_is_rate_limited_per_user` (404 instead of 200) and `test_a_patient_delete_is_soft_and_the_file_is_purged_after_30_days`. Medical-report download behaves differently on production's engine; diagnosed under I1/I6. | 473 s |
 | `migrate:fresh --seed` on main, MySQL | **FAILS** at `2026_10_25_200300` (F-DB-01). With the local workaround: passes, seeds 7,851 foods, 12 s. | 12 s |
 | Frontend `npm ci` / `eslint .` / `tsc --noEmit` / `next build` | pass / pass, 0 problems / pass / pass | 22 s / 20 s / 15 s / 41 s |
 | Mobile `flutter pub get` / `gen-l10n` drift / `analyze --fatal-infos` | ok / none / **No issues found** | 45 s / – / 49 s |
 | Mobile `flutter test` (goldens skipped, as CI) | **1,052 passed, 1 skipped, 0 failed** | 202 s |
 | Mobile goldens (`--run-skipped --tags golden`, compare mode) | 33 passed, 17 failed. Expected: `dart_test.yaml` says the goldens render today's date and are regenerated on purpose. The diffs are 0.26–2.81% per screen. Not a finding. | 42 s |
+
+A second MySQL run was started by mistake while audit tests were being written into `tests/`. It counted 3,033 tests and is discarded.
+
+**Session note, 17:29 UTC.** All subagents hit a usage limit, and the container worker restarted. **The restart wiped `/etc/hosts`, which removed the production block.** No network command ran between the restart and the moment I re-applied the block (verified again with curl: `Failed to connect … after 0 ms`). `/etc/profile.d/zz-prod-block.sh` now re-applies the hosts entries every time it is sourced, so a further restart can't silently lift the block.
 
 The 4 SQLite failures are all in `tests/Feature/Backup/DatabaseBackupTest.php` (lines 271, 339, 375 and 384), and their cause is F-OPS-01.
 The 2 risky tests: `PatientCredentialsTest::test_the_generated_password_is_never_logged` makes no assertions (`tests/Feature/Auth/PatientCredentialsTest.php:254`), so the "password never logged" guarantee isn't actually tested. `ReportsTest::test_a_tampered_file_does_not_decrypt` leaves an output buffer open.

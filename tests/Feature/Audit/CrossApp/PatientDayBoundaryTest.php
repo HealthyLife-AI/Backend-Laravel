@@ -43,8 +43,17 @@ class PatientDayBoundaryTest extends TestCase
         $this->fakePush();
     }
 
+    /** firebase/php-jwt checks exp against time(), not Carbon: align it with the fake clock. */
+    private function bearer(User $user): array
+    {
+        \Firebase\JWT\JWT::$timestamp = CarbonImmutable::now()->timestamp;
+
+        return $this->bearerFor($user);
+    }
+
     protected function tearDown(): void
     {
+        \Firebase\JWT\JWT::$timestamp = null;
         CarbonImmutable::setTestNow();
         parent::tearDown();
     }
@@ -80,13 +89,13 @@ class PatientDayBoundaryTest extends TestCase
         $this->postJson('/api/v1/me/meal-logs', [
             'food_id' => $item->food_id, 'meal_item_id' => $item->id, 'quantity_grams' => 100,
             'idempotency_key' => (string) Str::uuid(), 'logged_at' => $isoWithOffset,
-        ], $this->bearerFor($client))->assertCreated();
+        ], $this->bearer($client))->assertCreated();
     }
 
     /** Day the nutritionist's dashboard files the log under (GET clients/{id}/meal-logs/daily). */
     private function dashboardDayOfOnlyLog(User $nutritionist, Subscriber $s): ?string
     {
-        $days = $this->getJson("/api/v1/clients/{$s->id}/meal-logs/daily?from=2026-11-19&to=2026-11-22", $this->bearerFor($nutritionist))
+        $days = $this->getJson("/api/v1/clients/{$s->id}/meal-logs/daily?from=2026-11-19&to=2026-11-22", $this->bearer($nutritionist))
             ->assertOk()->json('days');
         foreach ($days as $d) {
             if (count($d['logs']) > 0) {
@@ -117,7 +126,7 @@ class PatientDayBoundaryTest extends TestCase
         $this->logAt($client, $item, $localIso);
 
         // What the patient's app asks for "my day" (GET me/meal-logs?from=day&to=day).
-        $mine = $this->getJson("/api/v1/me/meal-logs?from={$ownDay}&to={$ownDay}", $this->bearerFor($client))->assertOk()->json('data');
+        $mine = $this->getJson("/api/v1/me/meal-logs?from={$ownDay}&to={$ownDay}", $this->bearer($client))->assertOk()->json('data');
 
         $this->assertSame([
             'dashboard_day' => $ownDay,
@@ -149,6 +158,18 @@ class PatientDayBoundaryTest extends TestCase
         $this->assertNotNull($row, 'Gaza patient got no 20:00 reminder for Sat although nothing is logged on their Saturday');
     }
 
+    /** Control: same data with SCHEDULE_TIMEZONE=Asia/Gaza, the reminder IS written (proves the test above fails only on the day cut). */
+    public function test_control_reminder_reaches_gaza_patient_under_gaza_server(): void
+    {
+        config(['scheduling.timezone' => 'Asia/Gaza']);
+        CarbonImmutable::setTestNow('2026-11-20 21:35:00');
+        [$client, $s, $item] = $this->patient('Asia/Gaza');
+        $this->logAt($client, $item, '2026-11-20T23:30:00+02:00');
+        CarbonImmutable::setTestNow('2026-11-21 18:00:00');
+        Artisan::call('notifications:send-log-reminders');
+        $this->assertTrue(DB::table('patient_notifications')->where('user_id', $client->id)->where('type', 'log_reminder')->exists());
+    }
+
     /** Clock-time view: what local time each scheduled push lands at for a Gaza patient (winter). */
     public function test_scheduled_push_times_land_at_the_intended_local_hour_for_gaza_under_riyadh(): void
     {
@@ -173,7 +194,7 @@ class PatientDayBoundaryTest extends TestCase
         CarbonImmutable::setTestNow('2026-11-21 06:00:00');
         [$client, $s, $item, $nutritionist] = $this->patient('Asia/Gaza');
         DB::table('nutritionist_availability')->insert([
-            'nutritionist_id' => $nutritionist->id, 'weekday' => 1, 'start_time' => '09:00:00', 'end_time' => '10:00:00',
+            'nutritionist_id' => $nutritionist->id, 'weekday' => 1, 'start_time' => '09:00', 'end_time' => '10:00',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $slots = app(\App\Services\Appointments\AppointmentService::class)->slots($nutritionist, array_key_first(\App\Models\Appointment::DURATIONS));
