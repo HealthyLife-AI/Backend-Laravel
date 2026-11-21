@@ -1,0 +1,62 @@
+[
+    {
+        "token": "tok-ar-evIJ0",
+        "title": "صباح الخير",
+        "body": "صباح الخير! خطة يومك جاهزة",
+        "data": {
+            "notification_id": "1",
+            "category": "morning",
+            "type": "morning_message"
+        }
+    },
+    {
+        "token": "tok-en-whL4K",
+        "title": "Good morning",
+        "body": "Good morning! Your day plan is ready.",
+        "data": {
+            "notification_id": "2",
+            "category": "morning",
+            "type": "morning_message"
+        }
+    },
+    {
+        "token": "tok-ar-evIJ0",
+        "title": "لا تنسَ تسجيل وجباتك اليوم",
+        "body": "لم تسجّل أي وجبة اليوم بعد.",
+        "data": {
+            "notification_id": "3",
+            "category": "meals",
+            "type": "log_reminder"
+        }
+    },
+    {
+        "token": "tok-en-whL4K",
+        "title": "Don't forget to log your meals today",
+        "body": "You haven't logged a meal today yet.",
+        "data": {
+            "notification_id": "4",
+            "category": "meals",
+            "type": "log_reminder"
+        }
+    },
+    {
+        "token": "tok-ar-evIJ0",
+        "title": "لا تنسَ تسجيل وجباتك اليوم",
+        "body": "لم تسجّل أي وجبة اليوم بعد.",
+        "data": {
+            "notification_id": "5",
+            "category": "meals",
+            "type": "log_reminder"
+        }
+    },
+    {
+        "token": "tok-en-whL4K",
+        "title": "Don't forget to log your meals today",
+        "body": "You haven't logged a meal today yet.",
+        "data": {
+            "notification_id": "6",
+            "category": "meals",
+            "type": "log_reminder"
+        }
+    }
+]

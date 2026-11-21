@@ -2,20 +2,24 @@
 
 namespace Tests\Feature\Audit\CrossApp;
 
+use App\Models\Appointment;
 use App\Models\Food;
 use App\Models\MealItem;
 use App\Models\NotificationPreference;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Appointments\AppointmentService;
+use App\Services\Scheduling\SelfScheduler;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\AuthenticatesForApi;
 use Tests\Concerns\FakesPush;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -46,14 +50,14 @@ class PatientDayBoundaryTest extends TestCase
     /** firebase/php-jwt checks exp against time(), not Carbon: align it with the fake clock. */
     private function bearer(User $user): array
     {
-        \Firebase\JWT\JWT::$timestamp = CarbonImmutable::now()->timestamp;
+        JWT::$timestamp = CarbonImmutable::now()->timestamp;
 
         return $this->bearerFor($user);
     }
 
     protected function tearDown(): void
     {
-        \Firebase\JWT\JWT::$timestamp = null;
+        JWT::$timestamp = null;
         CarbonImmutable::setTestNow();
         parent::tearDown();
     }
@@ -174,7 +178,7 @@ class PatientDayBoundaryTest extends TestCase
     public function test_scheduled_push_times_land_at_the_intended_local_hour_for_gaza_under_riyadh(): void
     {
         config(['scheduling.timezone' => 'Asia/Riyadh']);
-        $s = app(\App\Services\Scheduling\SelfScheduler::class);
+        $s = app(SelfScheduler::class);
         $now = CarbonImmutable::parse('2026-11-21 23:59:00', 'UTC');
         $got = [];
         foreach (['alerts' => '06:00', 'morning' => '07:30', 'reminders' => '20:00', 'measurements' => '09:00'] as $task => $intended) {
@@ -197,7 +201,7 @@ class PatientDayBoundaryTest extends TestCase
             'nutritionist_id' => $nutritionist->id, 'weekday' => 1, 'start_time' => '09:00', 'end_time' => '10:00',
             'created_at' => now(), 'updated_at' => now(),
         ]);
-        $slots = app(\App\Services\Appointments\AppointmentService::class)->slots($nutritionist, array_key_first(\App\Models\Appointment::DURATIONS));
+        $slots = app(AppointmentService::class)->slots($nutritionist, array_key_first(Appointment::DURATIONS));
         $first = CarbonImmutable::parse(collect($slots)->flatten()->first());
         $this->assertSame('09:00', $first->setTimezone('Asia/Gaza')->format('H:i'), 'first slot as a Gaza device shows it');
     }

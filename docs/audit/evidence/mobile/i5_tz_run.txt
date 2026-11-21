@@ -1,0 +1,9 @@
+00:00 +0: I5: which day the app shows vs which day the server records
+TZ=Asia/Gaza offset=2:00:00.000000 device local=2026-11-20 23:30:00.000 | app shows on 2026-11-20 | body sent logged_at=2026-11-20T21:30:00.000Z | server (SCHEDULE_TIMEZONE) day=[2026-11-21]
+00:01 +0 -1: I5: which day the app shows vs which day the server records [E]
+  Expected: ['2026-11-20']
+    Actual: ['2026-11-21']
+00:01 +0 -1: Some tests failed.
+00:00 +0: I5: which day the app shows vs which day the server records
+TZ=Asia/Aden offset=3:00:00.000000 device local=2026-11-21 00:30:00.000 | app shows on 2026-11-21 | body sent logged_at=2026-11-20T21:30:00.000Z | server (SCHEDULE_TIMEZONE) day=[2026-11-21]
+00:01 +1: All tests passed!

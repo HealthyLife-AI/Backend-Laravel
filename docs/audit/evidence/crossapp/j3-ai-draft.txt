@@ -1,0 +1,8 @@
+mode=malformed t=0s llm_calls=1 resp=HTTP201
+ {'warnings': 'list', 'id': 5, 'is_ai_draft': True, 'status': 'draft'}
+mode=429 t=21s llm_calls=2 resp=HTTP201
+ {'warnings': 'list', 'id': 6, 'is_ai_draft': True, 'status': 'draft'}
+mode=partial t=1s llm_calls=2 resp=HTTP201
+ {'warnings': 'list', 'id': 7, 'is_ai_draft': True, 'status': 'draft'}
+mode=timeout t=13s llm_calls=1 resp=HTTP201
+ {'warnings': 'list', 'id': 8, 'is_ai_draft': True, 'status': 'draft'}

@@ -1,0 +1,10 @@
+upload 3M (fast) -> {"message":"The file failed to upload.","errors":{"file":["The file failed to upload."]}} HTTP422 1.046677s
+
+upload 600K (fast) -> {"message":"Consent to upload medical reports is required.","code":"reports_consent_required","current_version":"reports-1"} HTTP403 0.043885s
+
+upload 9M (fast) -> <br /><b>Warning</b>:  PHP Request Startup: POST Content-Length of 9437611 bytes exceeds the limit of 8388608 bytes in <b>Unknown</b> on line <b>0</b><br /> HTTP200
+
+upload 600K at 20 KB/s -> ploaded_at":"2026-11-21T17:40:33+00:00"} HTTP201 30.019852s
+download id=1 at 20 KB/s -> HTTP200 614409B 29.507991s
+download identical to upload
+Range request (resume) -> HTTP200 614409B accept-ranges=
