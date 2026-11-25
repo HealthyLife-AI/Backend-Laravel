@@ -25,8 +25,13 @@ final class AllergenMatcher
      */
     private const AR_PREFIXES = ['وبال', 'وال', 'بال', 'لل', 'ال', 'و', 'ب'];
 
-    /** @var array<string, array{keywords: list<list<string>>, not: list<list<string>>}>|null */
-    private ?array $groups = null;
+    /**
+     * Keyword and exception phrases indexed by their first word, so a name is
+     * checked against only the phrases that can start at each of its words.
+     *
+     * @var array{keywords: array<string, list<array{string, list<string>}>>, not: array<string, list<array{string, list<string>}>>}|null
+     */
+    private ?array $index = null;
 
     /**
      * Allergen groups whose keywords appear in the name, sorted.
@@ -41,34 +46,93 @@ final class AllergenMatcher
             return [];
         }
 
-        $found = [];
+        $index = $this->index();
 
-        foreach ($this->groups() as $group => $lists) {
-            // Words covered by an exception phrase ("peanut butter") can't
-            // count for this group, but stay available to every other group.
-            $blocked = [];
-            foreach ($lists['not'] as $phrase) {
-                foreach ($this->phrasePositions($words, $phrase) as $start) {
-                    for ($i = $start; $i < $start + count($phrase); $i++) {
-                        $blocked[$i] = true;
-                    }
+        // Words covered by an exception phrase ("peanut butter") can't count
+        // for that phrase's group, but stay available to every other group.
+        $blocked = [];
+        foreach ($this->hits($words, $index['not']) as [$group, $start, $length]) {
+            for ($i = $start; $i < $start + $length; $i++) {
+                $blocked[$group][$i] = true;
+            }
+        }
+
+        $found = [];
+        foreach ($this->hits($words, $index['keywords']) as [$group, $start]) {
+            if (! isset($blocked[$group][$start])) {
+                $found[$group] = true;
+            }
+        }
+
+        $found = array_keys($found);
+        sort($found);
+
+        return $found;
+    }
+
+    /**
+     * Whether a free-text allergy the nutritionist typed ("فول سوداني",
+     * "peanuts") appears in a food name: its words, in order, each matching
+     * a form of a name word. Both sides fold the Arabic article and prefixes
+     * and English plurals, so «فول سوداني» is found in «زبدة الفول السوداني»
+     * and "peanuts" in "Peanut butter".
+     */
+    public function textInName(string $allergyText, ?string $name): bool
+    {
+        $needle = $this->words($allergyText);
+        $haystack = $this->words((string) $name);
+        $length = count($needle);
+
+        for ($start = 0; $length > 0 && $start + $length <= count($haystack); $start++) {
+            for ($k = 0; $k < $length; $k++) {
+                if (array_intersect($needle[$k], $haystack[$start + $k]) === []) {
+                    continue 2;
                 }
             }
 
-            foreach ($lists['keywords'] as $phrase) {
-                foreach ($this->phrasePositions($words, $phrase) as $start) {
-                    if (! isset($blocked[$start])) {
-                        $found[] = $group;
+            return true;
+        }
 
-                        continue 3;
+        return false;
+    }
+
+    /**
+     * Every indexed phrase found in the name: [group, start, length].
+     *
+     * @param  list<list<string>>  $words
+     * @param  array<string, list<array{string, list<string>}>>  $byFirstWord
+     * @return list<array{string, int, int}>
+     */
+    private function hits(array $words, array $byFirstWord): array
+    {
+        $hits = [];
+
+        foreach ($words as $start => $forms) {
+            foreach ($forms as $form) {
+                foreach ($byFirstWord[$form] ?? [] as [$group, $phrase]) {
+                    if ($this->phraseAt($words, $start, $phrase)) {
+                        $hits[] = [$group, $start, count($phrase)];
                     }
                 }
             }
         }
 
-        sort($found);
+        return $hits;
+    }
 
-        return $found;
+    /**
+     * @param  list<list<string>>  $words
+     * @param  list<string>  $phrase
+     */
+    private function phraseAt(array $words, int $start, array $phrase): bool
+    {
+        foreach ($phrase as $k => $word) {
+            if (! isset($words[$start + $k]) || ! in_array($word, $words[$start + $k], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -158,31 +222,26 @@ final class AllergenMatcher
         return array_values(array_unique($forms));
     }
 
-    /** @return array<string, array{keywords: list<list<string>>, not: list<list<string>>}> */
-    private function groups(): array
+    /** @return array{keywords: array<string, list<array{string, list<string>}>>, not: array<string, list<array{string, list<string>}>>} */
+    private function index(): array
     {
-        if ($this->groups !== null) {
-            return $this->groups;
+        if ($this->index !== null) {
+            return $this->index;
         }
 
-        $this->groups = [];
+        $this->index = ['keywords' => [], 'not' => []];
 
-        foreach ((array) config('allergens.keywords') as $group => $byLanguage) {
-            $this->groups[$group] = [
-                'keywords' => $this->phrases(array_merge(...array_values((array) $byLanguage))),
-                'not' => $this->phrases(array_merge(...array_values((array) config("allergens.not.{$group}", [])))),
-            ];
+        foreach (['keywords' => 'allergens.keywords', 'not' => 'allergens.not'] as $kind => $key) {
+            foreach ((array) config($key) as $group => $byLanguage) {
+                foreach (array_merge(...array_values((array) $byLanguage)) as $keyword) {
+                    $phrase = $this->phrase($keyword);
+                    if ($phrase !== []) {
+                        $this->index[$kind][$phrase[0]][] = [$group, $phrase];
+                    }
+                }
+            }
         }
 
-        return $this->groups;
-    }
-
-    /**
-     * @param  list<string>  $keywords
-     * @return list<list<string>>
-     */
-    private function phrases(array $keywords): array
-    {
-        return array_values(array_filter(array_map($this->phrase(...), $keywords)));
+        return $this->index;
     }
 }
