@@ -309,3 +309,23 @@ Full table with V (verified) and I (by inspection) marks: `docs/audit/findings/c
 - **Appointments.** Availability is read in the clinic zone; responses keep the `timezone` field; the dashboard formats with that zone and shows a label; the app keeps device-local display (the correct instant).
 - **Rule 4.** No field removed or retyped; `date` keys stay `Y-m-d`, computed in the patient's zone; old builds fall back to the clinic zone.
 - **DST.** tzdata handles Asia/Gaza; no job falls in the switch hours (verified for 2026-10-24, 2027-03-27 and 2027-10-30).
+
+---
+
+# Phase 2, batch 1 (approved 2026-11-25)
+
+| # | Finding | PR | Base | Notes |
+|---|---|---|---|---|
+| 1 | F-DB-01 | HealthyLife-AI/Backend-Laravel#39 | main | Merge first. Then the CI PR #38. |
+| 2 | F-OPS-01 | HealthyLife-AI/Backend-Laravel#40 | main | |
+| 3a | A-01 (matcher and keyword list) | HealthyLife-AI/Backend-Laravel#41 | main | |
+| 3b | A-01 (tagging command, seeder, importer) | HealthyLife-AI/Backend-Laravel#42 | #41 | Stacked. |
+| 4 | A-03 | HealthyLife-AI/Backend-Laravel#43 | #41 | Stacked. |
+| 5 | A-02 (API) | HealthyLife-AI/Backend-Laravel#44 | main | |
+| 6 | A-02 (dashboard) | HealthyLife-AI/Frontend-Nextjs#28 | main | After #44. |
+| 7 | MO-02 | HealthyLife-AI/Mobile-Flutter#42 | main | Needs a new app build. |
+| 8 | BE-01 | HealthyLife-AI/Backend-Laravel#45 | main | |
+
+FE-20 (Next.js advisory) is not a patch-level bump: the critical advisories reach 16.4.0 and the 16.3 line ends at 16.3.8, so the fix needs 16.4.1 or later. It is first in batch 2.
+
+Before/after evidence for A-02 (dashboard) and MO-02 is in `docs/audit/evidence/phase2/`.
