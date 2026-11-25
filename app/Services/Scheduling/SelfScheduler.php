@@ -4,6 +4,7 @@ namespace App\Services\Scheduling;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -149,6 +150,14 @@ class SelfScheduler
 
         $ran = [];
 
+        // Audit BE-01: this runs inside an API request (after its response), so
+        // Auth::user() is still the caller and NutritionistScope would narrow
+        // every bulk job to THAT clinic, while the task is marked done for all.
+        // Real cron has nobody logged in; run these the same way, then put the
+        // caller back.
+        $caller = Auth::user();
+        Auth::forgetUser();
+
         try {
             // The summaries job makes one LLM call per active client; this
             // runs after the response is sent, so it must not be cut off
@@ -171,6 +180,10 @@ class SelfScheduler
             }
         } finally {
             $lock->release();
+
+            if ($caller !== null) {
+                Auth::setUser($caller);
+            }
         }
 
         return $ran;
