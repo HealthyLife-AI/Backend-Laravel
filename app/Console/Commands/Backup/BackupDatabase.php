@@ -7,9 +7,9 @@ use App\Services\Backup\BackupCrypto;
 use App\Services\Backup\DatabaseDumper;
 use App\Services\Backup\TelegramUploader;
 use App\Services\Scheduling\SelfScheduler;
+use App\Support\ByteSize;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
-use Illuminate\Support\Number;
 use Throwable;
 
 /**
@@ -65,20 +65,20 @@ class BackupDatabase extends Command
             $encrypted = $crypto->encrypt((string) file_get_contents($gz), $passphrase);
 
             if (strlen($encrypted) > (int) config('backup.max_upload_bytes')) {
-                throw new BackupException('upload', 'The encrypted backup is larger than Telegram allows ('.Number::fileSize((int) config('backup.max_upload_bytes')).').');
+                throw new BackupException('upload', 'The encrypted backup is larger than Telegram allows ('.ByteSize::format((int) config('backup.max_upload_bytes')).').');
             }
 
             file_put_contents($enc, $encrypted);
             unset($encrypted);
 
             $hash = hash_file('sha256', $enc);
-            $caption = "HealthyLife database backup\nDate: ".$now->format('Y-m-d H:i')." (Asia/Hebron)\nCompressed size: ".Number::fileSize($gzBytes)."\nTables: {$tables}\nSHA-256: {$hash}";
+            $caption = "HealthyLife database backup\nDate: ".$now->format('Y-m-d H:i')." (Asia/Hebron)\nCompressed size: ".ByteSize::format($gzBytes)."\nTables: {$tables}\nSHA-256: {$hash}";
 
             $uploader->send($enc, $filename, $caption, $token, $chatId);
 
             $scheduler->markRan('backup');
             $scheduler->recordResult('backup', ['ok' => 1, 'tables' => $tables, 'compressed_bytes' => $gzBytes, 'encrypted_bytes' => (int) filesize($enc)]);
-            $this->info("Backup sent: {$filename} ({$tables} tables, ".Number::fileSize($gzBytes).' compressed).');
+            $this->info("Backup sent: {$filename} ({$tables} tables, ".ByteSize::format($gzBytes).' compressed).');
 
             return self::SUCCESS;
         } catch (Throwable $e) {
