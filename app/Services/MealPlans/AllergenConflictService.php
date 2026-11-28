@@ -7,6 +7,7 @@ use App\Models\MealPlan;
 use App\Models\PatientAllergy;
 use App\Models\Subscriber;
 use App\Services\HealthRecords\HealthRecordService;
+use App\Support\Allergens\AllergenMatcher;
 use App\Support\ArabicText;
 
 /**
@@ -18,11 +19,20 @@ use App\Support\ArabicText;
  * own proposal does not: it has not been reviewed, and the existing
  * `pending_allergy_proposal` warning already says so.
  *
- * Two kinds of match:
- *  - "tag": the food's own `allergens` list intersects an approved group.
+ * Two kinds of match, both through the one AllergenMatcher and the one
+ * keyword list (config/allergens.php), for EVERY caller: activation, plan
+ * edits, the dashboard's inline check and both AI draft paths (audit A-03):
+ *  - "tag": the food's groups intersect an approved group. A food's groups
+ *    are its stored `allergens` PLUS the groups whose keywords appear in its
+ *    Arabic or English name, so an untagged or under-tagged food is still
+ *    caught. A free-text allergy that names a group ("حليب", "peanuts")
+ *    also counts as that group.
  *  - "text": an approved "other" allergy's free text is found in the food's
- *    Arabic (spelling-normalised) or English name. A name match is a hint,
- *    not a proof, which is why `match` travels with every conflict.
+ *    name word by word (article, prefixes and plurals folded), or as a plain
+ *    substring as before. A name match is a hint, not a proof, which is why
+ *    `match` travels with every conflict.
+ *
+ * Leans towards matching: a false positive costs one acknowledgement.
  *
  * A food whose `allergens` is NULL has never been tagged. That is not "no
  * allergens"; it is "unknown", and is listed separately as unverified so
@@ -39,7 +49,10 @@ class AllergenConflictService
 
     public const CONFIRMED = 'confirmed_allergy';
 
-    public function __construct(private readonly HealthRecordService $records) {}
+    public function __construct(
+        private readonly HealthRecordService $records,
+        private readonly AllergenMatcher $matcher,
+    ) {}
 
     /**
      * What the patient is approved to avoid, loaded ONCE and reused for
@@ -69,7 +82,60 @@ class AllergenConflictService
             $texts[$needle] = $this->strongest($classes);
         }
 
-        return ['groups' => $groups, 'texts' => $texts];
+        return $this->withImpliedGroups(['groups' => $groups, 'texts' => $texts]);
+    }
+
+    /**
+     * The profile plus extra free-text allergies at one class: the AI draft
+     * adds the legacy `health_profiles.allergies` names this way, so it never
+     * excludes less than it did before.
+     *
+     * @param  array{groups: array<string, string>, texts: array<string, string>}  $profile
+     * @param  list<string>  $texts
+     * @return array{groups: array<string, string>, texts: array<string, string>}
+     */
+    public function withTexts(array $profile, array $texts, string $class = self::CONFIRMED): array
+    {
+        foreach ($texts as $text) {
+            $needle = $this->fold((string) $text);
+            if ($needle !== '') {
+                $profile['texts'][$needle] = $this->strongest(array_filter([$profile['texts'][$needle] ?? null, $class]));
+            }
+        }
+
+        return $this->withImpliedGroups($profile);
+    }
+
+    /**
+     * A free-text allergy that names a group ("حليب", "peanuts") counts as
+     * that group too, at the text's class, so a tagged food is caught even
+     * when its name doesn't contain the word the nutritionist typed.
+     *
+     * @param  array{groups: array<string, string>, texts: array<string, string>}  $profile
+     * @return array{groups: array<string, string>, texts: array<string, string>}
+     */
+    private function withImpliedGroups(array $profile): array
+    {
+        foreach ($profile['texts'] as $needle => $class) {
+            foreach ($this->matcher->groupsInName((string) $needle) as $group) {
+                $profile['groups'][$group] = $this->strongest(array_filter([$profile['groups'][$group] ?? null, $class]));
+            }
+        }
+
+        return $profile;
+    }
+
+    /**
+     * A food's allergen groups: what is stored plus what its name shows.
+     *
+     * @return list<string>
+     */
+    public function groupsOf(Food $food): array
+    {
+        return array_values(array_unique(array_merge(
+            $food->allergens ?? [],
+            $this->matcher->groupsInName($food->name_en.' '.$food->name_ar),
+        )));
     }
 
     /**
@@ -131,7 +197,7 @@ class AllergenConflictService
         $groups = [];
         $severities = [];
 
-        foreach (array_intersect($food->allergens ?? [], array_keys($profile['groups'])) as $group) {
+        foreach (array_intersect($this->groupsOf($food), array_keys($profile['groups'])) as $group) {
             $groups[] = $group;
             $severities[] = $profile['groups'][$group];
         }
@@ -140,11 +206,12 @@ class AllergenConflictService
         $textMatched = false;
 
         if ($profile['texts'] !== []) {
-            $haystacks = [$this->fold((string) $food->name_ar), $this->fold((string) $food->name_en)];
+            $names = array_filter([(string) $food->name_ar, (string) $food->name_en]);
 
             foreach ($profile['texts'] as $needle => $severity) {
-                foreach ($haystacks as $haystack) {
-                    if ($haystack !== '' && str_contains($haystack, (string) $needle)) {
+                foreach ($names as $name) {
+                    // Word by word, or as a plain substring as before: never fewer matches than the old rule.
+                    if ($this->matcher->textInName((string) $needle, $name) || str_contains($this->fold($name), (string) $needle)) {
                         $textMatched = true;
                         $severities[] = $severity;
                         break;
