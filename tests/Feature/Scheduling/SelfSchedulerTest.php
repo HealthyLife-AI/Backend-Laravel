@@ -98,6 +98,40 @@ class SelfSchedulerTest extends TestCase
         $this->assertNotNull(app(SelfScheduler::class)->lastRan('summaries'));
     }
 
+    /**
+     * Audit BE-01: the jobs run inside the caller's request, where
+     * NutritionistScope narrows every query to the caller's clinic. They must
+     * run as cron does, for every clinic, because the run is marked done for all.
+     */
+    public function test_a_request_triggered_run_covers_every_clinic_not_only_the_callers(): void
+    {
+        $caller = User::factory()->nutritionist()->create();
+        $other = User::factory()->nutritionist()->create();
+        $auth = $this->bearerFor($caller); // before travelling: JWT expiry is checked against the real clock
+        $this->travelTo($this->wednesdayMorning());
+        $mine = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => $caller->id, 'last_logged_at' => null]);
+        $theirs = Subscriber::factory()->active()->withPlanInForce()->create(['nutritionist_id' => $other->id, 'last_logged_at' => null]);
+
+        $this->getJson('/api/v1/alerts', $auth)->assertOk();
+
+        $this->assertTrue($mine->alerts()->ofType(Alert::TYPE_NO_LOG)->exists(), "the caller's own clinic was skipped");
+        $this->assertTrue($theirs->alerts()->ofType(Alert::TYPE_NO_LOG)->exists(), "another clinic's patient was skipped: the run only saw the caller's clinic and is marked done for everyone");
+        $this->assertSame(1, $theirs->aiSummaries()->count(), "another clinic's patient got no weekly summary");
+        $this->assertSame(2, app(SelfScheduler::class)->lastResult('alerts')['patients']);
+    }
+
+    public function test_the_caller_is_still_signed_in_after_the_jobs_ran(): void
+    {
+        $nutritionist = User::factory()->nutritionist()->create();
+        $this->travelTo($this->wednesdayMorning());
+
+        $ran = app(SelfScheduler::class);
+        $this->actingAs($nutritionist);
+        $ran->runOverdue();
+
+        $this->assertSame($nutritionist->id, auth()->id());
+    }
+
     public function test_jobs_are_not_repeated_by_later_requests_in_the_same_slot(): void
     {
         $nutritionist = User::factory()->nutritionist()->create();

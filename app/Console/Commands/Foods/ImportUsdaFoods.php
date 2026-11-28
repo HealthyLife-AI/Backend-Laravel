@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Foods;
 
+use App\Support\FoodTagger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -60,6 +61,9 @@ class ImportUsdaFoods extends Command
         [$imported, $skipped] = $this->importFoods($foodCsv, $nutrientsByFood, (int) $this->option('chunk'));
 
         $this->info("Imported/updated {$imported} foods. Skipped {$skipped} with no energy value.");
+
+        // The upsert bypasses Food::booted(), so new rows have no allergen tags (audit A-01).
+        $this->info('Allergen-tagged '.app(FoodTagger::class)->backfill().' new foods.');
 
         return self::SUCCESS;
     }

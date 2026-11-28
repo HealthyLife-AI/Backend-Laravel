@@ -26,7 +26,8 @@ class DatabaseDumper
         try {
             $dumper->start($path);
 
-            return count(Schema::connection($connection)->getTableListing());
+            // The dump is of this one database; without the schema the listing covers every database on the server.
+            return count(Schema::connection($connection)->getTableListing((string) ($config['database'] ?? ''), schemaQualified: false));
         } catch (Throwable $e) {
             // The class only: a driver message can carry the host or the database name.
             throw new BackupException('dump', 'The database dump failed ('.class_basename($e).').');

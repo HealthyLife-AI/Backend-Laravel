@@ -3,6 +3,7 @@
 use App\Exceptions\ApiCodeException;
 use App\Exceptions\Auth\AccountLockedException;
 use App\Exceptions\Auth\FollowUpEndedException;
+use App\Http\Middleware\EnforceMinimumAppVersion;
 use App\Http\Middleware\EnsureConsentAccepted;
 use App\Http\Middleware\EnsureEmailVerified;
 use App\Http\Middleware\EnsureFollowUpActive;
@@ -92,6 +93,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // the limiter alone has no effect (Laravel's api middleware group
         // has no throttle unless this is called; see that provider for why).
         $middleware->throttleApi();
+
+        // MO-06: refuse a patient app older than the configured minimum. First
+        // in the group so it runs before authentication.
+        $middleware->api(prepend: [EnforceMinimumAppVersion::class]);
 
         // B1: which X-Forwarded-* headers to take from a trusted proxy (the
         // proxy list itself is config('trustedproxy.proxies'), from

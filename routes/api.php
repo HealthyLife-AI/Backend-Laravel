@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\QuickRequests\MyQuickRequestController;
 use App\Http\Controllers\Api\Reports\ClientReportController;
 use App\Http\Controllers\Api\Reports\MyReportController;
 use App\Http\Controllers\Api\System\AiStatusController;
+use App\Http\Controllers\Api\System\AppConfigController;
 use App\Http\Controllers\Api\System\FcmStatusController;
 use App\Http\Controllers\Api\System\SchedulerStatusController;
 use App\Http\Controllers\Api\Today\TodayController;
@@ -64,6 +65,9 @@ use App\Http\Middleware\EnsureMedicalReportsEnabled;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->name('api.')->group(function () {
+
+    // MO-06: public. The minimum and latest patient-app versions and the store links.
+    Route::get('app-config', AppConfigController::class)->name('app-config');
 
     Route::prefix('auth')->name('auth.')->group(function () {
         // B2: every throttle here is a named limiter with its own counter

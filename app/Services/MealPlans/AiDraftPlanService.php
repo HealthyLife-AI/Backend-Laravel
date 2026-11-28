@@ -51,8 +51,9 @@ use Illuminate\Support\Sleep;
  * there being no other door, not by a rule either path has to remember
  * to follow.
  *
- * Allergy handling is a best-effort case-insensitive substring exclusion
- * against each candidate food's name (English and Arabic) — a real
+ * Allergy handling uses the same matcher as activation and plan edits
+ * (AllergenConflictService::matchFood: stored tags plus Arabic/English name
+ * keywords from config/allergens.php, and free text word by word) — a real
  * safety net, but explicitly not a certified allergen-matching system;
  * it can't catch an allergen an ingredient name doesn't mention (e.g. a
  * hidden dairy component). The nutritionist reviews every draft before
@@ -144,15 +145,20 @@ class AiDraftPlanService
         abort_if($profile === null, 422, 'This client needs a health profile (calorie needs, allergies) before an AI draft can be generated.');
 
         $dailyCalories = $approvedCalories ?? CalorieTarget::effective($subscriber) ?? (int) $profile->daily_calorie_needs;
-        // Approved data only. Foods are excluded by allergen group (every class:
-        // allergy, intolerance, avoid) and, for free text, by name.
+        // Approved data only. A food is excluded when it matches ANY approved
+        // allergy (every class: allergy, intolerance, avoid), by group or by
+        // free text, through the same AllergenConflictService::matchFood as
+        // activation and plan edits (audit A-03). The legacy profile names
+        // are added as free text so nothing that was excluded before slips in.
+        // Both generation paths only ever see $safeFoods.
         $records = app(HealthRecordService::class);
         $groups = $records->allergyGroups($subscriber);
-        $allergyTerms = array_values(array_unique(array_map('mb_strtolower', array_merge($profile->allergies ?? [], $records->otherAllergyTexts($subscriber)))));
+        $allergens = app(AllergenConflictService::class);
+        $allergyProfile = $allergens->withTexts($allergens->profile($subscriber), array_values(array_filter((array) ($profile->allergies ?? []), 'is_string')));
 
         $approvedFoods = Food::approved()->get();
         $safeFoods = $approvedFoods
-            ->reject(fn (Food $food) => array_intersect($food->allergens ?? [], $groups) !== [] || $this->containsAllergen($food, $allergyTerms))
+            ->reject(fn (Food $food) => $allergens->matchFood($food, $allergyProfile) !== null)
             // fix/ai-draft-meal-slots: meal_slots === [] means never
             // drafted automatically (currently just كبة نية — raw meat,
             // a risk in pregnancy), for either generation path. Excluded
@@ -835,23 +841,6 @@ class AiDraftPlanService
         }
 
         return $meals;
-    }
-
-    private function containsAllergen(Food $food, array $allergyTerms): bool
-    {
-        if ($allergyTerms === []) {
-            return false;
-        }
-
-        $haystack = mb_strtolower(($food->name_en ?? '').' '.($food->name_ar ?? ''));
-
-        foreach ($allergyTerms as $term) {
-            if ($term !== '' && str_contains($haystack, $term)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
