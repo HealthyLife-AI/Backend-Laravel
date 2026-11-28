@@ -186,12 +186,47 @@ class OpenAiCompatibleClient
      */
     private function sendRecorded(array $messages, array $options, bool $jsonMode, array $context, int $attempt): Response
     {
+        $this->assertTimeLeft();
+
+        // BE-16: one budget for every clinic and feature. A refusal throws here, before anything is sent;
+        // a background job (the Monday summaries) names how long it may wait for the next minute.
+        $budget = app(AiBudget::class);
+        $reservation = $budget->reserve($this->estimateTokens($messages, $options), $context['nutritionist_id'] ?? null, (int) ($context['wait_for_budget'] ?? 0));
+
         $started = hrtime(true);
-        $response = $this->send($messages, $options, $jsonMode);
+
+        try {
+            $response = $this->send($messages, $options, $jsonMode);
+        } catch (AiGenerationException $e) {
+            // A timeout or an unreachable provider is a call too: it leaves a row, and its reservation stays
+            // (the provider may have counted it).
+            app(AiUsageRecorder::class)->recordFailure($context, $this->model(), $attempt, (int) round((hrtime(true) - $started) / 1_000_000));
+
+            throw $e;
+        }
+
+        $budget->settle($reservation, $response->successful() ? (int) $response->json('usage.total_tokens', $reservation['tokens'] ?? 0) : null);
 
         app(AiUsageRecorder::class)->record($response, $context, $this->model(), $attempt, (int) round((hrtime(true) - $started) / 1_000_000));
 
         return $response;
+    }
+
+    /** What a request is expected to cost: the prompt (about 3 characters a token) plus the whole answer allowance. */
+    private function estimateTokens(array $messages, array $options): int
+    {
+        $characters = array_sum(array_map(fn (array $m) => mb_strlen((string) ($m['content'] ?? '')), $messages));
+
+        return (int) ceil($characters / 3) + (int) ($options['max_completion_tokens'] ?? self::DEFAULT_ANSWER_TOKENS);
+    }
+
+    private function assertTimeLeft(): void
+    {
+        $remaining = $this->remainingSeconds();
+
+        if ($remaining !== null && $remaining < self::MIN_REQUEST_SECONDS) {
+            throw new AiGenerationException('The time allowed for this AI request is used up.');
+        }
     }
 
     /**
@@ -210,9 +245,7 @@ class OpenAiCompatibleClient
         $remaining = $this->remainingSeconds();
 
         if ($remaining !== null) {
-            if ($remaining < self::MIN_REQUEST_SECONDS) {
-                throw new AiGenerationException('The time allowed for this AI request is used up.');
-            }
+            $this->assertTimeLeft();
 
             $timeout = min($timeout, $remaining);
         }

@@ -157,7 +157,7 @@ class WeeklySummaryService
         $attempt = 0;
         while (true) {
             try {
-                $response = $this->llm->chatJson($messages, [], ['feature' => 'weekly_summary', 'nutritionist_id' => $subscriber->nutritionist_id, 'subscriber_id' => $subscriber->id]);
+                $response = $this->llm->chatJson($messages, [], ['feature' => 'weekly_summary', 'nutritionist_id' => $subscriber->nutritionist_id, 'subscriber_id' => $subscriber->id, 'wait_for_budget' => 70]);
                 break;
             } catch (AiGenerationException $e) {
                 if ($e->getCode() === 429 && $attempt < count(self::RATE_LIMIT_BACKOFF_SECONDS)) {

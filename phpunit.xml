@@ -42,6 +42,9 @@
              suspenders for a local .env that sets the SUMMARY vars directly. -->
         <env name="OPENAI_SUMMARY_BASE_URL" value=""/>
         <env name="OPENAI_SUMMARY_API_KEY" value=""/>
+        <!-- The per-minute AI token budget (audit BE-16) is off for the suite: the tests of the draft and
+             summary logic make several calls in one test. tests/Feature/Ai/AiBudgetTest sets its own limits. -->
+        <env name="AI_TOKENS_PER_MINUTE" value="0"/>
         <!-- Self-triggered jobs off by default: otherwise whichever request
              a test makes first would run every overdue job. Tests covering
              it opt in with config(['scheduling.self_trigger' => true]). -->
