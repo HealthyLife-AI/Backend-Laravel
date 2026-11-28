@@ -329,3 +329,28 @@ Full table with V (verified) and I (by inspection) marks: `docs/audit/findings/c
 FE-20 (Next.js advisory) is not a patch-level bump: the critical advisories reach 16.4.0 and the 16.3 line ends at 16.3.8, so the fix needs 16.4.1 or later. It is first in batch 2.
 
 Before/after evidence for A-02 (dashboard) and MO-02 is in `docs/audit/evidence/phase2/`.
+
+---
+
+# Phase 2, batch 2 (approved 2026-11-28)
+
+All PRs are based on `main`. Where one needs another, the body says so.
+
+| # | Finding | PR | Depends on |
+|---|---|---|---|
+| 1a | MO-06 force update, backend | HealthyLife-AI/Backend-Laravel#46 | none |
+| 1b | MO-06 force update, app | HealthyLife-AI/Mobile-Flutter#43 | none to build; useful once #46 is deployed. **Must be in the first production Play build.** |
+| 2 | FE-20 Next 16.4.6, `npm audit`: 0 vulnerabilities | HealthyLife-AI/Frontend-Nextjs#29 | none |
+| 3a | X-07 summary batch overlap and double spend | HealthyLife-AI/Backend-Laravel#47 | none |
+| 3b | BE-17 e-mail verification, backend (inert until enabled) | HealthyLife-AI/Backend-Laravel#48 | none |
+| 3c | BE-17 e-mail verification, dashboard | HealthyLife-AI/Frontend-Nextjs#30 | needs #48 deployed first |
+| 3d | BE-16 shared AI token budget | HealthyLife-AI/Backend-Laravel#49 | none (works best with #47) |
+
+Verified on the **combined** tree (all batch 1 and batch 2 PRs merged in order onto `main`):
+- backend: 1,594 tests, 0 failures on SQLite (149 s) **and on MySQL 8 (330 s)**, 2 risky and 1 skipped as at baseline;
+- dashboard: lint, type-check and build pass on Next 16.4.6;
+- app: `flutter analyze --fatal-infos` clean, 1,068 tests pass.
+
+The combined run found one cross-PR conflict that git could not: a test in the A-03 PR assumed an edit to an active plan is saved and flagged, which the A-02 PR changes to "refused". The test was changed to hold in either merge order (HealthyLife-AI/Backend-Laravel#43).
+
+Evidence: `docs/audit/evidence/phase2/` (BE-17 end-to-end screenshots and script, FE-20 smoke script and results).
