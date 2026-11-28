@@ -20,11 +20,10 @@ class EnsureEmailVerified
         $user = $request->user();
 
         if ($user instanceof User && $user->needsEmailVerification()) {
-            throw new ApiCodeException(
-                'Confirm your e-mail address to add patients and use the AI assistant. We sent you a link.',
-                'email_unverified',
-                403,
-            );
+            // The dashboard sends the language it is showing; Arabic unless it asked for English.
+            $locale = str_starts_with(strtolower((string) $request->header('Accept-Language')), 'en') ? 'en' : 'ar';
+
+            throw new ApiCodeException(trans('email_verification.unverified', [], $locale), 'email_unverified', 403);
         }
 
         return $next($request);

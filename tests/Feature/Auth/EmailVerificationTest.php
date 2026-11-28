@@ -62,6 +62,20 @@ class EmailVerificationTest extends TestCase
             ->assertJsonPath('code', 'email_unverified');
     }
 
+    public function test_the_refusal_is_in_the_language_the_dashboard_shows(): void
+    {
+        $this->enforceFrom('2026-12-01');
+        $user = $this->nutritionist('2026-12-05');
+        $auth = $this->bearerFor($user);
+        $payload = ['name' => 'مريض تجريبي', 'phone' => '0599000111', 'goal' => 'health_monitoring'];
+
+        $ar = $this->postJson('/api/v1/clients', $payload, $auth + ['Accept-Language' => 'ar'])->json('message');
+        $en = $this->postJson('/api/v1/clients', $payload, $auth + ['Accept-Language' => 'en'])->json('message');
+
+        $this->assertMatchesRegularExpression('/\p{Arabic}/u', $ar);
+        $this->assertDoesNotMatchRegularExpression('/\p{Arabic}/u', $en);
+    }
+
     public function test_nor_use_the_ai_endpoints(): void
     {
         $this->enforceFrom('2026-12-01');
