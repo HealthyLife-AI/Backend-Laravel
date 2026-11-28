@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Food;
 use App\Support\ArabicText;
+use App\Support\FoodTagger;
 use Illuminate\Database\Seeder;
 
 /**
@@ -72,6 +73,11 @@ class UsdaFoodSeeder extends Seeder
                     'name_ar_normalized' => ArabicText::normalize($row['name_ar']),
                 ]);
         }
+
+        // Food::insert() skips Food::booted(), which tags a new food, so every
+        // row above has allergens NULL: tag them now, after the Arabic names
+        // are in, so Arabic keywords count too (audit A-01).
+        app(FoodTagger::class)->backfill();
     }
 
     /** @return \Generator<int, array<string, string>> */
