@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\User;
+use App\Support\RegionalCountry;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -39,7 +40,12 @@ class UserResource extends JsonResource
             // no health profile has been filled in yet. Absent for
             // nutritionists and admins.
             // A nutritionist's country (read-only for them: only an admin sets it).
-            $this->mergeWhen($this->hasRole('nutritionist'), fn () => ['country' => $this->country ?: \App\Support\RegionalCountry::default()]),
+            $this->mergeWhen($this->hasRole('nutritionist'), fn () => [
+                'country' => $this->country ?: RegionalCountry::default(),
+                // BE-17: for the dashboard's "confirm your e-mail" banner.
+                'email_verified' => $this->email_verified_at !== null,
+                'email_verification_required' => $this->needsEmailVerification(),
+            ]),
             $this->mergeWhen($this->hasRole('client'), fn () => [
                 'gender' => $this->subscriberProfile?->healthProfile?->gender,
                 // The patient's own code (e.g. PT-104), shown on the app's account screen.

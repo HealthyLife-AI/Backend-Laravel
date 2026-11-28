@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Alerts\AlertSettingsController;
 use App\Http\Controllers\Api\Appointments\MyAppointmentController;
 use App\Http\Controllers\Api\Appointments\NutritionistAppointmentController;
 use App\Http\Controllers\Api\Auth\AuthController;
+use App\Http\Controllers\Api\Auth\EmailVerificationController;
 use App\Http\Controllers\Api\Checkins\ClientCheckinController;
 use App\Http\Controllers\Api\Checkins\MyCheckinController;
 use App\Http\Controllers\Api\Clients\ClientController;
@@ -100,6 +101,14 @@ Route::prefix('v1')->name('api.')->group(function () {
         Route::get('me', [AuthController::class, 'me'])
             ->middleware('jwt')
             ->name('me');
+
+        // BE-17: confirm a nutritionist's e-mail. verify is public (the link's token is the credential).
+        Route::post('email/verify', [EmailVerificationController::class, 'verify'])
+            ->middleware('throttle:verify-email-link')
+            ->name('email.verify');
+        Route::post('email/resend', [EmailVerificationController::class, 'resend'])
+            ->middleware(['jwt', 'role:nutritionist', 'throttle:verify-email'])
+            ->name('email.resend');
     });
 
     // Change one's own password; ends every other session. Throttled like login.
@@ -114,7 +123,7 @@ Route::prefix('v1')->name('api.')->group(function () {
 
     Route::middleware(['jwt', 'permission:clients.manage'])->group(function () {
         Route::get('clients', [ClientController::class, 'index'])->name('clients.index');
-        Route::post('clients', [ClientController::class, 'store'])->name('clients.store');
+        Route::post('clients', [ClientController::class, 'store'])->middleware('email.verified')->name('clients.store');
         Route::get('clients/{subscriber}', [ClientController::class, 'show'])->name('clients.show');
         Route::delete('clients/{subscriber}', [ClientController::class, 'destroy'])->name('clients.destroy');
         Route::post('clients/{subscriber}/archive', [ClientFollowUpController::class, 'archive'])->name('clients.archive');
@@ -186,7 +195,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         // Phase 3, C: the weight-change insight and whether the patient sees it. Regenerating is the paid LLM call: throttled.
         Route::get('clients/{subscriber}/weight-insight', [WeightInsightController::class, 'show'])->name('clients.weight-insight.show');
         Route::put('clients/{subscriber}/weight-insight-visibility', [WeightInsightController::class, 'visibility'])->middleware('follow-up')->name('clients.weight-insight.visibility');
-        Route::post('clients/{subscriber}/weight-insight/regenerate', [WeightInsightController::class, 'regenerate'])->middleware(['follow-up', 'throttle:weight-insight'])->name('clients.weight-insight.regenerate');
+        Route::post('clients/{subscriber}/weight-insight/regenerate', [WeightInsightController::class, 'regenerate'])->middleware(['follow-up', 'email.verified', 'throttle:weight-insight'])->name('clients.weight-insight.regenerate');
 
         // Phase 4, A6: a patient's medical reports, for their own nutritionist (404 while the feature is off).
         Route::middleware(EnsureMedicalReportsEnabled::class)->group(function () {
@@ -287,7 +296,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         // Item D: an AI-assisted summary SUGGESTION — nothing is saved by
         // this call. Rate-limited like ai-draft: same provider, same cost.
         Route::post('clients/{subscriber}/meal-plans/{mealPlan}/summary-suggestion', [MealPlanController::class, 'suggestSummary'])
-            ->middleware('throttle:summary-suggestion')
+            ->middleware(['email.verified', 'throttle:summary-suggestion'])
             ->name('meal-plans.summary-suggestion');
 
         // Item C: her approved target and summary alone — editable on the
@@ -313,7 +322,7 @@ Route::prefix('v1')->name('api.')->group(function () {
         // available. 5/min is generous for its actual use (review, maybe
         // regenerate once or twice) and blocks anything faster than that.
         Route::post('clients/{subscriber}/meal-plans/ai-draft', [MealPlanController::class, 'generateAiDraft'])
-            ->middleware(['follow-up', 'throttle:ai-draft'])
+            ->middleware(['follow-up', 'email.verified', 'throttle:ai-draft'])
             ->name('meal-plans.ai-draft');
 
         Route::get('meal-plan-templates', [MealPlanTemplateController::class, 'index'])->name('meal-plan-templates.index');

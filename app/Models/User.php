@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -118,6 +119,22 @@ class User extends Authenticatable
     public function refreshTokens(): HasMany
     {
         return $this->hasMany(RefreshToken::class);
+    }
+
+    /**
+     * Audit BE-17: a nutritionist whose e-mail is unverified AND who was created
+     * on or after config('email_verification.required_from'). Nobody created
+     * before that date is held to it, and with it empty nobody is.
+     */
+    public function needsEmailVerification(): bool
+    {
+        $from = config('email_verification.required_from');
+
+        return $from !== null
+            && $this->email_verified_at === null
+            && $this->created_at !== null
+            && $this->hasRole('nutritionist')
+            && $this->created_at->gte(CarbonImmutable::parse((string) $from, (string) config('scheduling.timezone')));
     }
 
     /**
