@@ -43,6 +43,32 @@ class AiUsageRecorder
         }
     }
 
+    /**
+     * A call that got no response (a timeout, an unreachable provider): one row with success false and no
+     * tokens, so the failed attempts are counted too (audit BE-16).
+     *
+     * @param  array{feature?: string, nutritionist_id?: int|null, subscriber_id?: int|null, attempt_base?: int}  $context
+     */
+    public function recordFailure(array $context, ?string $model, int $attempt, int $latencyMs): void
+    {
+        try {
+            $feature = (string) ($context['feature'] ?? 'other');
+
+            AiUsageLog::create([
+                'feature' => in_array($feature, AiUsageLog::FEATURES, true) ? $feature : 'other',
+                'nutritionist_id' => $context['nutritionist_id'] ?? null,
+                'subscriber_id' => $context['subscriber_id'] ?? null,
+                'model' => mb_substr((string) $model, 0, 100),
+                'attempt' => min(255, max(1, ((int) ($context['attempt_base'] ?? 0)) + $attempt)),
+                'success' => false,
+                'latency_ms' => max(0, $latencyMs),
+                'created_at' => now(),
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('AI usage could not be recorded.', ['error' => $e::class]);
+        }
+    }
+
     private function int(mixed $value): int
     {
         return is_numeric($value) ? max(0, (int) $value) : 0;

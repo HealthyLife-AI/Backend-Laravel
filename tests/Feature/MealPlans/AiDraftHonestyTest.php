@@ -7,6 +7,7 @@ use App\Models\HealthProfile;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\Ai\AiBudget;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
@@ -77,6 +78,21 @@ class AiDraftHonestyTest extends TestCase
         Http::fake(['*' => Http::response(null, 500)]);
 
         $this->draft()->assertJsonPath('is_ai_draft', true)->assertJsonPath('is_ai_fallback', true);
+    }
+
+    /** Audit BE-16: the platform's per-minute token budget is used up, so the draft does not wait for the provider. */
+    public function test_an_exhausted_ai_budget_makes_a_labelled_fallback_draft_at_once(): void
+    {
+        config(['ai.budget.tokens_per_minute' => 6500, 'ai.budget.clinic_share' => 1.0]);
+        app(AiBudget::class)->reserve(100000, null);
+        Food::factory()->create();
+        Http::fake();
+        Sleep::fake();
+
+        $this->draft()->assertJsonPath('is_ai_draft', true)->assertJsonPath('is_ai_fallback', true);
+
+        Http::assertNothingSent();
+        Sleep::assertNeverSlept();
     }
 
     public function test_a_connection_error_makes_a_fallback_draft(): void

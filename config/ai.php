@@ -93,6 +93,26 @@ return [
 
     'usage_retention_months' => (int) env('AI_USAGE_RETENTION_MONTHS', 13),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Token budget per minute (audit BE-16)
+    |--------------------------------------------------------------------------
+    |
+    | Every clinic and every AI feature shares ONE provider budget (Groq's free
+    | tier: about 8,000 tokens a minute). AiBudget reserves an estimate before each
+    | request and settles to the real usage after it. Over budget, a draft falls
+    | back to the rule-based plan AT ONCE (it does not wait for the provider) and
+    | the Monday summaries wait for the next minute. One clinic can hold at most
+    | `clinic_share` of the budget. Set tokens_per_minute to a little under your
+    | provider's limit; 0 switches the guard off (a paid tier with plenty of room).
+    |
+    */
+
+    'budget' => [
+        'tokens_per_minute' => (int) env('AI_TOKENS_PER_MINUTE', 6500),
+        'clinic_share' => (float) env('AI_CLINIC_SHARE', 0.6),
+    ],
+
     'summary' => [
         'base_url' => env('OPENAI_SUMMARY_BASE_URL', env('OPENAI_BASE_URL')),
         'api_key' => env('OPENAI_SUMMARY_API_KEY', env('OPENAI_API_KEY')),
