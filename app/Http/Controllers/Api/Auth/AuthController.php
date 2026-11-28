@@ -18,6 +18,7 @@ use App\Http\Resources\UserResource;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Notifications\Auth\ResetPasswordNotification;
+use App\Services\Auth\EmailVerification;
 use App\Services\Auth\GoogleAuthService;
 use App\Services\Auth\JwtService;
 use App\Services\Auth\RefreshTokenService;
@@ -55,6 +56,13 @@ class AuthController extends Controller
         ]);
 
         $user->assignRole('nutritionist');
+
+        // BE-17: a mail failure must not lose the sign-up; they can ask for it again.
+        try {
+            app(EmailVerification::class)->send($user, $request->input('locale') === 'en' ? 'en' : 'ar');
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return $this->tokenResponse($user, $request, 201);
     }

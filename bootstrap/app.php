@@ -5,6 +5,7 @@ use App\Exceptions\Auth\AccountLockedException;
 use App\Exceptions\Auth\FollowUpEndedException;
 use App\Http\Middleware\EnforceMinimumAppVersion;
 use App\Http\Middleware\EnsureConsentAccepted;
+use App\Http\Middleware\EnsureEmailVerified;
 use App\Http\Middleware\EnsureFollowUpActive;
 use App\Http\Middleware\JwtAuthenticate;
 use App\Http\Middleware\RunOverdueScheduledTasks;
@@ -111,6 +112,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'jwt' => JwtAuthenticate::class,
             'follow-up' => EnsureFollowUpActive::class,
+            'email.verified' => EnsureEmailVerified::class,
             'consent' => EnsureConsentAccepted::class,
             // Not auto-registered by spatie/laravel-permission on this
             // Laravel version's array-config middleware system — see

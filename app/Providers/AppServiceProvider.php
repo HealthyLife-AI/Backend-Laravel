@@ -169,6 +169,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('register', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('google', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('forgot-password', fn (Request $request) => Limit::perMinute(5)->by($request->ip()));
+        // BE-17: one verification e-mail a minute and five an hour per nutritionist; the link itself is the credential.
+        RateLimiter::for('verify-email', fn (Request $request) => [Limit::perMinute(1)->by($request->user()->id), Limit::perHour(5)->by($request->user()->id)]);
+        RateLimiter::for('verify-email-link', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('reset-password', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('invite-activate', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('password-change', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
