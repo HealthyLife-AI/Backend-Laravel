@@ -45,7 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // S5-04 / FR-21. Monday morning, summarising the week that just
         // closed (Mon-Sun) so every log for it has already landed.
-        $schedule->command('ai-summaries:generate-weekly')->weeklyOn(1, '07:00')->timezone(config('scheduling.timezone'));
+        $schedule->command('ai-summaries:generate-weekly')->weeklyOn(1, '07:00')->timezone(config('scheduling.timezone'))->withoutOverlapping($bulkLockMinutes);
 
         // Phase 1, B4. 09:00 clinic time: measurement reminders on the due date
         // and the 3-days-overdue alert.
