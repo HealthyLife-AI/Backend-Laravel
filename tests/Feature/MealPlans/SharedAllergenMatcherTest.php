@@ -116,7 +116,12 @@ class SharedAllergenMatcherTest extends TestCase
         $this->activate($this->createPlan($food))->assertOk();
     }
 
-    public function test_an_edit_to_an_active_plan_reports_the_text_match(): void
+    /**
+     * The edit brings in a food the free-text allergy matches. It must never be accepted silently: before the
+     * active-plan gate (A-02) it saves and is flagged (`new_unacknowledged_conflicts`); with the gate it is
+     * refused until acknowledged. This test holds in either order, so the two changes can merge in either.
+     */
+    public function test_an_edit_to_an_active_plan_does_not_slip_in_the_text_match_silently(): void
     {
         $this->allergy('other', 'فول سوداني');
         $safe = $this->food('Lentil soup', 'شوربة عدس');
@@ -128,7 +133,10 @@ class SharedAllergenMatcherTest extends TestCase
             'meals' => [['name' => 'snack', 'items' => [['food_id' => $safe->id, 'quantity_grams' => 50], ['food_id' => $peanut->id, 'quantity_grams' => 30]]]],
         ], $this->bearerFor($this->nutritionist));
 
-        $this->assertTrue((bool) $res->json('new_unacknowledged_conflicts'), 'the edit brought in a confirmed allergen and the report did not flag it');
+        $refused = $res->status() === 422 && $res->json('code') === 'allergen_conflict_unacknowledged';
+        $flagged = $res->status() === 200 && $res->json('new_unacknowledged_conflicts') === true;
+
+        $this->assertTrue($refused || $flagged, 'the edit brought in a confirmed allergen and was neither refused nor flagged (status '.$res->status().')');
     }
 
     public function test_the_inline_check_reports_the_text_match(): void
