@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('alerts', function (Blueprint $table) {
             // The report a report_uploaded alert is about; marking it reviewed resolves exactly this alert.
-            $table->foreignId('patient_report_id')->nullable()->after('checkin_id')
+            $table->foreignId('patient_report_id')->nullable()
                 ->constrained('patient_reports')->nullOnDelete();
         });
     }
