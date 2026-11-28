@@ -11,16 +11,17 @@ use App\Http\Resources\MealPlanResource;
 use App\Models\Food;
 use App\Models\MealPlan;
 use App\Models\Subscriber;
+use App\Services\FoodPreferences\FoodPreferenceService;
 use App\Services\HealthRecords\HealthRecordService;
 use App\Services\MealPlans\AiDraftPlanService;
-use App\Services\FoodPreferences\FoodPreferenceService;
 use App\Services\MealPlans\AllergenConflictService;
-use App\Services\MealPlans\NutritionWarningService;
 use App\Services\MealPlans\MealPlanService;
+use App\Services\MealPlans\NutritionWarningService;
 use App\Services\MealPlans\PlanSummarySuggestionService;
 use App\Services\Notifications\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * S3-01/S3-02/S3-07: the nutritionist-facing plan designer — create,
@@ -102,23 +103,68 @@ class MealPlanController extends Controller
         abort_unless($subscriber->belongsToCaller(), 404);
         abort_unless($mealPlan->subscriber_id === $subscriber->id, 404);
 
-        if (isset($request->validated()['start_date'])) {
-            $mealPlan->update(['start_date' => $request->validated()['start_date']]);
-        }
-        $this->plans->applyDecision($mealPlan, $request->validated());
-        $this->plans->replaceMeals($mealPlan, $request->validated()['meals']);
-        $this->plans->replaceActivities($mealPlan, $request->validated());
+        // Audit A-02: an edit to an ACTIVE plan reaches the patient at once, so
+        // one that brings in a confirmed-allergy food nobody acknowledged is
+        // refused (422, nothing saved), exactly like activation. The caller
+        // confirms with the same optional `acknowledge_allergen_conflicts`;
+        // the acknowledgement is then recorded with the save. Only conflicts
+        // THIS edit introduces block: a plan already flagged (an allergy
+        // approved after activation) stays editable, with its red warning.
+        $isActive = $mealPlan->status === 'active';
+        $before = $isActive ? $this->unacknowledgedKeys($mealPlan, $subscriber) : [];
+
+        DB::transaction(function () use ($mealPlan, $subscriber, $request, $isActive, $before) {
+            if (isset($request->validated()['start_date'])) {
+                $mealPlan->update(['start_date' => $request->validated()['start_date']]);
+            }
+            $this->plans->applyDecision($mealPlan, $request->validated());
+            $this->plans->replaceMeals($mealPlan, $request->validated()['meals']);
+            $this->plans->replaceActivities($mealPlan, $request->validated());
+
+            if (! $isActive) {
+                return;
+            }
+
+            $mealPlan->unsetRelation('meals');
+            $conflicts = $this->allergens->forPlan($mealPlan, $subscriber)['conflicts'];
+
+            if (array_diff($this->unacknowledgedKeys($mealPlan, $subscriber, $conflicts), $before) === []) {
+                return;
+            }
+
+            if (! $request->boolean('acknowledge_allergen_conflicts')) {
+                throw new ApiCodeException(
+                    'This change adds a food that conflicts with a confirmed allergy. Review it and confirm to save.',
+                    'allergen_conflict_unacknowledged',
+                    422,
+                    ['allergen_conflicts' => $conflicts],
+                );
+            }
+
+            $this->plans->recordAllergenAcknowledgement($mealPlan, $request->user(), $conflicts);
+        });
 
         // Only the plan the patient is following; editing a draft tells them nothing.
-        if ($mealPlan->status === 'active') {
+        if ($isActive) {
             $this->notifyPatient($subscriber, $mealPlan, 'plan_updated');
         }
 
-        // The save always succeeds. An edit that brings in a confirmed-allergy
-        // food the acknowledgement does not cover is reported, never blocked:
-        // `new_unacknowledged_conflicts` makes the dashboard raise the red
-        // warning again, so it cannot pass silently.
         return $this->present($mealPlan->refresh(), $subscriber);
+    }
+
+    /**
+     * Confirmed-allergy conflicts on the plan that its acknowledgement does
+     * not cover, as AllergenConflictService::key() identities.
+     *
+     * @param  list<array<string, mixed>>|null  $conflicts
+     * @return list<string>
+     */
+    private function unacknowledgedKeys(MealPlan $plan, Subscriber $subscriber, ?array $conflicts = null): array
+    {
+        $conflicts ??= $this->allergens->forPlan($plan, $subscriber)['conflicts'];
+        $acknowledged = array_map($this->allergens->key(...), $plan->allergen_ack_snapshot ?? []);
+
+        return array_values(array_diff(array_map($this->allergens->key(...), $this->allergens->confirmed($conflicts)), $acknowledged));
     }
 
     /**

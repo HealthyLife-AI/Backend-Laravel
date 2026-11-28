@@ -241,7 +241,7 @@ class AllergenConflictTest extends TestCase
 
     // ---- after activation -------------------------------------------------
 
-    public function test_an_edit_that_introduces_a_new_confirmed_conflict_is_saved_and_flagged(): void
+    public function test_an_edit_that_introduces_a_new_confirmed_conflict_needs_the_acknowledgement(): void
     {
         $this->allergy('peanuts');
         $this->allergy('fish');
@@ -255,13 +255,18 @@ class AllergenConflictTest extends TestCase
             'meals' => [['name' => 'breakfast', 'items' => [['food_id' => $peanut->id, 'quantity_grams' => 250]]]],
         ], $this->token())->assertOk()->assertJsonPath('new_unacknowledged_conflicts', false);
 
-        // A different offending food is: saved, but flagged.
-        $this->putJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/{$plan['id']}", [
-            'meals' => [['name' => 'breakfast', 'items' => [
-                ['food_id' => $peanut->id, 'quantity_grams' => 250],
-                ['food_id' => $fish->id, 'quantity_grams' => 100],
-            ]]],
-        ], $this->token())->assertOk()->assertJsonPath('new_unacknowledged_conflicts', true)
+        // A different offending food is new: audit A-02, an active plan reaches
+        // the patient at once, so the edit is refused until it is acknowledged.
+        $withFish = ['meals' => [['name' => 'breakfast', 'items' => [
+            ['food_id' => $peanut->id, 'quantity_grams' => 250],
+            ['food_id' => $fish->id, 'quantity_grams' => 100],
+        ]]]];
+        $this->putJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/{$plan['id']}", $withFish, $this->token())
+            ->assertStatus(422)->assertJsonPath('code', 'allergen_conflict_unacknowledged')
+            ->assertJsonCount(2, 'allergen_conflicts');
+
+        $this->putJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/{$plan['id']}", $withFish + ['acknowledge_allergen_conflicts' => true], $this->token())
+            ->assertOk()->assertJsonPath('new_unacknowledged_conflicts', false)
             ->assertJsonCount(2, 'allergen_conflicts');
     }
 
@@ -286,11 +291,15 @@ class AllergenConflictTest extends TestCase
         $plan = $this->plan([['food' => $this->food(['allergens' => ['peanuts']])]]);
         $this->activate($plan['id'], ['acknowledge_allergen_conflicts' => true])->assertOk();
 
-        $this->allergy('fish');
+        // The fish goes in first, and the fish allergy is approved after: the
+        // plan is flagged without any edit being refused (audit A-02 blocks
+        // only an edit that itself brings in an unacknowledged conflict).
         $fish = $this->food(['allergens' => ['fish']]);
         $this->putJson("/api/v1/clients/{$this->subscriber->id}/meal-plans/{$plan['id']}", [
             'meals' => [['name' => 'breakfast', 'items' => [['food_id' => $fish->id, 'quantity_grams' => 100]]]],
-        ], $this->token())->assertOk()->assertJsonPath('new_unacknowledged_conflicts', true);
+        ], $this->token())->assertOk();
+        $this->allergy('fish');
+        $this->show($plan['id'])->assertJsonPath('new_unacknowledged_conflicts', true);
 
         $before = MealPlan::find($plan['id']);
         $notifications = PatientNotification::count();
