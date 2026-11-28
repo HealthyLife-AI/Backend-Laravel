@@ -1,0 +1,130 @@
+   Woah! You appear to be trying to run flutter as root.
+   We strongly recommend running the flutter tool without superuser privileges.
+  /
+📎
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 93.0.0 (111.0.0 available)
+  _flutterfire_internals 1.3.59 (1.4.0 available)
+  analyzer 10.0.1 (14.7.0 available)
+  android_file_picker 2.1.2 (2.2.1 available)
+  archive 4.6.0 (4.7.1 available)
+  cli_util 0.4.2 (0.6.1 available)
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.2.1 (2.2.0 available)
+  coverage 1.15.1 (1.16.1 available)
+  cross_file 0.3.5+5 (0.4.0 available)
+  crypto 3.0.7 (3.0.8 available)
+  dbus 0.8.0 (0.8.1 available)
+  device_preview 1.3.1 (3.0.0 available)
+  file_picker 13.3.1 (13.4.1 available)
+  file_picker_darwin 2.4.1 (2.5.2 available)
+  file_picker_linux 2.0.2 (2.0.5 available)
+  file_picker_platform_interface 4.2.0 (4.3.0 available)
+  file_picker_web 4.2.0 (4.2.2 available)
+  file_selector_macos 0.9.5+1 (0.9.5+2 available)
+  firebase_core 3.15.2 (5.2.0 available)
+  firebase_core_platform_interface 6.0.3 (8.2.0 available)
+  firebase_core_web 2.24.1 (4.2.0 available)
+  firebase_crashlytics 4.3.10 (6.1.0 available)
+  firebase_crashlytics_platform_interface 3.8.10 (3.10.0 available)
+  firebase_messaging 15.2.10 (17.1.0 available)
+  firebase_messaging_platform_interface 4.6.10 (4.12.0 available)
+  firebase_messaging_web 3.10.10 (4.4.0 available)
+  flutter_lints 3.0.2 (6.0.0 available)
+  flutter_local_notifications 22.3.2 (23.0.3 available)
+  flutter_local_notifications_linux 8.0.2 (9.0.0 available)
+  flutter_local_notifications_platform_interface 12.2.0 (13.0.0 available)
+  flutter_local_notifications_web 1.0.0 (2.0.0 available)
+  flutter_local_notifications_windows 3.1.1 (4.0.1 available)
+  frontend_server_client 4.1.0 (4.2.0 available)
+  hooks 2.0.2 (2.2.0 available)
+  http_multi_server 3.2.2 (3.2.3 available)
+  image 4.12.0 (4.13.1 available)
+  image_picker_android 0.8.13+17 (0.8.13+25 available)
+  image_picker_ios 0.8.13+10 (0.8.13+16 available)
+  intl 0.20.2 (0.20.3 available)
+  jni 1.1.0 (1.2.1 available)
+  jni_flutter 1.0.4+1 (1.1.0 available)
+  lints 3.0.0 (6.1.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  meta 1.17.0 (1.19.0 available)
+  objective_c 9.5.0 (9.6.4 available)
+  package_config 2.2.0 (3.0.0 available)
+  permission_handler 12.0.3 (13.0.2 available)
+  permission_handler_android 13.0.1 (14.1.1 available)
+  permission_handler_apple 9.6.2 (9.6.5 available)
+  permission_handler_windows 0.2.2 (0.2.4 available)
+  petitparser 7.0.2 (7.1.0 available)
+  platform 3.1.6 (3.2.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  shared_preferences 2.5.5 (2.5.6 available)
+  shared_preferences_android 2.4.23 (2.5.5 available)
+  shared_preferences_foundation 2.5.7 (2.6.2 available)
+  shelf 1.4.2 (1.4.3 available)
+  shelf_static 1.1.3 (1.2.0 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  synchronized 3.4.0+1 (3.6.1+1 available)
+  test 1.30.0 (1.33.0 available)
+  test_api 0.7.10 (0.7.15 available)
+  test_core 0.6.16 (0.6.21 available)
+  url_launcher_android 6.3.30 (6.3.35 available)
+  vector_math 2.2.0 (2.4.4 available)
+  vm_service 15.3.0 (15.4.0 available)
+  web 1.1.1 (1.1.2 available)
+  windows_file_picker 2.0.1 (2.0.2 available)
+  xml 7.0.1 (7.1.0 available)
+Got dependencies!
+71 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading /home/user/Mobile-Flutter/test/audit/meal_log_queue_live_test.dart
+00:00 +0: (setUpAll)
+00:00 +0: offline log survives an app restart and is sent exactly once
+00:04 +1: request reaches the server, answer lost, replay -> still one log
+00:09 +2: expired/invalid access token during replay -> refresh + retry
+✖ 401 POST /api/v1/me/meal-logs
+00:13 +3: DATA LOSS: nutritionist resets the password (WhatsApp flow) while a meal is queued -> refresh 401 -> session cleared -> queued meal deleted
+✖ 401 POST /api/v1/me/meal-logs
+✖ 401 POST /api/v1/auth/refresh
+flush after reset: sent=0 halt=QueueHalt.unauthorized pending=0 events=(SessionEventType.expired)
+00:18 +3 -1: DATA LOSS: nutritionist resets the password (WhatsApp flow) while a meal is queued -> refresh 401 -> session cleared -> queued meal deleted [E]
+  Expected: <1>
+    Actual: <0>
+  the meal logged offline before the reset never reaches the server
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/audit/meal_log_queue_live_test.dart 283:5      main.<fn>
+  
+00:18 +3 -1: DATA LOSS: refresh answer lost, app killed, reopened after the 30 s grace -> reuse detection revokes every session (both phones) and wipes the queue
+✖ 401 POST /api/v1/me/meal-logs
+✖ 401 POST /api/v1/auth/refresh
+✖ 401 POST /api/v1/me/meal-logs
+✖ 401 POST /api/v1/auth/refresh
+A: sent=0 halt=QueueHalt.unauthorized pending=0 signedIn=false | B: sent=0 halt=QueueHalt.unauthorized pending=0 signedIn=false
+00:53 +3 -2: DATA LOSS: refresh answer lost, app killed, reopened after the 30 s grace -> reuse detection revokes every session (both phones) and wipes the queue [E]
+  Expected: <2>
+    Actual: <0>
+  both offline meals should survive a forced re-login
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/audit/meal_log_queue_live_test.dart 322:5      main.<fn>
+  
+00:53 +3 -2: double tap on "log" while the line is slow -> duplicate logs?
+server logs after double tap: 2
+00:54 +4 -2: I5: which day the app shows vs which day the server records
+TZ=null offset=0:00:00.000000 device local=2026-11-20 21:30:00.000 | app shows on 2026-11-20 | body sent logged_at=2026-11-20T21:30:00.000Z | server (SCHEDULE_TIMEZONE) day=[2026-11-21]
+00:55 +4 -3: I5: which day the app shows vs which day the server records [E]
+  Expected: ['2026-11-20']
+    Actual: ['2026-11-21']
+     Which: at location [0] is '2026-11-21' instead of '2026-11-20'
+  the patient sees the meal on one day, the nutritionist on another
+  
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/audit/meal_log_queue_live_test.dart 364:5      main.<fn>
+  
+00:55 +4 -3: (tearDownAll)
+00:55 +4 -3: Some tests failed.

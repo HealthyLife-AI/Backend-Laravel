@@ -1,0 +1,18 @@
+00:00 +0: loading /home/user/Mobile-Flutter/test/audit/arabic_digits_input_test.dart
+00:00 +0: circumference / target weight: double.tryParse after , -> . (new_measurement_screen.dart:138-143, onboarding_measurements_screen.dart:191-196, change_request_forms.dart:675)
+00:00 +0 -1: circumference / target weight: double.tryParse after , -> . (new_measurement_screen.dart:138-143, onboarding_measurements_screen.dart:191-196, change_request_forms.dart:675) [E]
+  Expected: not null
+    Actual: <null>
+00:00 +0 -1: Validators.numberInRange (validators.dart:66-67)
+00:00 +0 -2: Validators.numberInRange (validators.dart:66-67) [E]
+  Expected: null
+    Actual: <Instance of 'ValidationError'>
+00:00 +0 -2: daily log grams field: FilteringTextInputFormatter.digitsOnly (daily_log_screen.dart:507) + int.tryParse (:481)
+00:00 +0 -3: daily log grams field: FilteringTextInputFormatter.digitsOnly (daily_log_screen.dart:507) + int.tryParse (:481) [E]
+  Expected: '١٥٠'
+    Actual: ''
+00:00 +0 -3: training days: int.tryParse (change_request_forms.dart:683)
+00:00 +0 -4: training days: int.tryParse (change_request_forms.dart:683) [E]
+  Expected: <3>
+    Actual: <null>
+00:00 +0 -4: Some tests failed.

@@ -1,0 +1,8 @@
+17:32:34 /v1/chat/completions 1650
+17:32:38 /v1/chat/completions 1650
+17:32:44 /v1/chat/completions 1650
+17:32:49 /v1/chat/completions 1650
+17:32:54 /v1/chat/completions 1649
+17:32:59 /v1/chat/completions 1649
+17:33:04 /v1/chat/completions 1640
+17:33:09 /v1/chat/completions 1640

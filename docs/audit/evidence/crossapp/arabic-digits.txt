@@ -1,0 +1,2 @@
+meal quantity_grams "١٥٠" -> {"message":"The quantity grams field must be a number.","errors":{"quantity_grams":["The quantity grams field must be a number."]}} HTTP422
+measurement weight_kg "٧٢٫٥" -> {"message":"The weight kg field must be a number.","errors":{"weight_kg":["The weight kg field must be a number."]}} HTTP422

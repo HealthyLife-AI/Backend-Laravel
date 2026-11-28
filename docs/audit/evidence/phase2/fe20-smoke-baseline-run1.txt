@@ -1,0 +1,32 @@
+PASS  [ar] public / renders  — status 200
+PASS  [ar] public /privacy renders  — status 200
+PASS  [ar] public /login renders  — status 200
+PASS  [ar] public /register renders  — status 200
+PASS  [ar] sign-in through the BFF reaches the dashboard
+PASS  [ar] refresh cookie is HttpOnly  — sameSite=Lax
+PASS  [ar] dashboard home  — status 200
+PASS  [ar] dashboard patients  — status 200
+PASS  [ar] dashboard patient page  — status 200
+PASS  [ar] dashboard plan designer  — status 200
+PASS  [ar] dashboard alerts  — status 200
+PASS  [ar] dashboard foods  — status 200
+PASS  [ar] session survives a reload
+PASS  [ar] no page errors or console errors
+PASS  [ar] no 5xx responses
+PASS  [en] public / renders  — status 200
+PASS  [en] public /privacy renders  — status 200
+PASS  [en] public /login renders  — status 200
+PASS  [en] public /register renders  — status 200
+PASS  [en] sign-in through the BFF reaches the dashboard
+PASS  [en] refresh cookie is HttpOnly  — sameSite=Lax
+PASS  [en] dashboard home  — status 200
+PASS  [en] dashboard patients  — status 200
+PASS  [en] dashboard patient page  — status 200
+PASS  [en] dashboard plan designer  — status 200
+PASS  [en] dashboard alerts  — status 200
+PASS  [en] dashboard foods  — status 200
+FAIL  [en] session survives a reload
+PASS  [en] no page errors or console errors
+PASS  [en] no 5xx responses
+
+29/30 checks passed

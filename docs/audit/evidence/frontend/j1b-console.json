@@ -1,0 +1,22 @@
+[
+ {
+  "url": "http://127.0.0.1:3000/ar/login",
+  "kind": "http401",
+  "text": "POST http://127.0.0.1:3000/api/auth/refresh"
+ },
+ {
+  "url": "http://127.0.0.1:3000/ar/login",
+  "kind": "console.error",
+  "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+ },
+ {
+  "url": "http://127.0.0.1:3000/ar/dashboard",
+  "kind": "console.warning",
+  "text": "The resource http://127.0.0.1:3000/_next/static/chunks/19rhlcx2srev9.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+ },
+ {
+  "url": "http://127.0.0.1:3000/ar/dashboard",
+  "kind": "console.warning",
+  "text": "The resource http://127.0.0.1:3000/_next/static/chunks/19rhlcx2srev9.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally."
+ }
+]

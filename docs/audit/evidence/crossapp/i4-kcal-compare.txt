@@ -1,0 +1,8 @@
+logs today: 3 per-log server calories: [16.5, 16.5, 16.5]
+APP  daily_log_screen.dart:260 sum of ServerMealLog.calories.round(): 51
+API  meal-logs/daily logged_calories (AdherenceService:130 round(sum,1)): 49.5
+DASH PlanVsActualChart.tsx:178 Math.round(logged_calories): 50
+adh_dash {"from":"2026-11-15","to":"2026-11-21","total_logs":49,"on_plan_logs":43,"off_plan_logs":6,"adherence_percent":87.8,"previous":{"from":"2026-11-08","to":"2026-11-14","adherence_percent":96.2},"change_pp":-8.4,"status":"stable","reference_percent":70}
+adh_me {"from":"2026-11-15","to":"2026-11-21","total_logs":49,"on_plan_logs":43,"off_plan_logs":6,"adherence_percent":87.8,"previous":{"from":"2026-11-08","to":"2026-11-14","adherence_percent":96.2},"change_pp":-8.4,"status":"stable","reference_percent":70}
+prog_me {"weight_trend":[{"recorded_at":"2026-10-10","weight_kg":98.9,"source":"self-reported","is_late":false,"edited_at":null},{"recorded_at":"2026-10-14","weight_kg":98.5,"source":"self-reported","is_late":false,"edited_at":null},{"recorded_at":"2026-10-17","weight
+prog_dash {"weight_trend":[{"recorded_at":"2026-10-10","weight_kg":98.9,"source":"self-reported","is_late":false,"edited_at":null},{"recorded_at":"2026-10-14","weight_kg":98.5,"source":"self-reported","is_late":false,"edited_at":null},{"recorded_at":"2026-10-17","weight

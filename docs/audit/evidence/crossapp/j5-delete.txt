@@ -1,0 +1,10 @@
+patient DELETE me/account ->  204
+old access token GET me/today -> 401
+refresh -> 401
+nutritionist GET clients/2 -> 404
+nutritionist GET notices -> [{"id":1,"patient_code":"PT-102","deleted_at":"2026-11-21T17:38:18+00:00"}]
+meal_logs rows for subscriber 2: 0
+body_composition_readings rows for subscriber 2: 0
+patient_reports rows for subscriber 2: 0
+ai_summaries rows for subscriber 2: 0
+patient_notifications rows for subscriber 2: 0

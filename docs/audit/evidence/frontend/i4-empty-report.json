@@ -1,0 +1,159 @@
+[
+ {
+  "page": "/ar/dashboard",
+  "wrongScript": [
+   "Empty Audit"
+  ],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/patients",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/patients/new",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/appointments",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/plans",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/foods",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/alerts",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/requests",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/posts",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/posts/new",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/ar/dashboard/settings",
+  "wrongScript": [
+   "Empty Audit",
+   "audit",
+   "example",
+   "Riyadh"
+  ],
+  "ungrouped": [
+   "1000"
+  ],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/patients",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/patients/new",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/appointments",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/plans",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/foods",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/alerts",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": [
+   "http429 GET http://127.0.0.1:8000/api/v1/alerts?is_read=0",
+   "console.error Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+   "http429 GET http://127.0.0.1:8000/api/v1/alerts?is_read=0&severity=important",
+   "http429 GET http://127.0.0.1:8000/api/v1/clients",
+   "http429 GET http://127.0.0.1:8000/api/v1/quick-requests?status=open",
+   "http429 GET http://127.0.0.1:8000/api/v1/me/nutritionist-profile"
+  ]
+ },
+ {
+  "page": "/en/dashboard/requests",
+  "wrongScript": [
+   "العربية\n"
+  ],
+  "ungrouped": [],
+  "errors": [
+   "http429 GET http://127.0.0.1:3000/api/auth/me",
+   "console.error Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+  ]
+ },
+ {
+  "page": "/en/dashboard/posts",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/posts/new",
+  "wrongScript": [],
+  "ungrouped": [],
+  "errors": []
+ },
+ {
+  "page": "/en/dashboard/settings",
+  "wrongScript": [
+   "العربية\n"
+  ],
+  "ungrouped": [
+   "1000"
+  ],
+  "errors": []
+ }
+]

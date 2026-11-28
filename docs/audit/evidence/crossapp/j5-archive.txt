@@ -1,0 +1,11 @@
+archive subscriber 3:
+200
+GET me/today ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+GET me/meal-plan ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+GET me/meal-logs ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+GET me/progress ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+GET me/reports ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+GET auth/me ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritio
+POST me/meal-logs ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritionist":{"name":"\u062f. \u0645\
+POST auth/refresh -> 401
+login after archive ->  403 {"message":"Your nutritionist has ended follow-up. Contact them to resume.","code":"follow_up_ended","nutritionist":{"na
